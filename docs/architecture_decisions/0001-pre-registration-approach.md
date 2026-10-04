@@ -58,9 +58,13 @@ The criteria can fail, and drilling plan reconstruction is expected to. That is 
 intended behaviour.
 
 A reader can check the ordering. The pre-registration version is pushed before any data is
-retrieved, and is tagged `prereg-v0` in the same push. A local commit date can be rewritten,
-so the durable evidence is the server's own record of when that tag and the release built
-from it were created, not the date in the commit object.
+retrieved and tagged `prereg-v0` in the same push, so the protocol and the empty data manifest
+sit together at a fixed, publicly visible point with no dataset file anywhere in the tree.
+
+The honest limit of that evidence: a commit date can be rewritten, so the tag establishes
+what was written and that it preceded the data in the repository's own history, not an
+independently notarised wall-clock time. Anyone wanting stronger proof should read the
+ordering off the history rather than the dates.
 
 Some thresholds will be badly sized, because they came from domain reasoning rather than
 the data. Section 13 of the protocol handles this: a new version states the old value,
