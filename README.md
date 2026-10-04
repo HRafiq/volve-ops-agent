@@ -17,7 +17,7 @@ seen the data, so those criteria could fail honestly. Two of them did.
   measured against named naive baselines, episode criteria, the temporal split and frozen
   hold-out, and leakage rules.
 - [`docs/data_profile.md`](docs/data_profile.md) is what the data turned out to be: six oil
-  producers, 7,894 valid producing days, 1,759 daily drilling reports, and the coverage gaps
+  producers, 7,893 valid producing days, 1,759 daily drilling reports, and the coverage gaps
   that limit what can be claimed from them.
 - [`docs/data_manifest.md`](docs/data_manifest.md) records every file read, with checksums.
   Raw and processed data are never committed.

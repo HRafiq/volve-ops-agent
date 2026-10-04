@@ -28,18 +28,44 @@ producers and three are water injectors; two wellbores appear under both roles a
 times.
 
 Valid producing days, under the definition fixed in `docs/eval_protocol.md` section 6, which
-requires at least 6.0 on-stream hours, a recorded oil volume, and production status:
+requires at least 6.0 on-stream hours, a recorded oil volume, production status, and no failed
+physical check. These figures come from the implementation of that definition, not from a
+filter that approximates it:
 
 | wellbore | valid producing days | first | last |
 |---|---:|---|---|
-| 15/9-F-12 | 2,793 | 2008-02-12 | 2016-08-12 |
-| 15/9-F-14 | 2,683 | 2008-07-13 | 2016-07-13 |
+| 15/9-F-12 | 2,792 | 2008-02-12 | 2016-08-12 |
+| 15/9-F-14 | 2,682 | 2008-07-13 | 2016-07-13 |
 | 15/9-F-11 | 1,107 | 2013-07-24 | 2016-09-17 |
-| 15/9-F-15 D | 764 | 2014-01-16 | 2016-07-06 |
-| 15/9-F-1 C | 427 | 2014-04-21 | 2016-04-06 |
-| 15/9-F-5 | 120 | 2016-04-21 | 2016-08-26 |
+| 15/9-F-15 D | 762 | 2014-01-16 | 2016-07-06 |
+| 15/9-F-1 C | 422 | 2014-04-22 | 2016-04-06 |
+| 15/9-F-5 | 128 | 2016-04-21 | 2016-08-26 |
 
-Total 7,894 valid producing days across six producers.
+Total 7,893 valid producing days across six producers.
+
+### Day classes over the whole daily sheet
+
+| class | rows |
+|---|---:|
+| valid producing | 7,893 |
+| non-producing | 6,181 |
+| downtime | 1,140 |
+| partial | 98 |
+| quarantined | 37 |
+| missing | 285 |
+
+Non-producing is entirely injection: the source distinguishes only production from injection
+flow, so nothing else can reach that class. Missing is 285 rows where on-stream hours were never
+recorded, all of them on injectors, 152 on 15/9-F-4 and 133 on 15/9-F-5.
+
+The source cannot express a shut-in producer. Its flow-kind column carries only production and
+injection, so a producer that is shut in appears as a production-flow day with zero on-stream
+hours and classes as downtime rather than non-producing. Downtime therefore includes shut-in
+days, including the tail after a well stops producing for good: 15/9-F-14 has one unbroken
+151-day downtime run, and every producer has downtime days after its own last valid producing
+day. This does not reach any reported figure, because deferred volume is only summed inside an
+episode window and such a window closes at the last valid producing day, but any future use of
+downtime outside that context has to account for it.
 
 ### Measurement coverage
 
@@ -65,7 +91,29 @@ Each of these rules was fixed before any file was opened. On producer rows:
 | of those, with no gas and no water either | 12 |
 | duplicate well-days | 0 |
 
-The last two rows are the ones that matter. Twelve of the thirteen zero-oil days have nothing
+### The on-stream hours are in local time, and it shows twice a year
+
+All 20 rows with on-stream hours above 24, across every well, fall on the last Sunday of
+October. That is the day European clocks go back, when a local day genuinely has 25 hours. The
+figures are not corrupt; the column is wall-clock time on a local calendar, not elapsed time
+against a 24-hour day.
+
+The quarantine rule still fires on them, correctly, because a 25-hour day cannot be normalised
+to a 24-hour rate without distorting it. The cost is that one day per well per year is set
+aside, and a stable reference window containing one is disqualified under section 7.
+
+The spring transition is the one that slips through. On the last Sunday of March a local day
+has 23 hours, and 25 rows sit at exactly 23.0 on those dates, where a full day everywhere else
+in the record is exactly 24.0. Sixteen of them class as valid producing days and pass every
+check. For those, `q_24h` divides a whole day's oil by 23 and multiplies by 24, overstating the
+rate by about 4.3 percent.
+
+Sixteen days out of 7,893 is small, and it is left in place rather than fixed by another
+post-inspection amendment to the protocol. It is recorded here because it is systematic rather
+than random, it lands on the same calendar day each year, and anyone fitting a model to a window
+containing one should know the uplift is an artifact of the clock and not of the well.
+
+The last two rows of the table above are the ones that matter. Twelve of the thirteen zero-oil days have nothing
 corroborating them and are quarantined as probable recording gaps. One has measurable gas or
 water and survives as a genuine producing day that made no oil, which is a real
 underperformance signal. Without that distinction all thirteen would have been read as severe
@@ -79,12 +127,12 @@ and development data ends at 26 April 2014 after the 90-day buffer.
 
 | wellbore | development days | hold-out days | status |
 |---|---:|---:|---|
-| 15/9-F-12 | 2,016 | 699 | retained |
-| 15/9-F-14 | 1,886 | 708 | retained |
+| 15/9-F-12 | 2,015 | 699 | retained |
+| 15/9-F-14 | 1,885 | 708 | retained |
 | 15/9-F-11 | 256 | 761 | retained |
-| 15/9-F-15 D | 97 | 577 | cold start, excluded |
-| 15/9-F-1 C | 5 | 333 | cold start, excluded |
-| 15/9-F-5 | 0 | 120 | cold start, excluded |
+| 15/9-F-15 D | 95 | 577 | cold start, excluded |
+| 15/9-F-1 C | 4 | 328 | cold start, excluded |
+| 15/9-F-5 | 0 | 128 | cold start, excluded |
 
 Three of six producers survive the 150-day rule. The protocol's clause triggers on fewer than
 half, and three is not fewer than three, so the hold-out stands on 2,168 valid producing days
@@ -127,6 +175,11 @@ Per-well engineering documents, mostly PDF with some Word files:
 | geosteering | 8 | 3 |
 | final well report | 2 | 2 |
 
+The drilling-programme row counts every matching file across the 24 wellbore directories,
+including Word documents and the same programme filed under several sidetracks of one well. Of
+those, 18 are PDFs, and they span 8 distinct canonical wells. ADR 0003 works from that set of
+18, which is why its count differs from the table.
+
 Quality is uneven. Some are machine-readable text; at least one drilling programme extracts as
 four characters, meaning it is a scanned image. A handful of entries are Windows shortcut files
 pointing at documents that are not in the share.
@@ -144,6 +197,29 @@ narrative record.
 Every message sampled carried audit metadata identifying a named account and an internal
 network address. ADR 0006 records that those fields are dropped at ingest.
 
+## A correction, recorded rather than quietly applied
+
+The valid-producing-day figures in an earlier version of this document were computed with a
+spreadsheet filter rather than with the protocol's definition. That filter selected rows typed
+as oil producers with on-stream hours between 6 and 24 inclusive and an oil volume present. It
+reproduces the superseded 7,894 exactly, and the upper hours bound it used is itself one of the
+section 7 quarantine rules, which is why the filter looked closer to the definition than it was.
+
+Two independent differences, in opposite directions. Ten days the filter counted fail a
+quarantine rule it did not apply: eight carry no oil, gas or water on a producing day, and two
+carry a negative water volume. And eighteen rows where the source's flow-kind and well-type
+columns disagree are now classed by the flow recorded on the day rather than by how the wellbore
+is typed; nine of those become valid producing days and the other nine are downtime. The net is
+minus ten plus nine, so the total moves from 7,894 to 7,893, and five of the six per-well
+figures move.
+
+Protocol v1 amendment 1 also applies to this document. Qualifying the missing test by status
+moved 6,188 injector days out of the missing class: 6,181 into non-producing and 7 into
+quarantined, the latter being injector rows that now reach the physical checks instead of
+being short-circuited as missing. No row entered or left the three classes that carry an
+expectation, so no production figure changed, which is what the amendment record demonstrates
+rather than asserts.
+
 ## Limitations a reader should carry into the results
 
 One field, six oil producers, and a production record where half the wells came online in the
@@ -151,6 +227,12 @@ final third of it.
 
 The hold-out rests on three wells. Cross-well generalisation cannot be measured on a field this
 size and is not claimed.
+
+Well-name canonicalisation is not yet implemented. Section 6 of the protocol requires it to be
+total, with wellbore and sidetrack relationships explicit or the row quarantined. The production
+workbook uses one consistent naming system, so nothing here depends on it, but the drilling
+reports use four different operator prefixes for the same wellbores and the join between the two
+sources cannot be made until it exists.
 
 Non-productive time is identified from activity codes applied by the people writing the reports
 at the time. Time that nobody coded as an interruption is invisible to this system, and no
