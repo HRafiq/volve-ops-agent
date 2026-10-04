@@ -14,8 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -29,8 +29,6 @@ MANIFEST
 # PyInstaller
 #   Usually these files are written by a python script from a template
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
 
 # Installer logs
 pip-log.txt
@@ -218,3 +216,39 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- project-specific ---
+# macOS
+.DS_Store
+
+# Volve raw and processed data: never committed (see docs/data_manifest.md).
+# Anchored, so committed test fixtures under tests/ are unaffected.
+/data/
+
+# MLflow local tracking store
+mlruns/
+mlartifacts/
+mlflow.db
+
+# Any env file except the placeholder template
+.env.*
+!.env.example
+
+# Local editor and tool state
+.claude/settings.local.json
+
+# Keys, certificates and credential files. Nothing matching these belongs in a
+# public repository; .env.example carries placeholders only.
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+credentials*.json
+service-account*.json
+secrets.yml
+secrets.yaml
+.netrc
+token.json
+.aws/
