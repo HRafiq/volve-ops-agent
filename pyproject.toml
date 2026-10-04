@@ -19,6 +19,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The MCP adapter is optional on purpose: the domain services and the tool layer work without
+# it, and the deterministic CI job should not need a protocol server to run unit tests.
+mcp = [
+    "mcp==1.9.4",
+]
 dev = [
     "pytest==8.3.3",
     "ruff==0.6.9",
@@ -45,11 +50,12 @@ python_version = "3.11"
 strict = true
 plugins = ["pydantic.mypy"]
 files = ["src", "scripts", "tests"]
+exclude = ["src/volve_ops/mcp_server/server.py"]
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
 # Neither package ships type stubs. Scoped to them so the rest stays strict.
-module = ["defusedxml.*", "openpyxl.*"]
+module = ["defusedxml.*", "openpyxl.*", "mcp.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

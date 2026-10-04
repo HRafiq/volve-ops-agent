@@ -27,6 +27,12 @@ seen the data, so those criteria could fail honestly. Two of them did.
 - [`docs/architecture_decisions/`](docs/architecture_decisions/) holds the decisions and the
   reasoning, including both feasibility results.
 
+The deterministic layer is reachable three ways, all over the same services. `src/volve_ops/domain/`
+holds the engine; `src/volve_ops/tools/` wraps it in typed, bounded tools that refuse an
+over-large request rather than truncating it; and `src/volve_ops/mcp_server/` exposes those
+tools over MCP as an optional extra. The adapter decides nothing, which is the point: a rule
+about what a caller may ask for lives in the tool layer, once.
+
 ### Feasibility results
 
 Drilling plan reconstruction **fails**. The dataset does contain eighteen drilling programmes,
