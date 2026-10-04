@@ -21,6 +21,9 @@ seen the data, so those criteria could fail honestly. Two of them did.
   that limit what can be claimed from them.
 - [`docs/data_manifest.md`](docs/data_manifest.md) records every file read, with checksums.
   Raw and processed data are never committed.
+- [`docs/expectation_results.md`](docs/expectation_results.md) is the measured performance of
+  the expectation engine on development data, the model comparison with the pre-registered
+  selection rule applied, and the failure modes that showed up while building it.
 - [`docs/architecture_decisions/`](docs/architecture_decisions/) holds the decisions and the
   reasoning, including both feasibility results.
 
@@ -38,6 +41,16 @@ aggregation, with no independently derived series to reconcile against. See
 
 Both were pre-registered before the data was seen, and the first was predicted to fail for a
 reason that turned out to be wrong. It fails on coverage, not on availability.
+
+### Expectation engine
+
+No candidate model clears the pre-registered bar. The requirement was to beat the better of two
+named naive baselines by 10 percent relative WAPE at three horizons; the best candidate manages
+6.6 percent at the shortest horizon and loses at the longest. The protocol's fallback therefore
+applies and `naive-median28` becomes the expectation model, deliberately not the
+better-scoring persistence baseline, which cannot detect sustained underperformance by
+construction. Calibration fails on both qualifying wells and the interval construction is the
+cause. Details and the full comparison are in the results document.
 
 Results, limitations and reproduction instructions grow as the work produces them. A figure
 appears here only when a run has produced it.
