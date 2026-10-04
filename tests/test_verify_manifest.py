@@ -20,8 +20,13 @@ def _data(tmp_path: Path, name: str, body: str) -> Path:
 def _manifest(tmp_path: Path, rows: str) -> Path:
     path = tmp_path / "manifest.md"
     path.write_text(
-        "| File | Source path or URL | Kind | Size (bytes) | SHA-256 | Retrieved | Used by |\n"
-        "|---|---|---|---|---|---|---|\n" + rows,
+        "# Data manifest\n\n## Source\n\n| Field | Value |\n|---|---|\n"
+        "| Dataset | something |\n\n## Files\n\n"
+        "| File | Source path | Kind | Size (bytes) | SHA-256 | Retrieved | Used by |\n"
+        "|---|---|---|---|---|---|---|\n" + rows + "\n## Collections\n\n"
+        "| Collection | Source path | Files | Size (bytes) | Tree hash | Used by |\n"
+        "|---|---|---|---|---|---|\n"
+        "| a set | some/path/ | 3 | 999 | " + "b" * 64 + " | tests |\n",
         encoding="utf-8",
     )
     return path
@@ -98,3 +103,19 @@ def test_dotted_paths_are_skipped_consistently_at_every_depth(tmp_path: Path) ->
     for path in walk(root):
         rows_out.append(path.relative_to(root).as_posix())
     assert rows_out == ["visible.csv"]
+
+
+def test_a_collection_row_is_not_read_as_a_file(tmp_path: Path) -> None:
+    """Collections carry a tree hash over a set of files, not a checksum of one file.
+
+    Parsing by shape alone reads a collection as a file and then reports that file as
+    missing, which would fail verification on a correct manifest.
+    """
+    root = tmp_path / "data"
+    f = _data(root, "a.csv", "x,y\n1,2\n")
+    rows = f"| a.csv | url | csv | {f.stat().st_size} | {sha256_of(f)} | 2026-10-04 | tests |\n"
+    manifest = _manifest(tmp_path, rows)
+    recorded, unparsed = read_manifest(manifest)
+    assert list(recorded) == ["a.csv"]
+    assert unparsed == []
+    assert verify(root, manifest) == 0

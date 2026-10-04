@@ -93,9 +93,17 @@ def read_manifest(manifest: Path) -> tuple[dict[str, tuple[int, str]], list[str]
     """
     recorded: dict[str, tuple[int, str]] = {}
     unparsed: list[str] = []
+    in_files = False
     for line in manifest.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
-        if not stripped.startswith("|") or SKIP.match(stripped):
+        # Only the Files section holds per-file checksums. Collections carry a tree hash
+        # over a set of files, which is not a checksum of anything on disk, and the other
+        # tables are prose. Parsing by shape alone would read a collection as a file and
+        # then report that file as missing.
+        if stripped.startswith("#"):
+            in_files = stripped.lower().lstrip("# ").startswith("files")
+            continue
+        if not in_files or not stripped.startswith("|") or SKIP.match(stripped):
             continue
         if any(word in stripped for word in HEADER_WORDS):
             continue
