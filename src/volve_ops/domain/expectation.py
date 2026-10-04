@@ -73,16 +73,24 @@ class FittedExpectation(BaseModel):
     lower_offset: float = 0.0
     upper_offset: float = 0.0
     rate_per_choke: float | None = None
+    widen_with_horizon: bool = True
 
     def predict(self, steps_ahead: int, *, choke: float | None = None) -> Prediction:
         """Expectation `steps_ahead` valid producing days after the end of the fit window.
 
-        The interval widens as the square root of the horizon. The offsets are fitted from
-        one-step residuals inside the window, and carrying them forward unchanged would claim
-        that a prediction four weeks out is as certain as one made the next day. Under
-        independent increments the error of a carried-forward level grows as the square root
-        of the number of steps, which is the simplest growth law that is not obviously wrong,
-        and it is stated here rather than tuned to make coverage come out right.
+        For candidate models the interval widens as the square root of the horizon. The offsets
+        come from one-step residuals inside the window, and carrying them forward unchanged
+        would claim that a prediction four weeks out is as certain as one made the next day.
+        Under independent increments the error of a carried-forward level grows as the square
+        root of the number of steps, which is the simplest growth law that is not obviously
+        wrong, and it is stated here rather than tuned to make coverage come out right.
+
+        The two naive baselines are excluded from that, with `widen_with_horizon` false. Their
+        interval is fixed by docs/eval_protocol.md section 3 as the empirical 10th and 90th
+        percentile of rate over the trailing 28 valid producing days, and section 13 exempts
+        both baselines from amendment. Widening their band would be an amendment to something
+        the protocol says cannot be amended, and since the selected expectation is one of them,
+        it would also change the published episodes.
         """
         t = float(steps_ahead)
         if self.rate_per_choke is not None and choke is not None:
@@ -95,7 +103,7 @@ class FittedExpectation(BaseModel):
         else:
             q = self.q_at_fit
         q = max(q, 0.0)
-        spread = math.sqrt(max(t, 1.0))
+        spread = math.sqrt(max(t, 1.0)) if self.widen_with_horizon else 1.0
         return Prediction(
             q_expected=q,
             lower=max(q + self.lower_offset * spread, 0.0),
@@ -132,6 +140,7 @@ class NaiveMedian28(ExpectationModel):
             q_at_fit=centre,
             lower_offset=_empirical_quantile(rates, LOWER_QUANTILE) - centre,
             upper_offset=_empirical_quantile(rates, UPPER_QUANTILE) - centre,
+            widen_with_horizon=False,
         )
 
 
@@ -151,11 +160,16 @@ class NaivePersistence(ExpectationModel):
             return None
         trailing = rates[-NAIVE_MEDIAN_WINDOW_DAYS:]
         last = rates[-1]
+        # Section 3 fixes the band at the trailing percentiles themselves, not at an offset
+        # from the point forecast. Re-centring on the last rate would shift the whole band by
+        # however far that day sat from the window median, which is a different interval from
+        # the one the protocol names.
         return FittedExpectation(
             model_name=self.name,
             q_at_fit=last,
-            lower_offset=_empirical_quantile(trailing, LOWER_QUANTILE) - median(trailing),
-            upper_offset=_empirical_quantile(trailing, UPPER_QUANTILE) - median(trailing),
+            lower_offset=_empirical_quantile(trailing, LOWER_QUANTILE) - last,
+            upper_offset=_empirical_quantile(trailing, UPPER_QUANTILE) - last,
+            widen_with_horizon=False,
         )
 
 
@@ -235,11 +249,18 @@ class HyperbolicDecline(ExpectationModel):
                 upper_offset=exponential.upper_offset,
             )
 
+        # Evaluating the curve backwards from the window's end drives the base non-positive
+        # once the window is longer than 2/(b*d). Clamping it, as an earlier version did, turns
+        # a domain error into a fitted value around 1e19, which produces a lower offset so
+        # negative that the band's lower edge is pinned at zero and the model records no
+        # exceedances by construction. Refusing to fit is the honest outcome: this curvature
+        # cannot describe this window.
         start = len(rates) - 1
-        fitted = [
-            exponential.q_at_fit / max(1.0 + self.b * d * (i - start), 1e-9) ** (1.0 / self.b)
-            for i in range(len(rates))
-        ]
+        bases = [1.0 + self.b * d * (i - start) for i in range(len(rates))]
+        if min(bases) <= 0.0:
+            return None
+
+        fitted = [exponential.q_at_fit / base ** (1.0 / self.b) for base in bases]
         lower, upper = _fit_residual_offsets(rates, fitted)
         return FittedExpectation(
             model_name=self.name,

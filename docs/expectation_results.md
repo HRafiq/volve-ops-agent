@@ -1,105 +1,128 @@
 # Expectation engine: measured performance
 
-Every figure here comes from development data only. The hold-out, which begins on 2014-07-25
-with a 90-day buffer before it, has not been fitted on, selected on, or looked at.
+Every figure here is produced by `scripts/run_expectation_study.py`, which is committed, and
+written alongside a run manifest carrying the commit, the input checksums, the split and the
+protocol version. A result that cannot be regenerated from the repository is not a result.
+
+Development data only. The hold-out begins on 2014-07-25 with a 90-day buffer before it, and
+the split is applied at the source rather than by remembering to filter at each call site.
 
 The candidate comparison and the selection rule were fixed in `docs/eval_protocol.md` before
-any of this was run. Section 8 requires a candidate to beat the better of two named naive
-baselines by at least 10 percent relative WAPE, at horizons of 7, 14 and 28 valid producing
-days, and to satisfy per-well calibration and bias conditions.
+any of this ran. Section 8 requires a candidate to beat the better of two named naive baselines
+by at least 10 percent relative WAPE at horizons of 7, 14 and 28 valid producing days, and to
+satisfy per-well calibration and bias conditions at every horizon.
 
 ## Result: no candidate passes
 
 | model | WAPE H=7 | H=14 | H=28 |
 |---|---:|---:|---:|
-| choke-scaled | **0.0953** | **0.1077** | 0.1366 |
-| naive-persistence | 0.1021 | 0.1096 | **0.1326** |
-| exponential-decline | 0.1121 | 0.1197 | 0.1430 |
-| hyperbolic-decline | 0.1121 | 0.1196 | 0.1427 |
-| naive-median28 | 0.1172 | 0.1204 | 0.1392 |
+| choke-scaled | **0.0984** | **0.1090** | 0.1321 |
+| exponential-decline | 0.1200 | 0.1240 | 0.1367 |
+| hyperbolic-decline | 0.1199 | 0.1239 | 0.1364 |
+| naive-median28 | 0.1211 | 0.1233 | **0.1297** |
+| naive-persistence | 0.1216 | 0.1236 | 0.1338 |
 
-2,597 evaluated days, across the four wells that have any stable reference window in the
-development period.
+2,548 evaluated days across the three wells with any stable reference window in the development
+period.
 
-The decline curves lose to a baseline that simply repeats yesterday's rate, by 8 to 10 percent.
-The operating-condition-aware model is the best of the five at the short horizons, improving on
-the better baseline by 6.6 percent at 7 days and 1.8 percent at 14, but it falls 3.0 percent
-behind at 28 and the condition requires all three horizons. Nothing reaches the 10 percent bar
-at any horizon.
+The operating-condition-aware model clears the 10 percent bar convincingly at the two shorter
+horizons, improving on the better baseline by 18.7 percent at 7 days and 11.6 percent at 14. It
+loses by 1.9 percent at 28, and section 8 requires all three. Both Arps decline forms gain about
+1 percent at 7 days and lose at the longer two.
 
-So the fallback fires, and it was written in advance for exactly this: `naive-median28` becomes
+So the fallback fires, and it matters that it was written in advance: `naive-median28` becomes
 the expectation model.
 
-**It is deliberately not `naive-persistence`, which scored better.** After a single day of
-reduced rate, persistence makes the reduced rate the expectation, so sustained underperformance
-becomes undetectable by construction. The baseline that wins on error is the one that cannot do
-the job, and a selection rule written after seeing this table would have been very tempted by
-it.
+A note on what nearly happened. The choke-scaled model is the best short-horizon expectation by
+a wide margin, and a selection rule written after seeing this table would have been very
+tempted to drop the 28-day horizon or soften the all-horizons requirement. The reason not to is
+not only procedural. A choke is often reduced *because* of a problem, so an expectation that
+follows the choke absorbs the consequences of the very thing an investigation exists to find.
+The model that scores best is the one most likely to explain away the episodes.
 
-## Calibration fails, and the cause is the interval not the data
+## Calibration fails, at every horizon, including pooled
 
-| model | 15/9-F-12 lower-tail | 15/9-F-14 lower-tail |
+Per-well containment, with the pooled fallback that section 8 specifies when fewer than half the
+field's six producers reach 150 evaluated days. Only two do.
+
+| model | H=7 pooled lower-tail | tolerated |
 |---|---|---|
-| choke-scaled | 0.192, CI [0.138, 0.257] | 0.366, CI [0.292, 0.446] |
-| exponential-decline | 0.346, CI [0.277, 0.420] | 0.236, CI [0.173, 0.309] |
-| hyperbolic-decline | 0.341, CI [0.272, 0.414] | 0.236, CI [0.173, 0.309] |
+| choke-scaled | 0.302, CI [0.255, 0.352] | 0.05 to 0.20 |
+| exponential-decline | 0.387, CI [0.337, 0.440] | 0.05 to 0.20 |
 
-The tolerated range is a Clopper-Pearson interval contained in 0.05 to 0.20. None of these is.
+Nothing is contained, per well or pooled. The intervals come from a window's own quantiles and,
+for the candidates, widen as the square root of the horizon. That growth law is stated rather
+than tuned, and it is clearly too slow: observed exceedance runs two to four times nominal.
+Modelling how the error of a carried-forward expectation actually grows is work for the
+evaluation phase, not something to adjust until coverage comes out right.
 
-The intervals are built from a window's own residual quantiles and widened by the square root
-of the horizon. That growth law is the simplest one that is not obviously wrong, and it is
-stated rather than tuned, but it is clearly too slow: observed exceedance runs two to four times
-nominal. Fixing it means modelling how the error of a carried-forward expectation actually
-grows, which is work for the evaluation phase rather than something to tune until the number
-comes out right.
+The two naive baselines are excluded from that widening. Section 3 fixes their interval as the
+empirical 10th and 90th percentile of rate over the trailing 28 valid producing days, and
+section 13 exempts both baselines from amendment. An earlier version of this code widened them
+along with the candidates, which was an undisclosed amendment to something the protocol says
+cannot be amended, and because the selected expectation is one of those baselines it changed
+the published episodes.
 
-Per-well bias passes on both qualifying wells, within 3.2 percent of mean rate.
+## Bias passes on the mean and fails on drift
 
-Only two of the four wells reach the 150 evaluated days the calibration condition requires. The
-protocol's own fallback for that case is a pooled check with its limitation stated.
+Mean residual sits within 3 percent of mean rate for every qualifying well and model, well
+inside the 5 percent bound. The split-half drift test that section 8 also requires fails
+extensively: for the selected expectation and the candidates alike, dozens of half-windows
+exceed the bound, with individual halves reaching 20 percent.
+
+That combination is the diagnosis. A model can be unbiased across a reference window while
+drifting badly within it, and the mean alone would have reported this expectation as unbiased.
 
 ## Known failure modes, observed rather than imagined
 
-**A single expectation carried too far is not an expectation.** The first version of the sweep
-fitted on one stable window and carried it across the rest of the record, up to 2,155 days for
-15/9-F-12. Because the interval widens with horizon, the band became wide enough that nothing
-could fall outside it and the detector found zero episodes on a field that visibly has some.
-Section 7's rule that the expectation comes from the most recent window ending before the
-candidate is not a detail; without it the detector silently stops working.
+**An expectation carried too far stops being an expectation.** The first sweep fitted on one
+stable window and carried it across the rest of the record, up to 2,155 days. With an interval
+that widens with horizon, the band became wide enough that nothing could fall outside it and
+the detector found zero episodes. Section 7's rule that the expectation comes from the most
+recent window ending before the candidate is not a detail; without it the detector silently
+stops working.
 
-**Regime segmentation that cuts at the worst day instead of the step finds nothing.** The choke
-test originally split a segment at the day furthest from the window median. For a clean step
-change, where a well is choked back on a date and stays there, that is the first day, so the
-algorithm peeled one day off at a time and never separated the two regimes. Cutting at the
-largest step between consecutive readings fixes it, and the change moved real results: one well
-gained an episode and another lost its only reference window.
+**Regime segmentation that cuts at the worst day instead of the step finds nothing.** Splitting
+a segment at the day furthest from its median peels one day off at a time for a clean step
+change, because that day is the first one. Cutting at the largest step between consecutive
+readings separates the regimes, and the change moved real results.
 
-**Decline curves lose to persistence on this field.** Arps curves are the standard expectation
-for a producing well and both forms came in 8 to 10 percent worse than repeating yesterday.
-Volve's producers are short-lived, frequently intervened, and operated against changing choke
-settings, so a smooth decline through a reference window is not what the next four weeks look
-like.
+**Widening a fixed baseline changes the answer.** Restoring the section 3 band took the episode
+count from 4 to 14. An interval is not a presentation choice when a detector triggers on its
+lower edge.
 
 ## Episodes opened on development data
 
-Using the selected expectation, the detector opens four episodes across four wells:
-
 | well | onset | offset | valid days | shortfall Sm3 | threshold Sm3 | deferred Sm3 |
 |---|---|---|---:|---:|---:|---:|
-| 15/9-F-12 | 2009-01-15 | 2009-01-27 | 13 | 14,133 | 10,617 | 267 |
-| 15/9-F-12 | 2010-01-18 | 2010-05-04 | 103 | 153,881 | 80,439 | 24,031 |
-| 15/9-F-12 | 2013-10-02 | 2013-10-26 | 25 | 5,764 | 1,991 | 593 |
-| 15/9-F-14 | 2009-05-29 | 2009-06-16 | 19 | 12,183 | 11,606 | 4,768 |
+| 15/9-F-12 | 2008-08-22 | 2008-09-10 | 15 | 15,074 | 6,869 | 20,625 |
+| 15/9-F-12 | 2009-01-13 | 2009-03-08 | 55 | 54,366 | 44,920 | 6,796 |
+| 15/9-F-12 | 2009-06-21 | 2009-07-18 | 28 | 45,680 | 20,300 | 0 |
+| 15/9-F-12 | 2010-01-14 | 2010-05-27 | 130 | 215,077 | 101,524 | 24,031 |
+| 15/9-F-12 | 2010-07-10 | 2010-08-06 | 28 | 18,819 | 10,706 | 372 |
+| 15/9-F-12 | 2011-02-17 | 2011-03-11 | 23 | 6,141 | 4,933 | 0 |
+| 15/9-F-12 | 2011-08-26 | 2012-03-12 | 151 | 31,623 | 28,201 | 35,939 |
+| 15/9-F-12 | 2013-09-05 | 2013-12-05 | 87 | 18,646 | 6,929 | 5,348 |
+| 15/9-F-12 | 2014-03-27 | 2014-04-25 | 29 | 1,566 | 1,147 | 758 |
+| 15/9-F-14 | 2009-05-29 | 2009-08-02 | 66 | 95,904 | 40,316 | 7,442 |
+| 15/9-F-14 | 2010-06-26 | 2010-07-12 | 17 | 8,977 | 6,553 | 170 |
+| 15/9-F-14 | 2012-01-31 | 2012-03-03 | 33 | 11,627 | 8,010 | 225 |
+| 15/9-F-14 | 2012-03-11 | 2012-03-27 | 17 | 3,911 | 3,186 | 165 |
+| 15/9-F-14 | 2014-03-22 | 2014-04-06 | 16 | 1,591 | 1,433 | 1,801 |
 
-Each clears its own volume threshold, which scales with the number of valid producing days in
-the window so that a long episode faces a proportionally larger bar than a short one. Deferred
-volume is reported separately from rate shortfall throughout: the second 15/9-F-12 episode lost
-153,881 Sm3 while flowing and a further 24,031 Sm3 to downtime, and those are different
-operational facts that should not be added together.
+Fourteen episodes on two wells. Each clears a volume threshold that scales with the number of
+valid producing days in its window, so a long episode faces a proportionally larger bar. Gap
+fractions are 0 or 1 percent throughout, so none is flagged as poorly evidenced. One is
+open-ended, reaching the end of the development period.
 
-Two wells open no episodes because they have no stable reference window in the development
-period at all, which for a field where half the producers arrived in 2014 is the expected
-outcome rather than a failure.
+Deferred volume is reported separately from rate shortfall throughout. The 2010 episode on
+15/9-F-12 lost 215,077 Sm3 while flowing and a further 24,031 Sm3 to downtime; the 2008 one lost
+more to downtime than to rate. Those are different operational facts and adding them would hide
+which was which.
+
+Four wells open no episodes: two have no stable reference window in the development period at
+all, which for a field where half the producers arrived in 2014 is the expected outcome.
 
 These are candidate episodes from a deterministic detector. Nothing here says why any of them
-happened.
+happened, and the calibration failures above mean the band they were detected against is
+narrower than it should be, so this count should be read as an upper bound.

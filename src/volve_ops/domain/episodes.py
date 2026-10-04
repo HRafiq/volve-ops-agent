@@ -94,6 +94,7 @@ def detect_episodes(
         # Extend through short recoveries until three consecutive days sit back inside.
         last_below = run_end
         scan = run_end + 1
+        recovered = False
         while scan < len(below):
             if below[scan]:
                 last_below = scan
@@ -104,8 +105,12 @@ def detect_episodes(
                 recovery += 1
                 scan += 1
             if recovery >= RECOVERY_RUN:
+                recovered = True
                 break
-        open_ended = scan >= len(below) and last_below == len(below) - 1
+        # Open-ended means no qualifying recovery was ever seen, whether the record ended on a
+        # below-band day or part-way through a recovery too short to close the episode. Testing
+        # whether the last day happened to be below the band answers a different question.
+        open_ended = not recovered
 
         first_index = valid_positions[cursor]
         last_index = valid_positions[last_below]
@@ -186,7 +191,11 @@ def sweep_well(
     episodes: list[Episode] = []
 
     for position, window in enumerate(in_order):
-        next_start = in_order[position + 1].start if position + 1 < len(in_order) else None
+        # A candidate inside the next window is still governed by this one: section 7 selects
+        # the most recent window *ending* before the candidate, and the next window has not
+        # ended yet. Stopping at the next window's start would leave every day inside a window
+        # unscanned by any sweep.
+        next_end = in_order[position + 1].end if position + 1 < len(in_order) else None
         in_window = [d for d in ordered if window.start <= d.day.production_date <= window.end]
         fitted = model.fit(in_window)
         reference = reference_rate_of(in_window)
@@ -197,9 +206,22 @@ def sweep_well(
             d
             for d in ordered
             if d.day.production_date > window.end
-            and (next_start is None or d.day.production_date < next_start)
+            and (next_end is None or d.day.production_date <= next_end)
         ]
         if governed:
             episodes.extend(detect_episodes(well, governed, fitted, reference))
 
-    return episodes
+    # `detect_episodes` sees one governed span and cannot tell the end of its slice from the
+    # end of the well's history, so it marks any episode that never recovers as open-ended.
+    # Only the sweep knows which of those actually reach the end of the record. The rest ended
+    # because the next reference window took over, which is not the same thing at all.
+    last_valid = max(
+        (d.day.production_date for d in ordered if d.day_class is DayClass.VALID_PRODUCING),
+        default=None,
+    )
+    return [
+        episode.model_copy(
+            update={"open_ended": episode.open_ended and episode.offset == last_valid}
+        )
+        for episode in episodes
+    ]

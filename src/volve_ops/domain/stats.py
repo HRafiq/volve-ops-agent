@@ -8,7 +8,23 @@ criterion does what it claims.
 
 from __future__ import annotations
 
-from math import comb
+from math import exp, lgamma, log, log1p
+
+
+def _binomial_pmf(i: int, n: int, p: float) -> float:
+    """Binomial probability mass, in log space.
+
+    The direct form multiplies an exact integer binomial coefficient by a float, which
+    overflows above roughly a thousand trials. That is not a theoretical limit here: the
+    pooled calibration check runs to a few thousand evaluated days, so the direct form would
+    crash on exactly the case the protocol falls back to.
+    """
+    if p <= 0.0:
+        return 1.0 if i == 0 else 0.0
+    if p >= 1.0:
+        return 1.0 if i == n else 0.0
+    log_coefficient = lgamma(n + 1) - lgamma(i + 1) - lgamma(n - i + 1)
+    return exp(log_coefficient + i * log(p) + (n - i) * log1p(-p))
 
 
 def binomial_tail_at_least(k: int, n: int, p: float) -> float:
@@ -17,7 +33,7 @@ def binomial_tail_at_least(k: int, n: int, p: float) -> float:
         return 1.0
     if k > n:
         return 0.0
-    return sum(comb(n, i) * p**i * (1.0 - p) ** (n - i) for i in range(k, n + 1))
+    return sum(_binomial_pmf(i, n, p) for i in range(k, n + 1))
 
 
 def binomial_tail_at_most(k: int, n: int, p: float) -> float:
@@ -26,7 +42,7 @@ def binomial_tail_at_most(k: int, n: int, p: float) -> float:
         return 0.0
     if k >= n:
         return 1.0
-    return sum(comb(n, i) * p**i * (1.0 - p) ** (n - i) for i in range(0, k + 1))
+    return sum(_binomial_pmf(i, n, p) for i in range(0, k + 1))
 
 
 def clopper_pearson(

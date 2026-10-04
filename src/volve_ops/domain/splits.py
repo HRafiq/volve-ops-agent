@@ -13,7 +13,7 @@ remembering to restrict it at every call site.
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
@@ -74,7 +74,7 @@ def development_only(
 
 
 def cold_start_wells(
-    history_by_well: dict[str, Sequence[ClassifiedDay]], split: TemporalSplit
+    history_by_well: Mapping[str, Sequence[ClassifiedDay]], split: TemporalSplit
 ) -> tuple[str, ...]:
     """Wells with too little history before the buffer to be scored on the hold-out.
 

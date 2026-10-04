@@ -12,7 +12,7 @@ expectation across a sustained episode.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from statistics import mean
 
 from pydantic import BaseModel, ConfigDict
@@ -40,6 +40,7 @@ class EvaluatedDay(BaseModel):
     well: str
     horizon: int
     steps_ahead: int
+    window_index: int
     actual: float
     predicted: float
     lower: float
@@ -111,7 +112,7 @@ def backtest_well(
     position = {index: n for n, (index, _, _) in enumerate(sequence)}
     results: list[EvaluatedDay] = []
 
-    for window in windows:
+    for window_index, window in enumerate(windows):
         in_window = [d for d in ordered if window.start <= d.day.production_date <= window.end]
         fitted = model.fit(in_window)
         if fitted is None:
@@ -139,6 +140,7 @@ def backtest_well(
                         well=well,
                         horizon=horizon,
                         steps_ahead=step,
+                        window_index=window_index,
                         actual=actual,
                         predicted=prediction.q_expected,
                         lower=prediction.lower,
@@ -149,8 +151,8 @@ def backtest_well(
 
 
 def run_backtest(
-    history_by_well: dict[str, Sequence[ClassifiedDay]],
-    windows_by_well: dict[str, Sequence[StableWindow]],
+    history_by_well: Mapping[str, Sequence[ClassifiedDay]],
+    windows_by_well: Mapping[str, Sequence[StableWindow]],
     *,
     models: Sequence[ExpectationModel] = CANDIDATE_MODELS,
     horizons: Sequence[int] = HORIZONS,
@@ -203,57 +205,127 @@ def condition_1_relative_wape(
     )
 
 
-def condition_2_lower_tail(result: ModelResult, *, horizon: int = HORIZONS[0]) -> ConditionOutcome:
-    """Per-well Clopper-Pearson interval for the lower-tail rate, contained in [0.05, 0.20]."""
+def condition_2_lower_tail(
+    result: ModelResult,
+    *,
+    horizons: Sequence[int] = HORIZONS,
+    producer_count: int | None = None,
+) -> ConditionOutcome:
+    """Per-well Clopper-Pearson containment of the lower-tail rate, at every horizon.
+
+    Two things the first version of this got wrong, both of which the protocol is explicit
+    about. The evaluability denominator is the field's oil producers, not the wells that happen
+    to have an evaluated day: a model evaluated on two of six producers has not been checked on
+    the field. And when fewer than half reach the qualifying count, section 8 does not say the
+    condition is unevaluable; it says to pool across all evaluated well-days under the same
+    bounds and label the result as pooled. Pooling is the weaker test, because a pooled rate can
+    sit inside the bounds while one well runs at 0.03 and another at 0.25, so the per-well rates
+    are reported beside it.
+    """
     low, high = LOWER_TAIL_BOUNDS
-    qualifying, lines, passed = 0, [], True
-    for well in result.wells():
-        rows = [e for e in result.for_well(well) if e.horizon == horizon]
-        if len(rows) < CALIBRATION_MIN_DAYS:
-            lines.append(f"{well}: {len(rows)} days, report-only")
-            continue
-        qualifying += 1
-        k = sum(1 for r in rows if r.below_lower)
-        lo, hi = clopper_pearson(k, len(rows))
-        ok = lo >= low and hi <= high
-        passed = passed and ok
-        verdict = "ok" if ok else "FAIL"
-        lines.append(
-            f"{well}: {k}/{len(rows)}={k / len(rows):.3f} CI [{lo:.3f},{hi:.3f}] {verdict}"
-        )
-    total_wells = len(result.wells())
-    evaluable = qualifying >= total_wells / 2 if total_wells else False
+    wells = result.wells()
+    denominator = producer_count if producer_count is not None else len(wells)
+    lines: list[str] = []
+    passed = True
+    qualifying_overall = 0
+
+    for horizon in horizons:
+        qualifying = 0
+        for well in wells:
+            rows = [e for e in result.for_well(well) if e.horizon == horizon]
+            if len(rows) < CALIBRATION_MIN_DAYS:
+                continue
+            qualifying += 1
+            k = sum(1 for r in rows if r.below_lower)
+            lo, hi = clopper_pearson(k, len(rows))
+            ok = lo >= low and hi <= high
+            passed = passed and ok
+            lines.append(
+                f"H={horizon} {well}: {k}/{len(rows)}={k / len(rows):.3f} "
+                f"CI [{lo:.3f},{hi:.3f}] {'ok' if ok else 'FAIL'}"
+            )
+        qualifying_overall = max(qualifying_overall, qualifying)
+
+        if denominator and qualifying < denominator / 2:
+            rows = [e for e in result.evaluated if e.horizon == horizon]
+            if not rows:
+                continue
+            k = sum(1 for r in rows if r.below_lower)
+            lo, hi = clopper_pearson(k, len(rows))
+            ok = lo >= low and hi <= high
+            passed = passed and ok
+            lines.append(
+                f"H={horizon} POOLED ({qualifying}/{denominator} producers reached "
+                f"{CALIBRATION_MIN_DAYS} days): {k}/{len(rows)}={k / len(rows):.3f} "
+                f"CI [{lo:.3f},{hi:.3f}] {'ok' if ok else 'FAIL'}"
+            )
+
     return ConditionOutcome(
         name="lower-tail calibration",
-        passed=passed and evaluable,
-        evaluable=evaluable,
-        detail=f"{qualifying}/{total_wells} wells reached {CALIBRATION_MIN_DAYS} days; "
-        + "; ".join(lines),
+        passed=passed and bool(lines),
+        evaluable=bool(lines),
+        detail="; ".join(lines) if lines else "no evaluated days",
     )
 
 
-def condition_3_bias(result: ModelResult, *, horizon: int = HORIZONS[0]) -> ConditionOutcome:
-    """Mean residual within 5% of the well's mean observed rate."""
-    qualifying, lines, passed = 0, [], True
-    for well in result.wells():
-        rows = [e for e in result.for_well(well) if e.horizon == horizon]
-        if len(rows) < BIAS_MIN_DAYS:
-            lines.append(f"{well}: {len(rows)} days, report-only")
-            continue
-        qualifying += 1
-        mean_actual = mean(r.actual for r in rows)
-        if mean_actual == 0.0:
-            continue
-        ratio = mean(r.residual for r in rows) / mean_actual
-        ok = abs(ratio) <= BIAS_TOLERANCE
-        passed = passed and ok
-        lines.append(f"{well}: mean residual {ratio:+.1%} of mean rate {'ok' if ok else 'FAIL'}")
-    total_wells = len(result.wells())
-    evaluable = qualifying >= total_wells / 2 if total_wells else False
+def condition_3_bias(
+    result: ModelResult, *, horizons: Sequence[int] = HORIZONS
+) -> ConditionOutcome:
+    """Mean residual within 5% of the well's mean rate, at every horizon, with a drift test.
+
+    Section 8 asks for two things here and the first version implemented one. The bound applies
+    to the mean residual, not the median, because cumulative shortfall is a sum and a skewed
+    residual distribution can sit at median zero while accumulating a standing bias. And drift
+    is tested by splitting each evaluated window at its midpoint in valid producing days and
+    requiring the same bound in both halves, which is checkable where an eyeball test is not.
+    """
+    lines: list[str] = []
+    passed = True
+    evaluated_any = False
+
+    for horizon in horizons:
+        for well in result.wells():
+            rows = [e for e in result.for_well(well) if e.horizon == horizon]
+            if len(rows) < BIAS_MIN_DAYS:
+                continue
+            evaluated_any = True
+            mean_actual = mean(r.actual for r in rows)
+            if mean_actual == 0.0:
+                continue
+            ratio = mean(r.residual for r in rows) / mean_actual
+            ok = abs(ratio) <= BIAS_TOLERANCE
+            passed = passed and ok
+            lines.append(f"H={horizon} {well}: mean {ratio:+.1%} {'ok' if ok else 'FAIL'}")
+
+            drift_failures = []
+            for window_index in sorted({r.window_index for r in rows}):
+                window_rows = sorted(
+                    (r for r in rows if r.window_index == window_index),
+                    key=lambda r: r.steps_ahead,
+                )
+                if len(window_rows) < 4:
+                    continue
+                midpoint = len(window_rows) // 2
+                for label, half in (
+                    ("first", window_rows[:midpoint]),
+                    ("second", window_rows[midpoint:]),
+                ):
+                    half_actual = mean(r.actual for r in half)
+                    if half_actual == 0.0:
+                        continue
+                    half_ratio = mean(r.residual for r in half) / half_actual
+                    if abs(half_ratio) > BIAS_TOLERANCE:
+                        drift_failures.append(f"w{window_index}/{label} {half_ratio:+.1%}")
+            if drift_failures:
+                passed = False
+                lines.append(
+                    f"H={horizon} {well}: drift FAIL in {len(drift_failures)} half-windows "
+                    f"(e.g. {', '.join(drift_failures[:3])})"
+                )
+
     return ConditionOutcome(
-        name="per-well bias",
-        passed=passed and evaluable,
-        evaluable=evaluable,
-        detail=f"{qualifying}/{total_wells} wells reached {BIAS_MIN_DAYS} days; "
-        + "; ".join(lines),
+        name="per-well bias and drift",
+        passed=passed and evaluated_any,
+        evaluable=evaluated_any,
+        detail="; ".join(lines) if lines else "no well reached the minimum day count",
     )

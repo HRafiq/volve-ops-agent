@@ -30,17 +30,17 @@ def ledger_with_a_shortfall() -> tuple[FactLedger, DerivedFact]:
     )
     shortfall = led.derive(
         "rate_shortfall",
-        600.0,
         "Sm3",
         formula="expected - actual",
         inputs=[expected, actual],
+        compute=lambda e, a: e - a,
     )
     percent = led.derive(
         "shortfall_pct",
-        25.0,
         "percent",
         formula="shortfall / expected * 100",
         inputs=[shortfall, expected],
+        compute=lambda s, e: s / e * 100.0,
     )
     return led, percent
 
@@ -79,13 +79,15 @@ def test_deriving_from_a_fact_outside_the_ledger_is_refused() -> None:
     inside = led.record("a", 1.0, "Sm3", source="s")
     outside = Fact(id="fact_999999", metric="b", value=2.0, unit="Sm3", source="elsewhere")
     with pytest.raises(LineageError, match="not in the ledger"):
-        led.derive("c", 3.0, "Sm3", formula="a + b", inputs=[inside, outside])
+        led.derive(
+            "c", "Sm3", formula="a + b", inputs=[inside, outside], compute=lambda a, b: a + b
+        )
 
 
 def test_a_derived_fact_with_no_inputs_is_refused() -> None:
     led = FactLedger()
     with pytest.raises(LineageError, match="no inputs"):
-        led.derive("invented", 42.0, "Sm3", formula="trust me", inputs=[])
+        led.derive("invented", "Sm3", formula="x", inputs=[], compute=lambda: 42.0)
 
 
 def test_an_unknown_fact_cannot_be_fetched_or_checked() -> None:

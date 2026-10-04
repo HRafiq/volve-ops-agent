@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
-from collections.abc import Mapping, Sequence
+import json
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -127,22 +128,31 @@ class FactLedger:
     def derive(
         self,
         metric: str,
-        value: float,
         unit: str,
         *,
         formula: str,
         inputs: Sequence[AnyFact],
+        compute: Callable[..., float],
     ) -> DerivedFact:
-        """Store a computed quantity, refusing one whose inputs are not already in the ledger.
+        """Compute and store a derived quantity. The value is produced, never asserted.
 
-        Refusing is the point. A derived fact whose inputs are unknown is a number wearing the
-        costume of a traceable one.
+        The caller supplies the computation rather than its answer. That is the difference
+        between a formula that documents a number and one that produces it: a derived fact
+        cannot disagree with its own stated derivation, because the derivation is what made it.
+        An earlier version took the value as an argument and stored the formula as text beside
+        it, which would have accepted `derive("sum", 999999, formula="a + b", inputs=[100, 50])`
+        without complaint.
+
+        Inputs must already be in the ledger. A derived fact whose inputs are unknown is a
+        number wearing the costume of a traceable one.
         """
         if not inputs:
             raise LineageError(f"derived fact {metric!r} has no inputs")
         for parent in inputs:
             if parent.id not in self._facts:
                 raise LineageError(f"input {parent.id} is not in the ledger")
+
+        value = compute(*(p.value for p in inputs))
 
         derived = DerivedFact(
             id=self._next_id("derived"),
@@ -174,23 +184,54 @@ class FactLedger:
         return [f for f in self.lineage(fact_id) if isinstance(f, Fact)]
 
     def check(self, fact_id: str) -> None:
-        """Raise unless every step of this fact's lineage resolves to measurements.
+        """Raise unless this fact's lineage is intact and every unit along it agrees.
 
-        This is the gate a finding has to pass before it can be published.
+        Reaching a measurement is not on its own worth checking: `derive` already refuses
+        unknown inputs and the ledger is append-only, so every stored fact reaches one by
+        construction. What this does check is that the chain is complete, that no step is
+        missing from the store, and that a derived quantity has not silently mixed units,
+        which is the realistic way a lineage goes wrong once more than one source feeds it.
         """
+        fact = self.get(fact_id)
         roots = self.roots(fact_id)
         if not roots:
             raise LineageError(f"{fact_id} resolves to no measurement")
 
-    def manifest_hash(self) -> str:
-        """A stable digest of the whole ledger, for a run manifest.
+        for step in self.lineage(fact_id):
+            if isinstance(step, DerivedFact):
+                for parent_id in step.input_fact_ids:
+                    if parent_id not in self._facts:
+                        raise LineageError(f"{fact_id}: input {parent_id} of {step.id} is missing")
+        if isinstance(fact, DerivedFact):
+            units = {self.get(i).unit for i in fact.input_fact_ids}
+            if len(units) > 1 and fact.unit not in {"percent", "ratio", "dimensionless"}:
+                raise LineageError(
+                    f"{fact_id} is {fact.unit} but its inputs mix {sorted(units)}; "
+                    "a derivation across units must say what it produced"
+                )
 
-        Two runs that produce the same facts produce the same digest, so a result can be tied
-        to the exact numbers it was computed from rather than to a promise about them.
+    def manifest_hash(self) -> str:
+        """A digest of the ledger's content, for a run manifest.
+
+        Hashed on content rather than on identifiers, and over a canonical ordering, so that two
+        runs producing the same facts agree even if they recorded them in a different order.
+        Hashing the stored ids instead would make the digest depend on insertion order, since
+        ids are issued by a counter, and a digest that changes when nothing of substance did is
+        worse than none: it trains the reader to ignore it.
         """
-        digest = hashlib.sha256()
-        for key in sorted(self._facts):
-            fact = self._facts[key]
+
+        def canonical(fact: AnyFact) -> str:
             payload: Any = fact.model_dump(mode="json")
-            digest.update(repr(sorted(payload.items())).encode())
+            payload.pop("id", None)
+            if isinstance(fact, DerivedFact):
+                # Replace input ids with the content of what they point at, recursively, so
+                # lineage is part of the digest without the ids being part of it.
+                payload["input_fact_ids"] = sorted(
+                    canonical(self.get(i)) for i in fact.input_fact_ids
+                )
+            return json.dumps(payload, sort_keys=True, default=str)
+
+        digest = hashlib.sha256()
+        for entry in sorted(canonical(f) for f in self._facts.values()):
+            digest.update(entry.encode())
         return digest.hexdigest()

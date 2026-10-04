@@ -6,7 +6,7 @@ human review.
 
 ## Status
 
-Data profiled, both feasibility criteria executed. No forecasting or agent results exist yet.
+Data profiled, both feasibility criteria executed, deterministic expectation and episode layer built and measured. No agent exists yet.
 
 The evaluation protocol was pushed before any dataset file was retrieved. That ordering is the
 point: every threshold the project will be judged against was fixed while its author had not
@@ -45,8 +45,8 @@ reason that turned out to be wrong. It fails on coverage, not on availability.
 ### Expectation engine
 
 No candidate model clears the pre-registered bar. The requirement was to beat the better of two
-named naive baselines by 10 percent relative WAPE at three horizons; the best candidate manages
-6.6 percent at the shortest horizon and loses at the longest. The protocol's fallback therefore
+named naive baselines by 10 percent relative WAPE at three horizons; the best candidate clears it
+at the two shorter horizons, by 18.7 and 11.6 percent, and loses by 1.9 percent at the longest. The protocol's fallback therefore
 applies and `naive-median28` becomes the expectation model, deliberately not the
 better-scoring persistence baseline, which cannot detect sustained underperformance by
 construction. Calibration fails on both qualifying wells and the interval construction is the
