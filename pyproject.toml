@@ -1,0 +1,56 @@
+[project]
+name = "volve-ops-agent"
+version = "0.1.0"
+description = "Evidence-bound operational investigation over the Volve open dataset"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+
+# Exact pins throughout. A result is only reproducible if the manifest can name the
+# versions that produced it, and several packages this project will add later move fast.
+#
+# Only what the code imports today. A spreadsheet reader is deliberately absent: it is the
+# phase that adds a source reader that needs one, and pandas represents a blank numeric cell
+# as NaN, so introducing it before the model rejects non-finite floats would quietly put
+# NaN into fields whose whole contract is that missing stays missing.
+dependencies = [
+    "pydantic==2.9.2",
+    "defusedxml==0.7.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.3",
+    "ruff==0.6.9",
+    "mypy==1.11.2",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src", "scripts", "tests"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+# defusedxml ships no type stubs. Scoped to that package so the rest stays strict.
+module = ["defusedxml.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"

@@ -1,0 +1,58 @@
+name: ci
+
+# Deterministic checks only. This workflow must pass without any model API key, so that
+# a contributor or a reviewer can run the whole thing. Paid model evaluation is a
+# separate, manually triggered workflow, because a push should never be able to spend
+# money and a scored evaluation run should never happen by accident.
+
+on:
+  push:
+    branches: ["main", "develop", "phase-*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # First, before anything that could fail for an unrelated reason. A lint nit must
+      # never be the reason the check guarding a public repository did not run.
+      - name: No data or secrets committed
+        # The local pre-commit hook is not cloned, so CI repeats the part that matters.
+        # Paths only: this cannot detect private content pasted into a tracked file.
+        run: |
+          if git ls-files | grep -iE '(^|/)_private/|(^|/)handoff|console_decisions|learning_notes|(^|/)data/|(^|/)\.env$'; then
+            echo "Tracked file matches a path that must never be committed." >&2
+            exit 1
+          fi
+          echo "No private, data or secret paths tracked."
+
+      - name: Install
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format
+        run: ruff format --check .
+
+      - name: Types
+        run: mypy
+
+      - name: Tests
+        run: pytest
