@@ -1,8 +1,9 @@
 # Evaluation protocol
 
-Version: v0
+Version: v1
 Date: 2026-10-04
 Status: pre-registered. Pushed before the work it judges.
+Amendments since v0: one, in section 6, recorded in section 13 and labelled post-inspection.
 
 This file states how the project will be judged, and it is pushed to the public remote
 before the runs it judges happen. The published history is the evidence. Pass marks,
@@ -217,11 +218,18 @@ rates, so both are fixed here rather than in the implementation.
 
 Each well-day is assigned exactly one class, by the first rule that matches:
 
-1. **Missing**, if on-stream hours is absent, or oil volume is absent, or well status is
-   absent on a day where a status field exists. Excluded everywhere and flagged. Missing
-   is never coerced to zero. Zero means measured zero. Per-row nulls are the normal case
-   in a daily production record rather than an edge case, which is why a null status
-   lands here instead of being read as "not producing".
+1. **Missing**, if on-stream hours is absent; or well status is absent on a day where a
+   status field exists; or oil volume is absent on a day whose status indicates production,
+   or whose source carries no status field at all. Excluded everywhere and flagged. Missing
+   is never coerced to zero. Zero means measured zero. Per-row nulls are the normal case in a
+   daily production record rather than an edge case, which is why a null status lands here
+   instead of being read as "not producing".
+
+   The qualifier on oil volume is what stops an injector being called missing. A water
+   injector has no oil volume by nature rather than by omission, and an unqualified test
+   would class every one of its days as a gap in the record. Quarantine is still tested
+   before non-producing, so a physically impossible injector row, for instance one reporting
+   more than 24 on-stream hours, is still caught rather than waved through.
 2. **Quarantined**, if the day fails any physical check in section 7. Excluded from
    fitting and from evaluation, counted, and the quarantined fraction per well is
    reported next to every result that depends on it.
@@ -676,5 +684,42 @@ point: a reader can then discount the change instead of taking it on trust.
 The two baselines in section 3 are exempt. They cannot be amended, because a pass mark
 defined relative to a baseline means nothing if the baseline can move.
 
-Tightening a pass mark after seeing a result that failed it is not an amendment. It is
-the failure mode this document exists to prevent.
+Tightening a pass mark after seeing a result that failed it is not an amendment. It is the
+failure mode this document exists to prevent.
+
+### Amendment 1, v0 to v1
+
+Date: 2026-10-04. Made **after** the production data was inspected, and labelled as such
+wherever a result that depends on it is reported.
+
+Section 6, rule 1. Previously a day was missing if on-stream hours or oil volume was absent,
+or if well status was absent where a status field exists. Now the oil-volume test applies only
+to a day whose status indicates production, or whose source carries no status field.
+
+Reason: applying the test unconditionally classed every water-injector day as missing, because
+an injector reports no oil volume. In the Volve production data that is 6,473 of 15,634 rows.
+What changes is the missing fraction this protocol requires to be reported beside every
+dependent result: it falls from 41.4 percent of the record to 1.8 percent, because those rows
+were injectors behaving normally rather than gaps.
+
+Measured effect of the change, classifying all 15,634 rows under both wordings: 6,181 rows move
+from missing to non-producing and 7 move from missing to quarantined, the latter being injector
+rows that now reach the physical checks instead of being short-circuited. No row enters or
+leaves valid producing, downtime or partial, which are the only three classes that carry an
+expectation. Every quantity built on them is therefore untouched in both directions: normalised
+rate, expected volume, deferred volume, cumulative shortfall, WAPE, calibration, and the
+section 9 volume criterion.
+
+Two routes by which it could in principle have mattered, checked rather than assumed. Section 7
+disqualifies a stable reference window containing any quarantined day, while a missing day does
+not disqualify one, so the 7 newly quarantined rows could have changed which window is selected
+and therefore `q_ref` and the section 9 threshold. They do not: all 7 are injection days on
+15/9-F-4, which never produces, and on 15/9-F-5 between 2008 and 2014, outside its producing
+span of 21 April to 26 August 2016. Second, section 6 flags an episode whose window is more than
+one third quarantined or missing as poorly evidenced, and lowering the missing count lowers that
+fraction. No producing well's episode window can contain those rows, for the same reason.
+
+No threshold moved. No pass mark moved. The change was not prompted by any result failing a
+criterion, and the detector had not been run when it was made. A reader who wants to check this
+rather than take it on trust can reclassify under both wordings; the counts above are what that
+produces.

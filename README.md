@@ -6,7 +6,7 @@ human review.
 
 ## Status
 
-Data profiled, both feasibility criteria executed. No forecasting or agent results exist yet.
+Data profiled, both feasibility criteria executed, deterministic expectation and episode layer built and measured. No agent exists yet.
 
 The evaluation protocol was pushed before any dataset file was retrieved. That ordering is the
 point: every threshold the project will be judged against was fixed while its author had not
@@ -17,12 +17,21 @@ seen the data, so those criteria could fail honestly. Two of them did.
   measured against named naive baselines, episode criteria, the temporal split and frozen
   hold-out, and leakage rules.
 - [`docs/data_profile.md`](docs/data_profile.md) is what the data turned out to be: six oil
-  producers, 7,894 valid producing days, 1,759 daily drilling reports, and the coverage gaps
+  producers, 7,893 valid producing days, 1,759 daily drilling reports, and the coverage gaps
   that limit what can be claimed from them.
 - [`docs/data_manifest.md`](docs/data_manifest.md) records every file read, with checksums.
   Raw and processed data are never committed.
+- [`docs/expectation_results.md`](docs/expectation_results.md) is the measured performance of
+  the expectation engine on development data, the model comparison with the pre-registered
+  selection rule applied, and the failure modes that showed up while building it.
 - [`docs/architecture_decisions/`](docs/architecture_decisions/) holds the decisions and the
   reasoning, including both feasibility results.
+
+The deterministic layer is reachable three ways, all over the same services. `src/volve_ops/domain/`
+holds the engine; `src/volve_ops/tools/` wraps it in typed, bounded tools that refuse an
+over-large request rather than truncating it; and `src/volve_ops/mcp_server/` exposes those
+tools over MCP as an optional extra. The adapter decides nothing, which is the point: a rule
+about what a caller may ask for lives in the tool layer, once.
 
 ### Feasibility results
 
@@ -38,6 +47,16 @@ aggregation, with no independently derived series to reconcile against. See
 
 Both were pre-registered before the data was seen, and the first was predicted to fail for a
 reason that turned out to be wrong. It fails on coverage, not on availability.
+
+### Expectation engine
+
+No candidate model clears the pre-registered bar. The requirement was to beat the better of two
+named naive baselines by 10 percent relative WAPE at three horizons; the best candidate clears it
+at the two shorter horizons, by 18.7 and 11.6 percent, and loses by 1.9 percent at the longest. The protocol's fallback therefore
+applies and `naive-median28` becomes the expectation model, deliberately not the
+better-scoring persistence baseline, which cannot detect sustained underperformance by
+construction. Calibration fails on both qualifying wells and the interval construction is the
+cause. Details and the full comparison are in the results document.
 
 Results, limitations and reproduction instructions grow as the work produces them. A figure
 appears here only when a run has produced it.

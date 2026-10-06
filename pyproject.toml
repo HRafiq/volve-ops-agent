@@ -8,16 +8,22 @@ license = { file = "LICENSE" }
 # Exact pins throughout. A result is only reproducible if the manifest can name the
 # versions that produced it, and several packages this project will add later move fast.
 #
-# Only what the code imports today. A spreadsheet reader is deliberately absent: it is the
-# phase that adds a source reader that needs one, and pandas represents a blank numeric cell
-# as NaN, so introducing it before the model rejects non-finite floats would quietly put
-# NaN into fields whose whole contract is that missing stays missing.
+# Only what the code imports today. openpyxl rather than pandas for the workbook: it yields
+# None for an empty cell, where pandas yields NaN, and NaN in a field whose contract is that
+# missing stays missing would be neither missing nor quarantined and would poison every later
+# sum. The canonical model rejects non-finite floats as a second line of defence.
 dependencies = [
     "pydantic==2.9.2",
     "defusedxml==0.7.1",
+    "openpyxl==3.1.5",
 ]
 
 [project.optional-dependencies]
+# The MCP adapter is optional on purpose: the domain services and the tool layer work without
+# it, and the deterministic CI job should not need a protocol server to run unit tests.
+mcp = [
+    "mcp==1.9.4",
+]
 dev = [
     "pytest==8.3.3",
     "ruff==0.6.9",
@@ -47,8 +53,8 @@ files = ["src", "scripts", "tests"]
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-# defusedxml ships no type stubs. Scoped to that package so the rest stays strict.
-module = ["defusedxml.*"]
+# Neither package ships type stubs. Scoped to them so the rest stays strict.
+module = ["defusedxml.*", "openpyxl.*", "mcp.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
