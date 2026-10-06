@@ -66,7 +66,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("workbook", type=Path)
     parser.add_argument("report_dir", type=Path)
-    parser.add_argument("--manifest", type=Path, default=None)
+    # Defaulted rather than optional. With no default this script wrote no manifest unless asked,
+    # so the evaluation harness audited a stale one and never saw the dates this run fitted on.
+    parser.add_argument("--manifest", type=Path, default=Path("data/cache/run_manifest.json"))
     args = parser.parse_args(argv)
 
     history = load_volve_production(args.workbook)
@@ -78,7 +80,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     full = {w: history.for_well(w) for w in producers}
     development = {w: development_only(full[w], split) for w in producers}
-    usable = {w: days for w, days in development.items() if days}
+    # Wells that actually produce. `if days` kept any well with a development row, which retained
+    # 15/9-F-5: a water injector with 2,429 development rows and zero valid producing days. It got
+    # no stable window and no fit, so nothing it touched moved, but it inflated every "producing
+    # wells" figure by one and put a section 16 hold-out well into the population.
+    usable = {
+        w: days
+        for w, days in development.items()
+        if any(d.day_class is DayClass.VALID_PRODUCING for d in days)
+    }
     windows = {
         w: stable_reference_windows(days, activity_dates=activity.get(well_of(w), set()))
         for w, days in usable.items()
@@ -181,6 +191,15 @@ def main(argv: list[str] | None = None) -> int:
         },
         "evaluated_days": {name: len(r.evaluated) for name, r in results.items()},
         "episodes": len(episodes),
+        # Every date this run actually fitted and swept on, per well. Recorded so that protocol
+        # section 19.2's third leakage check can test the dates a script used rather than
+        # re-deriving them with the same filter it is meant to be auditing. Independent review
+        # showed the audit could not otherwise see a leak here at all: it was testing the negation
+        # of the comprehension that produced its own input.
+        "fitted_day_dates": {
+            well: sorted(d.day.production_date.isoformat() for d in days)
+            for well, days in sorted(usable.items())
+        },
     }
     target = args.manifest or Path("run_manifest.json")
     target.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

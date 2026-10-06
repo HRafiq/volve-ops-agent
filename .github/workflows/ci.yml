@@ -61,10 +61,26 @@ jobs:
       - name: Tests
         run: pytest
 
+      # Section 19.10's free half: the harness calls no model, so it belongs here.
+      #
+      # It does not run on GitHub, and that is worth stating rather than implying. The harness needs
+      # the cached dataset, `/data/` is gitignored, so the condition below is always false on a
+      # runner and the step reports a skip. The gates themselves are covered on every push by
+      # tests/test_evaluation.py, which exercises each one's failing case; this step is what runs
+      # for anyone who has the share locally.
+      - name: Evaluation harness, section 19 pass marks (local dataset only)
+        run: |
+          if [ -f "data/cache/Volve production data.xlsx" ] && [ -d data/cache/ddr_xml ]; then
+            python scripts/run_evaluation.py "data/cache/Volve production data.xlsx" data/cache/ddr_xml
+          else
+            echo "Cached dataset absent; the harness needs it. Skipped, not passed."
+          fi
+
   # The project claims the domain services and the tool layer work without MCP installed.
   # That claim is only true if something checks it, and the job above cannot: it installs the
   # extra. This one proves nothing imports mcp eagerly and that the adapter's tests skip
   # rather than fail.
+
   without-optional-extras:
     runs-on: ubuntu-latest
     timeout-minutes: 10
