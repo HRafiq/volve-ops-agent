@@ -8,10 +8,10 @@ human review.
 
 Data profiled, both feasibility criteria executed, the deterministic expectation and episode layer
 built and measured, drilling-report extraction running, the development cause-label set produced and
-scored against both fixed baselines, and a bounded investigation controller running over all fourteen
-detected episodes with its five pre-registered gates passing. No model has yet been called by either
-the cause-attribution layer or the investigation layer; both run deterministically, which is what
-makes them testable.
+scored against both fixed baselines, a bounded investigation controller running over all fourteen
+detected episodes, and an evaluation harness that audits the hold-out, freezes every version a figure
+depends on, and consolidates the project's figures into one table. No model has yet been called by any
+layer; all of them run deterministically, which is what makes them testable.
 
 The cause labels are **machine-assisted**: produced by a language model applying a labelling guide
 written and pushed beforehand, not by a domain expert. That is a real limitation rather than a
@@ -47,6 +47,11 @@ seen the data, so those criteria could fail honestly. Two of them did.
 - [`docs/investigation_results.md`](docs/investigation_results.md) is the investigation layer
   measured: five gates on fourteen episodes, how much each gate is worth on this corpus, and the
   document coverage that bounds what any of it can claim.
+- [`docs/evaluation_results.md`](docs/evaluation_results.md) is the evaluation harness: the version
+  freeze, the leakage audit, the calibration decision, and the nine metrics this project cannot
+  measure with the reason for each.
+- [`docs/results_table.md`](docs/results_table.md) is every figure in the project in one table, each
+  with its denominator and whether it is gated, reported or deferred.
 - [`docs/architecture_decisions/`](docs/architecture_decisions/) holds the decisions and the
   reasoning, including both feasibility results.
 
@@ -59,11 +64,12 @@ about what a caller may ask for lives in the tool layer, once.
 Alongside it, `src/volve_ops/extraction/` turns the drilling reports into typed non-productive
 events in a versioned store, `src/volve_ops/retrieval/` indexes their narrative lexically, and
 `src/volve_ops/provenance/` holds the fact ledger that refuses a derived value whose inputs it
-does not have. `src/volve_ops/investigation/` holds the bounded controller over those services.
-Four committed scripts regenerate the published figures: `scripts/run_expectation_study.py`,
-`scripts/run_extraction.py`, `scripts/run_label_scoring.py` and `scripts/run_investigations.py`, each
-writing a run manifest. A fifth, `scripts/draw_adjudication.py`, draws the expert adjudication
-subsample described below.
+does not have. `src/volve_ops/investigation/` holds the bounded controller over those services, and
+`src/volve_ops/evaluation/` the harness that judges the project's account of itself. Five committed
+scripts regenerate the published figures: `scripts/run_expectation_study.py`,
+`scripts/run_extraction.py`, `scripts/run_label_scoring.py`, `scripts/run_investigations.py` and
+`scripts/run_evaluation.py`, each writing a run manifest. A sixth, `scripts/draw_adjudication.py`,
+draws the expert adjudication subsample described below.
 
 ### Feasibility results
 
@@ -178,6 +184,38 @@ most of their implementation, so it largely measures shared code, and an earlier
 This is the third pre-registered capability the dataset has constrained, after both feasibility
 criteria, and all three are constrained the same way: Volve is generous about measurements and thin
 about the operational record that explains them.
+
+### The evaluation harness, and what it found in itself
+
+Six gates pass: every version field present, the manifest hash reproducing across runs, the leakage
+audit clean, every figure in every run manifest covered by a table row, no mechanical false root-cause
+claim, and no repeated identical tool call. Each has a test that makes it fail, and each reports how
+much it examined, so a gate that passed over nothing is visible rather than flattering.
+
+**The leakage audit's first run failed, and the failure was the audit's.** It named `15/9-F-5` as a
+hold-out well that had been fitted on. Section 16's hold-out is by well and governs the drilling-report
+layer; production is split temporally, and the two layers share no data. The check had applied the
+wrong hold-out to the wrong layer, and separately the harness had counted every well with a development
+row as a well that was fitted on, when `15/9-F-5` has 2,429 development rows and no valid producing
+day. A check that could not fail would have reported this project clean on its first run.
+
+Calibration is reported as evidence bands rather than probabilities, because fourteen episodes give a
+per-bin interval about 25 points wide. Every abstention falls in the `moderate` band and none in
+`high`, which is the relationship one would want and is also partly circular: two of the six features
+feed the stop conditions that cause an abstention, so the table is a consistency check, not evidence
+that the score is informative.
+
+Nine metrics the plan asked for are **deferred, each with the obstacle named**: the hold-out stays
+unscored until Phase 8, episode precision needs a curated set this dataset cannot honestly support,
+end-to-end correctness needs the domain reader §18.8 records as absent, and the prose judge needs an
+API key. [`docs/results_table.md`](docs/results_table.md) has all of them beside the figures that do
+exist, because a reader should be able to see the shape of what is missing in the same place as what
+is not.
+
+CI is split so that money cannot be spent by accident. The free workflow references no secret at all,
+checked by a test, and now runs the harness so a leakage finding fails the build. The paid workflow has
+no push, pull-request or schedule trigger; their absence is the control rather than a condition inside
+a job.
 
 Results, limitations and reproduction instructions grow as the work produces them. A figure
 appears here only when a run has produced it.

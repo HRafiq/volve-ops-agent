@@ -1,0 +1,82 @@
+name: model-eval
+
+# Protocol section 19.10's paid half. Everything that calls a model runs here and nowhere else.
+#
+# There is no `push`, no `pull_request` and no `schedule` trigger, and their absence is the control
+# rather than a condition inside a job. A workflow that can only be started by hand cannot be started
+# by a merge, by a dependabot branch, or by a cron line somebody adds later without noticing. The free
+# workflow in ci.yml holds the deterministic checks and never sees a credential.
+#
+# The hold-out is not scored here. Section 10 reserves it for one scored run in Phase 8, and section
+# 19.2's leakage audit gates against reaching it before then.
+
+on:
+  workflow_dispatch:
+    inputs:
+      what:
+        description: "Which benchmark to run"
+        required: true
+        default: extraction
+        type: choice
+        options:
+          - extraction
+          - retrieval
+          - end-to-end
+      confirm_spend:
+        description: "Type SPEND to confirm this run may call a paid model"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-eval
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    # A separate job so the confirmation is checked before any credential is in scope.
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: The run was confirmed by a person
+        run: |
+          if [ "${{ inputs.confirm_spend }}" != "SPEND" ]; then
+            echo "Not confirmed. This workflow may call a paid model, so it asks." >&2
+            exit 1
+          fi
+          echo "Confirmed: ${{ inputs.what }}"
+
+  evaluate:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: model-eval
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev,mcp]"
+
+      - name: No model provider key configured yet
+        # This project has no key. The step is here so the workflow is honest about why it does
+        # nothing rather than appearing to have run a benchmark, and so that adding a key is the
+        # only change needed to make it real.
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "${OPENAI_API_KEY}" ]; then
+            echo "No OPENAI_API_KEY secret is set for the model-eval environment."
+            echo "Nothing to run. Protocol section 19.8 records the prose judge as deferred on"
+            echo "exactly this, and the rubric is fixed there so it cannot be written to match"
+            echo "whatever a judge happens to score well."
+            exit 0
+          fi
+          echo "A key is present. Wire the chosen benchmark in before enabling this path."
+          exit 1

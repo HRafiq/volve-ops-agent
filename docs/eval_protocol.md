@@ -1,6 +1,6 @@
 # Evaluation protocol
 
-Version: v6
+Version: v7
 Date: 2026-10-06
 Status: pre-registered. Pushed before the work it judges.
 Amendments since v0: three, in sections 6 and 14.5 and in the labelling guide, all recorded in
@@ -13,6 +13,8 @@ them chosen after v4 was tagged and all labelled post-inspection, and corrects t
 definitions that the implementation did not match.
 New in v6: section 19 fixes the evaluation harness, before it is built. Unlike section 18 it states
 its own numbers, which is the lesson amendment 4 recorded.
+New in v7: amendment 5 corrects section 19.2's first leakage check, which applied the drilling
+layer's by-well hold-out to the production layer, where a temporal split governs instead.
 
 This file states how the project will be judged, and it is pushed to the public remote
 before the runs it judges happen. The published history is the evidence. Pass marks,
@@ -702,6 +704,33 @@ defined relative to a baseline means nothing if the baseline can move.
 
 Tightening a pass mark after seeing a result that failed it is not an amendment. It is the
 failure mode this document exists to prevent.
+
+### Amendment 5, v6 to v7: section 19.2's first leakage check applied the wrong hold-out
+
+Date: 2026-10-06. Made **after** the harness was first run and labelled as such, though no published
+figure depended on the wording either way.
+
+Section 19.2 check 1 required that no section 16 hold-out well contribute to "any model fit, any
+threshold choice or any labelled event". The first run of the harness failed on it, naming `15/9-F-5`.
+
+The failure was the check's, not the project's. Section 16's hold-out is **by well and governs the
+drilling-report layer**. The production layer is split **temporally** by section 10, and the two are
+deliberately different: section 16 says so in as many words, and says of this very well that it "has
+no production development days and is already excluded from production hold-out scoring as a cold
+start". Nothing leaks by fitting production on a well whose drilling reports are held out, because the
+two layers share no data.
+
+Check 1 now covers labelled events and investigations, which is the constraint section 16 actually
+imposes. Check 3, every fitted day passing the temporal split's own test, is what audits production
+fitting and is unchanged.
+
+A second defect in the same place, in the harness rather than the protocol: the run passed every well
+with any development row as a well that had been fitted on. `15/9-F-5` has 2,429 development rows and
+**zero** valid producing days, so no expectation model was ever fitted to it. The harness now passes
+the wells that actually produced a fit, which is what the check's own wording asks for.
+
+Worth recording plainly: the audit built to catch leakage caught a defect in itself on its first run,
+and a check that cannot fail would not have. Both halves of that are the point of writing it.
 
 ### Amendment 4, v4 to v5: the investigation layer's thresholds, and two stop conditions
 
@@ -1428,8 +1457,10 @@ version freeze that does not reproduce is a record of nothing.
 The Phase 4 gate is "dev results table; hold-out untouched", and untouched is a claim that should be
 checked rather than asserted. Five checks, each mechanical, **all gating at 100 percent**:
 
-1. No hold-out well, as section 16 fixes them, contributes to any model fit, any threshold choice or
-   any labelled event.
+1. No hold-out well, as section 16 fixes them, contributes to any **labelled event or
+   investigation**. Corrected by amendment 5: this check originally extended to "any model fit",
+   which applied the drilling layer's by-well hold-out to the production layer. Production is split
+   temporally by section 10, and check 3 below is what audits it.
 2. No report dated after the section 10 production boundary of 25 July 2014 appears in the labelled
    sample, on any well.
 3. Every scored development figure derives from a day set that the split filter produced, not from one

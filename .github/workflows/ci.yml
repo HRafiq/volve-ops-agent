@@ -61,10 +61,24 @@ jobs:
       - name: Tests
         run: pytest
 
+      # Section 19.10's free half: the evaluation harness runs here because it calls no model.
+      # Its exit status is the gate, so a leakage finding or an uncovered figure fails the build
+      # rather than printing and passing. Skipped when the cached dataset is absent, which it is
+      # for any contributor who has not retrieved the share: the harness needs the data, and a
+      # missing dataset is not a regression.
+      - name: Evaluation harness, section 19 pass marks
+        run: |
+          if [ -f "data/cache/Volve production data.xlsx" ] && [ -d data/cache/ddr_xml ]; then
+            python scripts/run_evaluation.py "data/cache/Volve production data.xlsx" data/cache/ddr_xml
+          else
+            echo "Cached dataset absent; the harness needs it. Skipped, not passed."
+          fi
+
   # The project claims the domain services and the tool layer work without MCP installed.
   # That claim is only true if something checks it, and the job above cannot: it installs the
   # extra. This one proves nothing imports mcp eagerly and that the adapter's tests skip
   # rather than fail.
+
   without-optional-extras:
     runs-on: ubuntu-latest
     timeout-minutes: 10
