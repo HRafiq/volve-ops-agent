@@ -61,6 +61,14 @@ class DerivedFact(BaseModel):
     unit: str
     formula: str
     input_fact_ids: tuple[str, ...]
+    combines_units: bool = False
+    """Set when the derivation multiplies or divides across units on purpose.
+
+    `check` refuses a derived fact whose inputs disagree on units, because that is how an
+    accidental sum of two different quantities gets published. But a product legitimately changes
+    units: a volume in Sm3 times a price in USD/Sm3 is USD. Rather than loosen the guard, the
+    caller says so here, and the claim is stored where a reader can see it was deliberate.
+    """
 
     @property
     def is_derived(self) -> bool:
@@ -133,6 +141,7 @@ class FactLedger:
         formula: str,
         inputs: Sequence[AnyFact],
         compute: Callable[..., float],
+        combines_units: bool = False,
     ) -> DerivedFact:
         """Compute and store a derived quantity. The value is produced, never asserted.
 
@@ -161,6 +170,7 @@ class FactLedger:
             unit=unit,
             formula=formula,
             input_fact_ids=tuple(p.id for p in inputs),
+            combines_units=combines_units,
         )
         self._facts[derived.id] = derived
         return derived
@@ -202,7 +212,7 @@ class FactLedger:
                 for parent_id in step.input_fact_ids:
                     if parent_id not in self._facts:
                         raise LineageError(f"{fact_id}: input {parent_id} of {step.id} is missing")
-        if isinstance(fact, DerivedFact):
+        if isinstance(fact, DerivedFact) and not fact.combines_units:
             units = {self.get(i).unit for i in fact.input_fact_ids}
             if len(units) > 1 and fact.unit not in {"percent", "ratio", "dimensionless"}:
                 raise LineageError(
