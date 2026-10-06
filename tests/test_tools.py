@@ -24,9 +24,10 @@ from volve_ops.tools.production_tools import (
 )
 from volve_ops.tools.schemas import (
     MAX_DAYS_PER_REQUEST,
-    MAX_ROWS_PER_RESPONSE,
     DateRange,
+    ToolError,
     ToolErrorCode,
+    ToolResult,
 )
 
 START = dt.date(2010, 1, 1)
@@ -108,12 +109,29 @@ class TestBounds:
             history(duplicated), "15/9-F-12", START, START + dt.timedelta(days=99)
         )
         assert result.error is not None
-        assert result.error.code is ToolErrorCode.RANGE_TOO_LARGE
-        assert "shorter range" in result.error.message
+        assert result.error.code is ToolErrorCode.TOO_MANY_ROWS
+        assert "deduplicated" in result.error.message
 
-    def test_the_day_bound_is_what_normally_binds(self) -> None:
-        """With one row per day the row cap is unreachable, so the day bound is the real one."""
-        assert MAX_DAYS_PER_REQUEST < MAX_ROWS_PER_RESPONSE
+    def test_a_row_cap_refusal_is_a_different_code_from_a_range_refusal(self) -> None:
+        """One is the caller asking for too much; the other is an upstream fault they cannot fix."""
+        duplicated = [classified(i % 100) for i in range(1300)]
+        rows = get_production_history(
+            history(duplicated), "15/9-F-12", START, START + dt.timedelta(days=99)
+        )
+        span = get_production_history(
+            history([classified(0)]), "15/9-F-12", START, START + dt.timedelta(days=5000)
+        )
+        assert rows.error is not None and span.error is not None
+        assert rows.error.code is not span.error.code
+
+    def test_exactly_the_maximum_range_is_allowed(self) -> None:
+        """Pins the boundary, so tightening the bound by one day cannot pass silently."""
+        end = START + dt.timedelta(days=MAX_DAYS_PER_REQUEST - 1)
+        days = [classified(i) for i in range(0, MAX_DAYS_PER_REQUEST, 7)]
+        assert get_production_history(history(days), "15/9-F-12", START, end).ok
+        assert not get_production_history(
+            history(days), "15/9-F-12", START, end + dt.timedelta(days=1)
+        ).ok
 
     def test_the_date_range_type_enforces_its_own_bounds(self) -> None:
         with pytest.raises(ValueError, match="exceeds"):
@@ -146,6 +164,23 @@ class TestRefusals:
             (START, START + dt.timedelta(days=5000)),
         ]:
             assert not get_production_history(history([classified(0)]), "15/9-F-12", start, end).ok
+
+    def test_a_refusal_carries_the_message_the_validator_wrote(self) -> None:
+        """Not a library's formatting of a validation error, which an agent cannot parse."""
+        result = get_production_history(
+            history([classified(0)]), "15/9-F-12", START + dt.timedelta(days=10), START
+        )
+        assert result.error is not None
+        assert result.error.message.startswith("end ")
+        assert "pydantic" not in result.error.message
+        assert "validation error" not in result.error.message.lower()
+
+    def test_an_error_detail_key_cannot_collide_with_the_result_fields(self) -> None:
+        """A layer whose contract is never to raise must not raise while building its error."""
+        error = ToolError(
+            code=ToolErrorCode.NO_DATA, message="m", detail={"code": "x", "message": "y"}
+        )
+        assert ToolResult[None](error=error).error is error
 
 
 class TestResults:
@@ -202,3 +237,57 @@ class TestEpisodeTools:
         absent = get_episode(eps, "A", dt.date(1999, 1, 1))
         assert absent.error is not None
         assert absent.error.code is ToolErrorCode.NOT_FOUND
+
+
+class TestEveryDayClassIsCounted:
+    def test_non_producing_days_are_reported(self) -> None:
+        """They are 6,181 of 15,634 rows in the real dataset and had no count at all."""
+        days = [classified(i) for i in range(3)]
+        days += [classified(i, day_class=DayClass.NON_PRODUCING, oil=None) for i in range(3, 10)]
+        result = get_production_history(
+            history(days), "15/9-F-12", START, START + dt.timedelta(days=9)
+        )
+        assert result.value is not None
+        view = result.value
+        assert view.non_producing_days == 7
+        counted = (
+            view.valid_producing_days
+            + view.downtime_days
+            + view.partial_days
+            + view.non_producing_days
+            + view.quarantined_days
+            + view.missing_days
+        )
+        assert counted == view.rows
+
+    def test_calendar_days_with_no_row_at_all_are_reported(self) -> None:
+        """Absent days are invisible to a count of rows classified missing."""
+        days = [classified(0), classified(9)]
+        result = get_production_history(
+            history(days), "15/9-F-12", START, START + dt.timedelta(days=9)
+        )
+        assert result.value is not None
+        assert result.value.absent_days == 8
+        assert result.value.missing_days == 0
+
+
+class TestUsableFraction:
+    def test_a_window_of_injector_days_reports_almost_no_gaps_and_no_usable_evidence(
+        self,
+    ) -> None:
+        """The case that made gap_fraction alone misleading: 1.1% gaps, zero usable days."""
+        days = [classified(i, day_class=DayClass.NON_PRODUCING, oil=None) for i in range(100)]
+        result = get_data_quality(history(days), "15/9-F-12", START, START + dt.timedelta(days=99))
+        assert result.value is not None
+        assert result.value.gap_fraction == 0.0
+        assert result.value.usable_fraction == 0.0
+        assert result.value.valid_producing_days == 0
+
+    def test_usable_fraction_is_measured_against_the_range_not_the_rows(self) -> None:
+        days = [classified(i) for i in range(50)]
+        result = get_data_quality(history(days), "15/9-F-12", START, START + dt.timedelta(days=99))
+        assert result.value is not None
+        assert result.value.range_days == 100
+        assert result.value.rows_present == 50
+        assert result.value.absent_days == 50
+        assert result.value.usable_fraction == pytest.approx(0.5)

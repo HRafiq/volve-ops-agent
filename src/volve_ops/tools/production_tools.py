@@ -1,9 +1,9 @@
 """The tools an investigation may call against production data.
 
 Each one validates its own request, enforces the bounds in `schemas`, and returns a typed
-result or a typed error. None of them raises on bad input, because an agent cannot act on a
-traceback, and none of them silently truncates, because an agent that receives less than it
-asked for will conclude the missing part was empty.
+result or a typed error. None raises on bad input, because an agent cannot act on a traceback,
+and none silently truncates, because an agent that receives less than it asked for will
+conclude the missing part was empty.
 
 The domain services are the source of truth. These functions reshape and bound; they do not
 compute anything the domain does not already compute. Where that line blurs is where a second
@@ -16,19 +16,26 @@ import collections
 import datetime as dt
 from collections.abc import Sequence
 
+from pydantic import ValidationError
+
 from volve_ops.domain.day_class import ClassifiedDay, DayClass
 from volve_ops.domain.episodes import Episode
 from volve_ops.domain.production_service import ProductionHistory
 from volve_ops.tools.schemas import (
+    MAX_DAYS_PER_REQUEST,
+    MAX_EPISODES_PER_RESPONSE,
     MAX_ROWS_PER_RESPONSE,
     DataQualityView,
     DateRange,
     EpisodeView,
     ProductionDayView,
     ProductionHistoryView,
+    ToolError,
     ToolErrorCode,
     ToolResult,
 )
+
+GAP_CLASSES = (DayClass.QUARANTINED, DayClass.MISSING)
 
 
 def _as_view(day: ClassifiedDay) -> ProductionDayView:
@@ -43,21 +50,55 @@ def _as_view(day: ClassifiedDay) -> ProductionDayView:
     )
 
 
+def build_range(start: dt.date, end: dt.date) -> DateRange | ToolError:
+    """Validate a date range, returning a typed error rather than raising.
+
+    The error is distinguished by which rule failed, not by matching text in an exception
+    message. An earlier version sniffed for the word "exceeds" in `str(exc)`, which made the
+    code's behaviour depend on how pydantic happens to format a validation error, and which
+    reported that formatting to the agent verbatim instead of the sentence the validator wrote.
+    """
+    if end < start:
+        return ToolError(
+            code=ToolErrorCode.INVALID_RANGE,
+            message=f"end {end} is before start {start}",
+            detail={"start": str(start), "end": str(end)},
+        )
+    length = (end - start).days + 1
+    if length > MAX_DAYS_PER_REQUEST:
+        return ToolError(
+            code=ToolErrorCode.RANGE_TOO_LARGE,
+            message=(
+                f"a range of {length} days exceeds the {MAX_DAYS_PER_REQUEST}-day limit; "
+                "ask for a shorter range rather than receiving a partial answer"
+            ),
+            detail={"requested_days": str(length), "limit": str(MAX_DAYS_PER_REQUEST)},
+        )
+    try:
+        return DateRange(start=start, end=end)
+    except ValidationError as exc:  # pragma: no cover - the checks above cover both rules
+        return ToolError(
+            code=ToolErrorCode.INVALID_RANGE,
+            message="; ".join(e["msg"] for e in exc.errors()),
+            detail={"start": str(start), "end": str(end)},
+        )
+
+
 def _well_days(
     history: ProductionHistory, well: str, window: DateRange
-) -> list[ClassifiedDay] | ToolResult[None]:
+) -> list[ClassifiedDay] | ToolError:
     if well not in history.wells:
-        return ToolResult.failed(
-            ToolErrorCode.UNKNOWN_WELL,
-            f"no well named {well!r} in this dataset",
-            known=", ".join(history.wells),
+        return ToolError(
+            code=ToolErrorCode.UNKNOWN_WELL,
+            message=f"no well named {well!r} in this dataset",
+            detail={"known": ", ".join(history.wells)},
         )
     days = [d for d in history.for_well(well) if window.contains(d.day.production_date)]
     if not days:
-        return ToolResult.failed(
-            ToolErrorCode.NO_DATA,
-            f"{well} has no records between {window.start} and {window.end}",
-            well=well,
+        return ToolError(
+            code=ToolErrorCode.NO_DATA,
+            message=f"{well} has no records between {window.start} and {window.end}",
+            detail={"well": well},
         )
     return sorted(days, key=lambda d: d.day.production_date)
 
@@ -67,39 +108,36 @@ def get_production_history(
 ) -> ToolResult[ProductionHistoryView]:
     """One well's classified daily history over a bounded range.
 
-    The counts travel with the rows so that a caller reading a short history can tell a well
-    that was shut in from one whose data is missing, without having to count day classes itself
-    and perhaps count them differently.
+    The counts travel with the rows, all six classes of them, so a caller can tell a well that
+    was shut in from one whose data is missing without counting day classes itself and perhaps
+    counting them differently.
     """
-    try:
-        window = DateRange(start=start, end=end)
-    except ValueError as exc:
-        code = (
-            ToolErrorCode.RANGE_TOO_LARGE if "exceeds" in str(exc) else ToolErrorCode.INVALID_RANGE
-        )
-        return ToolResult.failed(code, str(exc), start=str(start), end=str(end))
+    window = build_range(start, end)
+    if isinstance(window, ToolError):
+        return ToolResult(error=window)
 
     days = _well_days(history, well, window)
-    if isinstance(days, ToolResult):
-        return ToolResult.failed(
-            days.error.code if days.error else ToolErrorCode.NO_DATA,
-            days.error.message if days.error else "no data",
-            **(days.error.detail if days.error else {}),
+    if isinstance(days, ToolError):
+        return ToolResult(error=days)
+
+    if len(days) > MAX_ROWS_PER_RESPONSE:
+        # The day bound normally binds first, because duplicate collapsing guarantees one row
+        # per well-day. This is the backstop for when it did not run: a tool should not assume
+        # an upstream step happened. It is a distinct code because it is an upstream fault the
+        # caller cannot fix by asking for less.
+        return ToolResult(
+            error=ToolError(
+                code=ToolErrorCode.TOO_MANY_ROWS,
+                message=(
+                    f"{len(days)} rows for {window.length_days} days exceeds the "
+                    f"{MAX_ROWS_PER_RESPONSE}-row limit; the source was probably not "
+                    "deduplicated"
+                ),
+                detail={"rows": str(len(days)), "days": str(window.length_days)},
+            )
         )
 
     counts = collections.Counter(d.day_class for d in days)
-    # The day bound normally binds first, because duplicate collapsing guarantees one row per
-    # well-day. This is the backstop for when it did not run: a tool should not assume an
-    # upstream step happened, and returning thousands of rows because a source had duplicates
-    # is a worse failure than refusing.
-    if len(days) > MAX_ROWS_PER_RESPONSE:
-        return ToolResult.failed(
-            ToolErrorCode.RANGE_TOO_LARGE,
-            f"{len(days)} rows exceeds the {MAX_ROWS_PER_RESPONSE}-row limit; "
-            "ask for a shorter range rather than receiving a partial answer",
-            rows=str(len(days)),
-        )
-
     return ToolResult.succeeded(
         ProductionHistoryView(
             well=well,
@@ -108,8 +146,10 @@ def get_production_history(
             valid_producing_days=counts[DayClass.VALID_PRODUCING],
             downtime_days=counts[DayClass.DOWNTIME],
             partial_days=counts[DayClass.PARTIAL],
+            non_producing_days=counts[DayClass.NON_PRODUCING],
             quarantined_days=counts[DayClass.QUARANTINED],
             missing_days=counts[DayClass.MISSING],
+            absent_days=window.length_days - len(days),
         )
     )
 
@@ -120,28 +160,20 @@ def get_data_quality(
     """What a conclusion over this range would actually rest on.
 
     An investigation that cannot see the gaps in its own evidence will state a conclusion with
-    the same confidence whether it read 300 days or 30. This is the tool that makes the
-    difference visible, and the protocol requires the gap fraction to be reported beside any
-    result that depends on it.
+    the same confidence whether it read 300 days or 30. Two fractions, because the protocol's
+    gap fraction and the question "could I conclude anything here" are not the same: a window
+    of injector days has almost no gaps and no usable evidence whatsoever.
     """
-    try:
-        window = DateRange(start=start, end=end)
-    except ValueError as exc:
-        code = (
-            ToolErrorCode.RANGE_TOO_LARGE if "exceeds" in str(exc) else ToolErrorCode.INVALID_RANGE
-        )
-        return ToolResult.failed(code, str(exc), start=str(start), end=str(end))
+    window = build_range(start, end)
+    if isinstance(window, ToolError):
+        return ToolResult(error=window)
 
     days = _well_days(history, well, window)
-    if isinstance(days, ToolResult):
-        return ToolResult.failed(
-            days.error.code if days.error else ToolErrorCode.NO_DATA,
-            days.error.message if days.error else "no data",
-            **(days.error.detail if days.error else {}),
-        )
+    if isinstance(days, ToolError):
+        return ToolResult(error=days)
 
     valid = [d for d in days if d.day_class is DayClass.VALID_PRODUCING]
-    gaps = sum(1 for d in days if d.day_class in (DayClass.QUARANTINED, DayClass.MISSING))
+    gaps = sum(1 for d in days if d.day_class in GAP_CLASSES)
     reasons: collections.Counter[str] = collections.Counter()
     not_evaluated: set[str] = set()
     for day in days:
@@ -152,8 +184,11 @@ def get_data_quality(
         DataQualityView(
             well=well,
             requested=window,
-            total_days=len(days),
+            rows_present=len(days),
+            range_days=window.length_days,
+            absent_days=window.length_days - len(days),
             valid_producing_days=len(valid),
+            usable_fraction=len(valid) / window.length_days,
             gap_fraction=gaps / len(days),
             quarantine_reasons=dict(reasons),
             checks_not_evaluated=tuple(sorted(not_evaluated)),
@@ -168,9 +203,24 @@ def list_episodes(
 ) -> ToolResult[tuple[EpisodeView, ...]]:
     """Detected episodes, optionally for one well, most costly first."""
     selected = [e for e in episodes if well is None or e.well == well]
-    if well is not None and not selected:
-        return ToolResult.failed(
-            ToolErrorCode.NO_DATA, f"no episodes detected for {well}", well=well
+    if not selected:
+        return ToolResult(
+            error=ToolError(
+                code=ToolErrorCode.NO_DATA,
+                message=(f"no episodes detected for {well}" if well else "no episodes detected"),
+                detail={"well": well} if well else {},
+            )
+        )
+    if len(selected) > MAX_EPISODES_PER_RESPONSE:
+        return ToolResult(
+            error=ToolError(
+                code=ToolErrorCode.TOO_MANY_ROWS,
+                message=(
+                    f"{len(selected)} episodes exceeds the "
+                    f"{MAX_EPISODES_PER_RESPONSE}-episode limit; ask for one well"
+                ),
+                detail={"episodes": str(len(selected))},
+            )
         )
     ordered = sorted(selected, key=lambda e: e.cumulative_rate_shortfall_sm3, reverse=True)
     return ToolResult.succeeded(tuple(_episode_view(e) for e in ordered))
@@ -181,11 +231,12 @@ def get_episode(episodes: Sequence[Episode], well: str, onset: dt.date) -> ToolR
     for episode in episodes:
         if episode.well == well and episode.onset == onset:
             return ToolResult.succeeded(_episode_view(episode))
-    return ToolResult.failed(
-        ToolErrorCode.NOT_FOUND,
-        f"no episode for {well} opening on {onset}",
-        well=well,
-        onset=str(onset),
+    return ToolResult(
+        error=ToolError(
+            code=ToolErrorCode.NOT_FOUND,
+            message=f"no episode for {well} opening on {onset}",
+            detail={"well": well, "onset": str(onset)},
+        )
     )
 
 

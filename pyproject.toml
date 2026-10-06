@@ -50,7 +50,6 @@ python_version = "3.11"
 strict = true
 plugins = ["pydantic.mypy"]
 files = ["src", "scripts", "tests"]
-exclude = ["src/volve_ops/mcp_server/server.py"]
 warn_unreachable = true
 
 [[tool.mypy.overrides]]

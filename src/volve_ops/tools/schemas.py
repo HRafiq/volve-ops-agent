@@ -21,7 +21,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 # was asked for is how an agent concludes a well had no production in a period it never saw.
 MAX_DAYS_PER_REQUEST = 1100
 MAX_ROWS_PER_RESPONSE = 1200
-MAX_WELLS_PER_REQUEST = 10
+# A cap on episodes returned at once. Unlike the day bound this one is reachable, because an
+# episode list is not one row per day.
+MAX_EPISODES_PER_RESPONSE = 200
 
 
 class ToolErrorCode(StrEnum):
@@ -30,7 +32,7 @@ class ToolErrorCode(StrEnum):
     UNKNOWN_WELL = "unknown_well"
     RANGE_TOO_LARGE = "range_too_large"
     INVALID_RANGE = "invalid_range"
-    TOO_MANY_WELLS = "too_many_wells"
+    TOO_MANY_ROWS = "too_many_rows"
     NO_DATA = "no_data"
     NOT_FOUND = "not_found"
 
@@ -97,6 +99,11 @@ class DateRange(BaseModel):
     def contains(self, day: dt.date) -> bool:
         return self.start <= day <= self.end
 
+    @property
+    def length_days(self) -> int:
+        """Calendar days in the range, inclusive of both ends."""
+        return (self.end - self.start).days + 1
+
 
 class ProductionDayView(BaseModel):
     """One well-day as a tool reports it.
@@ -118,7 +125,16 @@ class ProductionDayView(BaseModel):
 
 
 class ProductionHistoryView(BaseModel):
-    """A well's history over a requested range, with what was excluded and why."""
+    """A well's history over a requested range, with what was excluded and why.
+
+    Every one of the six day classes gets a count, including non-producing. An earlier version
+    omitted it, which in this dataset hid 6,181 of 15,634 rows: a request covering an injector
+    came back with counts summing to eleven out of a thousand rows, and the one class a caller
+    needs in order to tell a shut-in well from a well with no data was the one not reported.
+
+    `absent_days` counts calendar days in the range with no row at all, which is a different
+    thing from a row classified missing and is invisible without it.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -128,20 +144,39 @@ class ProductionHistoryView(BaseModel):
     valid_producing_days: int
     downtime_days: int
     partial_days: int
+    non_producing_days: int
     quarantined_days: int
     missing_days: int
-    truncated: bool = False
+    absent_days: int
+
+    @property
+    def rows(self) -> int:
+        return len(self.days)
 
 
 class DataQualityView(BaseModel):
-    """What a conclusion drawn over this range would rest on."""
+    """What a conclusion drawn over this range would rest on.
+
+    Two fractions, because they answer different questions and an earlier version reported only
+    the first. `gap_fraction` is the protocol's quantity: quarantined and missing rows over the
+    rows present. `usable_fraction` is valid producing days over the calendar length of the
+    range, which is what an investigation actually needs to know.
+
+    They can disagree completely. A window over an injector returned a gap fraction of 1.1
+    percent, comfortably inside the one-third the protocol calls poorly evidenced, while
+    containing no usable day at all: non-producing rows are not gaps in the record, but they are
+    not evidence either.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     well: str
     requested: DateRange
-    total_days: int
+    rows_present: int
+    range_days: int
+    absent_days: int
     valid_producing_days: int
+    usable_fraction: float
     gap_fraction: float
     quarantine_reasons: dict[str, int]
     checks_not_evaluated: tuple[str, ...]
