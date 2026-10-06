@@ -24,6 +24,11 @@ seen the data, so those criteria could fail honestly. Two of them did.
 - [`docs/expectation_results.md`](docs/expectation_results.md) is the measured performance of
   the expectation engine on development data, the model comparison with the pre-registered
   selection rule applied, and the failure modes that showed up while building it.
+- [`docs/extraction_results.md`](docs/extraction_results.md) is the drilling-report extraction:
+  3,673 non-productive events over 11 wells, what the two fixed baselines predict, and why both
+  are named.
+- [`docs/labelling_guide.md`](docs/labelling_guide.md) is the labelling specification, written
+  before any label was made.
 - [`docs/architecture_decisions/`](docs/architecture_decisions/) holds the decisions and the
   reasoning, including both feasibility results.
 

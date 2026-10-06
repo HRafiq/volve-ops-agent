@@ -24,6 +24,11 @@ dependencies = [
 mcp = [
     "mcp==1.9.4",
 ]
+# Also optional: a run manifest is written to a file either way, so a reader of this
+# repository can see what a run recorded without standing up a tracking server.
+tracking = [
+    "mlflow==2.17.2",
+]
 dev = [
     "pytest==8.3.3",
     "ruff==0.6.9",
@@ -54,7 +59,7 @@ warn_unreachable = true
 
 [[tool.mypy.overrides]]
 # Neither package ships type stubs. Scoped to them so the rest stays strict.
-module = ["defusedxml.*", "openpyxl.*", "mcp.*"]
+module = ["defusedxml.*", "openpyxl.*", "mcp.*", "mlflow.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
