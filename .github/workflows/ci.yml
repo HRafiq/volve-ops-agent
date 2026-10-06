@@ -42,8 +42,12 @@ jobs:
           fi
           echo "No private, data or secret paths tracked."
 
+      # The optional mcp extra is installed here even though it is optional, because the
+      # adapter module is type-checked and strict mypy cannot check a decorator whose type
+      # it cannot resolve. Without it, `@mcp.tool()` is an untyped decorator and the job
+      # fails on code that is correct. It needs no API key, so the job stays cheap.
       - name: Install
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev,mcp]"
 
       - name: Lint
         run: ruff check .
@@ -56,3 +60,41 @@ jobs:
 
       - name: Tests
         run: pytest
+
+  # The project claims the domain services and the tool layer work without MCP installed.
+  # That claim is only true if something checks it, and the job above cannot: it installs the
+  # extra. This one proves nothing imports mcp eagerly and that the adapter's tests skip
+  # rather than fail.
+  without-optional-extras:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install core only
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+      - name: The optional dependency really is absent
+        run: |
+          if python -c "import mcp" 2>/dev/null; then
+            echo "mcp is installed; this job cannot prove what it exists to prove." >&2
+            exit 1
+          fi
+          echo "mcp absent, as intended."
+      - name: Tests still pass
+        run: pytest
+      - name: The adapter refuses clearly rather than breaking anything else
+        run: |
+          python - <<'PY'
+          import sys
+          try:
+              import volve_ops.mcp_server.server  # noqa: F401
+          except ImportError as exc:
+              assert "optional dependency" in str(exc), exc
+              print("adapter raises a clear ImportError:", exc)
+              sys.exit(0)
+          print("expected an ImportError without the extra", file=sys.stderr)
+          sys.exit(1)
+          PY
