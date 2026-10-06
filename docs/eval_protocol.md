@@ -1236,11 +1236,27 @@ episode comes from the section 9 detector and not from a model's choice of inter
 model picking its own episodes would be selecting the cases it can explain.
 
 The controller owns the stages and the stop conditions. The model's judgement is exercised inside
-them: which hypothesis needs more evidence, how to phrase a retrieval query, which report section to
-read, and whether another evidence pass is justified. There is no stage at which the model is asked
-what to do next from an open list of tools. This is a constraint on the architecture and it is
-checkable: the stage sequence is recorded in the trace, and a trace whose stages do not match the
-controller's declared sequence is a defect.
+them, and there is no stage at which the model is asked what to do next from an open list of tools.
+
+**Which judgements, corrected by amendment 4.** This section originally named four: which hypothesis
+needs more evidence, how to phrase a retrieval query, which report section to read, and whether
+another evidence pass is justified. The implementation exposes **two**, the query and the decision to
+continue. Which hypothesis is queried next is taken by the controller, in a fixed order over the
+hypotheses still worth testing, and "which report section to read" does not exist because the
+retrieval unit is a single activity comment rather than a sectioned document. A narrower judgement
+surface is a stronger version of this section's claim, not a weaker one, but it is a difference
+between what was registered and what was built, and it is recorded rather than quietly absorbed.
+
+**How much the trace checks, stated precisely.** The stage of every step is recorded, and a sequence
+the declared controller could not have produced is refused: a once-only stage repeating, stages out of
+order, retrieval before any hypothesis exists or after the finding is composed. What that is worth is
+narrower than it first appears, and independent review was right to press on it. The controller
+assigns the stage labels itself and the step carries no tool identity, so the check cannot detect a
+controller that did something else and labelled it correctly. It is a guard against this controller
+changing into an unbounded one, enforced on every run, and not a proof that the current one is bounded.
+The proof of that is the code, which a reader can read. Making the trace itself sufficient would need
+the step to record the tool called rather than a stage name the caller chose, and that is not done
+here.
 
 ### 18.2 The mandatory diagnostic bundle, and what happens when it is unavailable
 

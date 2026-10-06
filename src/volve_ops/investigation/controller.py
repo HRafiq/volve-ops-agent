@@ -3,7 +3,16 @@
 The controller owns the stage sequence and the stop conditions. A model's judgement enters at
 exactly two points, declared in `Judgement` below: how to phrase a retrieval query, and whether
 another evidence pass is justified. It is never asked what to do next from an open list of tools,
-which is the thing section 18.1 forbids and which the recorded stage sequence makes checkable.
+which is the thing section 18.1 forbids.
+
+Section 18.1 as first written named four judgement points rather than two, and amendment 4 records
+the difference: which hypothesis to query next is taken here, in a fixed order, and "which report
+section to read" has no meaning when the retrieval unit is a single activity comment.
+
+`check_stage_order` refuses a stage sequence this controller could not have produced, and that is a
+guard against this code changing rather than a proof that it is bounded today. The stage labels are
+assigned here, and a step records no tool identity, so a controller that did something else and
+labelled it correctly would pass. Protocol section 18.1 now says so.
 
 Hypothesis formation is deliberately deterministic, from templates driven by the diagnostic bundle.
 Section 18.1 gives the model judgement over which hypothesis needs more evidence, not over what the
