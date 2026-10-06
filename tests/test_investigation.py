@@ -26,6 +26,7 @@ from volve_ops.investigation.controller import (
 )
 from volve_ops.investigation.diagnostics import DiagnosticBundle, build_bundle
 from volve_ops.investigation.schemas import (
+    MIN_READINGS_FOR_A_CHANNEL,
     CausalLevel,
     ChannelAvailability,
     EvidenceKind,
@@ -39,7 +40,7 @@ from volve_ops.investigation.schemas import (
     verdict_for,
 )
 from volve_ops.investigation.trace import Stage, Trace, TraceError, check_stage_order
-from volve_ops.investigation.validator import check
+from volve_ops.investigation.validator import CitableDocument, check, unsourced_numbers
 from volve_ops.provenance.facts import FactLedger
 from volve_ops.retrieval.index import BM25Index, Chunk
 
@@ -294,10 +295,15 @@ class TestStageOrderIsTheBoundedAgencyCheck:
 
 
 def _bundle_and_index(
-    *, pressure: float | None = 230.0, choke_during: float = 30.0, comment: str = "Choke reduced."
-) -> tuple[DiagnosticBundle, BM25Index, dict[str, str], Episode]:
+    *,
+    pressure: float | None = 230.0,
+    choke_during: float = 30.0,
+    comment: str = "Choke reduced.",
+    document_well: str = WELL,
+    report_date: str = "2010-03-05",
+) -> tuple[DiagnosticBundle, BM25Index, dict[str, CitableDocument], Episode]:
     before = [
-        classified(dt.date(2010, 1, 1) + dt.timedelta(days=i), choke=50.0 + (i % 3))
+        classified(dt.date(2010, 1, 1) + dt.timedelta(days=i), choke=50.0 + 6.0 * (i % 3))
         for i in range(60)
     ]
     during = series(dt.date(2010, 3, 2), 20, choke=choke_during, oil=400.0, pressure=pressure)
@@ -305,18 +311,34 @@ def _bundle_and_index(
     chunk = Chunk(
         chunk_id="npt_1",
         text=comment,
-        well=WELL,
-        wellbore=WELL,
+        well=document_well,
+        wellbore=document_well,
         source_document="d.xml",
-        report_date="2010-03-05",
+        report_date=report_date,
         activity_code="interruption -- other",
     )
+    documents = {
+        "npt_1": CitableDocument(
+            event_id="npt_1",
+            source_document="d.xml",
+            well=document_well,
+            report_date=dt.date.fromisoformat(report_date),
+            text=comment,
+        )
+    }
     return (
         bundle,
         BM25Index([chunk]),
-        {"npt_1": comment},
+        documents,
         episode_of(dt.date(2010, 3, 2), dt.date(2010, 3, 21)),
     )
+
+
+class CostlyJudgement(RuleBasedJudgement):
+    """A role that charges for its judgement, so the cost stop condition is reachable."""
+
+    name = "costly"
+    cost_per_call_usd = 1.0
 
 
 class TestTheControllerStaysInsideItsBounds:
@@ -362,13 +384,60 @@ class TestTheControllerStaysInsideItsBounds:
     def test_a_missing_channel_stops_the_investigation_rather_than_being_worked_around(
         self,
     ) -> None:
-        """Section 18.3 condition 3, on the shape four real episodes actually have."""
-        bundle, index, documents, episode = _bundle_and_index(pressure=0.0, choke_during=50.0)
+        """Section 18.3 condition 3, on the shape three real episodes actually have."""
+        bundle, index, documents, episode = _bundle_and_index(pressure=0.0, choke_during=50.5)
         result = investigate(episode, bundle, index, documents, FactLedger())
         assert result.finding is not None
         assert result.finding.stop_reason is StopReason.MANDATORY_EVIDENCE_UNAVAILABLE
         assert result.finding.curtailed
         assert Channel.DOWNHOLE_PRESSURE in result.finding.unavailable_mandatory
+
+    def test_a_cost_budget_is_reachable_and_reported(self) -> None:
+        """Review found this stop condition listed everywhere and settable nowhere."""
+        bundle, index, documents, episode = _bundle_and_index()
+        result = investigate(
+            episode,
+            bundle,
+            index,
+            documents,
+            FactLedger(),
+            judgement=CostlyJudgement(),
+            budget=Budget(max_cost_usd=0.5),
+        )
+        assert result.finding is not None
+        assert result.finding.stop_reason is StopReason.COST_BUDGET_REACHED
+        assert result.finding.curtailed
+        assert result.trace.cost_usd > 0.0
+
+    def test_retrieval_asks_about_supported_hypotheses_not_only_plausible_ones(self) -> None:
+        """The defect review found: the hypothesis a finding rests on was never put to documents.
+
+        A document stating a reason lifts a supported hypothesis to `documented_root_cause`, so if
+        supported hypotheses are never queried the top causal level is unreachable in practice.
+        """
+        bundle, index, documents, episode = _bundle_and_index(
+            comment="Closed in well to prepare for handover."
+        )
+        result = investigate(episode, bundle, index, documents, FactLedger())
+        assert result.finding is not None
+        assert result.finding.highest_level is CausalLevel.DOCUMENTED_ROOT_CAUSE
+        assert sum(len(h.supporting) for h in result.finding.hypotheses) > 0
+
+    def test_more_than_one_evidence_pass_can_run(self) -> None:
+        """`another_pass` used to return False whenever a pass found nothing, so every run was one
+        pass long and the pass budget was dead."""
+        bundle, index, documents, episode = _bundle_and_index()
+        result = investigate(episode, bundle, index, documents, FactLedger())
+        passes = sum(1 for s in result.trace.steps if s.stage is Stage.RETRIEVE_EVIDENCE)
+        assert passes >= 2
+
+    def test_a_channel_with_one_reading_is_not_an_available_channel(self) -> None:
+        """`usable > 0` let a single reading in twenty days suppress the missing-data disclosure."""
+        assert MIN_READINGS_FOR_A_CHANNEL == 3
+        thin = ChannelAvailability(
+            channel=Channel.DOWNHOLE_PRESSURE, unit="bar", days=20, usable=1, mandatory=True
+        )
+        assert not thin.available
 
     def test_a_step_budget_of_one_is_reported_not_hidden(self) -> None:
         bundle, index, documents, episode = _bundle_and_index()
@@ -391,22 +460,57 @@ class TestTheControllerStaysInsideItsBounds:
         assert pressure.status is HypothesisStatus.UNRESOLVED
         assert pressure.missing_evidence
 
-    def test_the_rule_based_role_never_reaches_a_documented_root_cause(self) -> None:
-        """Reaching that level needs reading, which is what a model-backed role would add."""
-        bundle, index, documents, episode = _bundle_and_index()
-        result = investigate(
-            episode,
-            bundle,
-            index,
-            documents,
-            FactLedger(),
-            judgement=RuleBasedJudgement(),
-        )
+    def test_a_document_that_says_only_what_was_done_does_not_reach_the_documented_level(
+        self,
+    ) -> None:
+        """The level needs a stated reason, not merely a cited span."""
+        bundle, index, documents, episode = _bundle_and_index(comment="Closed in well.")
+        result = investigate(episode, bundle, index, documents, FactLedger())
         assert result.finding is not None
         assert result.finding.highest_level is not CausalLevel.DOCUMENTED_ROOT_CAUSE
 
 
 class TestTheProvenanceGateBlocksEachWayAFindingCanBeUnfounded:
+    """Every rule, including the four that independent review proved the first version did not hold.
+
+    The gate is the product. A finding that looks sound and is unfounded is the failure this whole
+    layer exists to prevent, so each test below is a reconstruction of a way through.
+    """
+
+    def document(
+        self,
+        *,
+        text: str = "Choke reduced to protect the separator.",
+        well: str = WELL,
+        source: str = "d.xml",
+        report_date: dt.date = dt.date(2010, 3, 5),
+    ) -> dict[str, CitableDocument]:
+        return {
+            "npt_1": CitableDocument(
+                event_id="npt_1",
+                source_document=source,
+                well=well,
+                report_date=report_date,
+                text=text,
+            )
+        }
+
+    def citing(self, **over: object) -> Hypothesis:
+        ref: dict[str, object] = {
+            "kind": EvidenceKind.DOCUMENT_SPAN,
+            "document": "d.xml",
+            "event_id": "npt_1",
+            "span": "Choke reduced",
+        }
+        ref.update(over)
+        return Hypothesis(
+            hypothesis_id="H",
+            description="d",
+            causal_level=CausalLevel.PROXIMATE_DRIVER,
+            status=HypothesisStatus.PLAUSIBLE,
+            supporting=(EvidenceRef(**ref),),
+        )
+
     def finding(self, ledger: FactLedger, **over: object) -> Finding:
         actual = ledger.record("a", 1.0, "Sm3", source="s")
         expected = ledger.record("e", 2.0, "Sm3/d", source="s")
@@ -436,69 +540,110 @@ class TestTheProvenanceGateBlocksEachWayAFindingCanBeUnfounded:
 
     def test_a_clean_finding_passes(self) -> None:
         ledger = FactLedger()
-        assert check(self.finding(ledger), ledger, {}).passed
+        result = check(self.finding(ledger, hypotheses=(self.citing(),)), ledger, self.document())
+        assert result.passed, result.violations
 
     def test_a_fact_that_is_not_in_the_ledger_blocks_it(self) -> None:
         ledger = FactLedger()
         result = check(self.finding(ledger, shortfall_fact_id="fact_999"), ledger, {})
-        assert not result.passed
         assert any(v.rule == "fact_not_in_ledger" for v in result.violations)
 
     def test_a_span_that_is_not_verbatim_blocks_it(self) -> None:
         ledger = FactLedger()
-        hypothesis = Hypothesis(
-            hypothesis_id="H",
-            description="d",
-            causal_level=CausalLevel.PROXIMATE_DRIVER,
-            status=HypothesisStatus.PLAUSIBLE,
-            supporting=(
-                EvidenceRef(
-                    kind=EvidenceKind.DOCUMENT_SPAN,
-                    document="d.xml",
-                    event_id="npt_1",
-                    span="a paraphrase",
-                ),
-            ),
-        )
         result = check(
-            self.finding(ledger, hypotheses=(hypothesis,)), ledger, {"npt_1": "the text"}
+            self.finding(ledger, hypotheses=(self.citing(span="a paraphrase"),)),
+            ledger,
+            self.document(),
         )
         assert any(v.rule == "span_not_verbatim" for v in result.violations)
 
     def test_a_cited_document_that_was_not_supplied_blocks_it(self) -> None:
         """A gate that passes what it cannot see is not a gate."""
         ledger = FactLedger()
-        hypothesis = Hypothesis(
-            hypothesis_id="H",
-            description="d",
-            causal_level=CausalLevel.PROXIMATE_DRIVER,
-            status=HypothesisStatus.PLAUSIBLE,
-            supporting=(
-                EvidenceRef(
-                    kind=EvidenceKind.DOCUMENT_SPAN,
-                    document="d.xml",
-                    event_id="absent",
-                    span="x",
-                ),
-            ),
+        result = check(
+            self.finding(ledger, hypotheses=(self.citing(event_id="absent"),)), ledger, {}
         )
-        result = check(self.finding(ledger, hypotheses=(hypothesis,)), ledger, {})
         assert any(v.rule == "document_not_available" for v in result.violations)
 
-    def test_a_number_in_the_narrative_with_no_fact_behind_it_blocks_it(self) -> None:
-        """The leak the other rules miss: impeccable citations beside an invented figure."""
+    def test_a_fabricated_filename_beside_a_real_span_blocks_it(self) -> None:
+        """Review's hole (c): the document name was read only to format an error message."""
         ledger = FactLedger()
-        result = check(self.finding(ledger, narrative="The well lost 4321 Sm3 of oil."), ledger, {})
-        assert any(v.rule == "unsourced_number_in_narrative" for v in result.violations)
+        result = check(
+            self.finding(ledger, hypotheses=(self.citing(document="MADE_UP_REPORT.pdf"),)),
+            ledger,
+            self.document(),
+        )
+        assert any(v.rule == "document_name_wrong" for v in result.violations)
 
-    def test_a_well_name_is_not_read_as_a_number(self) -> None:
+    def test_a_span_borrowed_from_another_well_blocks_it(self) -> None:
+        """Review's hole (d). Comments repeat across wells, so the span really is present."""
         ledger = FactLedger()
-        assert check(
-            self.finding(ledger, narrative=f"Well {WELL} underperformed."), ledger, {}
-        ).passed
+        result = check(
+            self.finding(ledger, hypotheses=(self.citing(),)),
+            ledger,
+            self.document(well="15/9-F-14"),
+        )
+        assert any(v.rule == "citation_from_another_well" for v in result.violations)
+
+    def test_a_span_from_years_away_blocks_it(self) -> None:
+        ledger = FactLedger()
+        result = check(
+            self.finding(ledger, hypotheses=(self.citing(),)),
+            ledger,
+            self.document(report_date=dt.date(2007, 6, 1)),
+        )
+        assert any(v.rule == "citation_outside_the_window" for v in result.violations)
+
+    def test_a_wellbore_citation_matches_a_finding_on_its_well(self) -> None:
+        """`15/9-F-15 D` and `15/9-F-15` are one well; a citation must not be rejected for it."""
+        ledger = FactLedger()
+        result = check(
+            self.finding(ledger, well="15/9-F-15 D", hypotheses=(self.citing(),)),
+            ledger,
+            self.document(well="15/9-F-15"),
+        )
+        assert not any(v.rule == "citation_from_another_well" for v in result.violations)
+
+    @pytest.mark.parametrize(
+        ("prose", "expected"),
+        [
+            ("Production fell by 4200 Sm3 over 31 days.", ["4200", "31"]),
+            ("Downhole pressure fell from 310 bar to 180 bar in 2011.", ["310", "180"]),
+            ("The choke closed from 62 to 14 of 100 steps.", ["62", "14", "100"]),
+            ("The well lost 88000 Sm3 (12%).", ["88000"]),
+            (f"Well {WELL} lost 4321 Sm3.", ["4321"]),
+            (f"Well {WELL} produced below expectation over the episode window.", []),
+            ("Drilled in 2011 and again in 2016.", []),
+            ("Read the operations log around 2010-03-02.", []),
+            ("Between 2010-03-02 and 2010-03-21 it lost 500 Sm3.", ["500"]),
+            ("Water cut rose to 37%.", []),
+        ],
+    )
+    def test_the_number_rule_exempts_the_token_not_its_neighbourhood(
+        self, prose: str, expected: list[str]
+    ) -> None:
+        """Review's hole (b): proximity to `day`, a year or `%` waved most sentences through."""
+        assert unsourced_numbers(prose) == expected
+
+    def test_the_well_name_strip_does_not_swallow_the_sentence(self) -> None:
+        """Review's hole (a), and the reason it went unnoticed: the old test could not fail.
+
+        Asserting that a narrative passes the gate is satisfied both by stripping the well name and
+        by deleting the whole sentence. This asserts what survives.
+        """
+        assert unsourced_numbers(f"Well {WELL} lost 4321 Sm3 over the window.") == ["4321"]
+        assert unsourced_numbers("Well 15/9-19 BT2 lost 99 Sm3.") == ["99"]
+        assert unsourced_numbers("Well 15/9-F-1 C lost 7 Sm3.") == ["7"]
+
+    def test_an_invented_figure_anywhere_in_the_published_prose_blocks_it(self) -> None:
+        """Not the narrative alone: every prose field is published just as widely."""
+        ledger = FactLedger()
+        for field in ("recommended_next_check", "narrative"):
+            result = check(self.finding(ledger, **{field: "It lost 4321 Sm3."}), ledger, {})
+            assert any(v.rule == "unsourced_number_in_prose" for v in result.violations), field
 
     def test_supporting_a_hypothesis_whose_channel_is_missing_blocks_it(self) -> None:
-        """On this dataset not hypothetical: four development episodes have no downhole pressure."""
+        """Not hypothetical here: three development episodes have no downhole pressure."""
         ledger = FactLedger()
         hypothesis = Hypothesis(
             hypothesis_id="H-pressure",
@@ -529,7 +674,7 @@ class TestTheProvenanceGateBlocksEachWayAFindingCanBeUnfounded:
             self.finding(
                 ledger,
                 hypotheses=(hypothesis,),
-                narrative="Root cause identified: the choke.",
+                narrative="The underlying reason was the operator's decision.",
                 verdict=Verdict.SUPPORTED_EXPLANATION,
             ),
             ledger,
@@ -545,3 +690,50 @@ class TestTheProvenanceGateBlocksEachWayAFindingCanBeUnfounded:
             {},
         )
         assert any(v.rule == "stop_reason_not_declared" for v in result.violations)
+
+    def test_the_exploit_review_built_is_refused(self) -> None:
+        """One finding carrying all four holes at once, which the first gate passed clean."""
+        ledger = FactLedger()
+        hypothesis = self.citing(document="TOTALLY_MADE_UP_REPORT.pdf")
+        result = check(
+            self.finding(
+                ledger,
+                hypotheses=(hypothesis,),
+                narrative=f"Well {WELL} lost 4200 Sm3 over 31 days. The root cause was the choke.",
+            ),
+            ledger,
+            self.document(well="15/9-F-14", report_date=dt.date(2007, 6, 1)),
+        )
+        rules = {v.rule for v in result.violations}
+        assert {
+            "document_name_wrong",
+            "citation_from_another_well",
+            "citation_outside_the_window",
+            "unsourced_number_in_prose",
+            "root_cause_wording_above_level",
+        } <= rules
+
+    def test_a_finding_at_the_documented_level_may_not_disclaim_it(self) -> None:
+        """The mirror of the wording check: understating evidence the project did have.
+
+        Review's run produced a finding at `documented_root_cause` whose narrative still read "Root
+        cause unresolved", because the narrative generator only knew two of the three levels.
+        """
+        ledger = FactLedger()
+        hypothesis = Hypothesis(
+            hypothesis_id="H",
+            description="d",
+            causal_level=CausalLevel.DOCUMENTED_ROOT_CAUSE,
+            status=HypothesisStatus.SUPPORTED,
+        )
+        result = check(
+            self.finding(
+                ledger,
+                hypotheses=(hypothesis,),
+                verdict=Verdict.SUPPORTED_EXPLANATION,
+                narrative="Mechanism supported. Root cause unresolved: no report says why.",
+            ),
+            ledger,
+            {},
+        )
+        assert any(v.rule == "documented_level_disclaims_itself" for v in result.violations)

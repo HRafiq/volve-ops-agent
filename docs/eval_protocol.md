@@ -1,6 +1,6 @@
 # Evaluation protocol
 
-Version: v4
+Version: v5
 Date: 2026-10-06
 Status: pre-registered. Pushed before the work it judges.
 Amendments since v0: three, in sections 6 and 14.5 and in the labelling guide, all recorded in
@@ -8,6 +8,9 @@ section 13 and all labelled post-inspection.
 New in v3: section 17 fixes where the cause labels come from, and suspends the section 14.5
 selection gate because they are not expert labels. No threshold is lowered and no baseline moves.
 New in v4: section 18 fixes the investigation layer, before any investigation has been run.
+New in v5: amendment 4 records every threshold the investigation layer turned out to need, all of
+them chosen after v4 was tagged and all labelled post-inspection, and corrects two stop-condition
+definitions that the implementation did not match.
 
 This file states how the project will be judged, and it is pushed to the public remote
 before the runs it judges happen. The published history is the evidence. Pass marks,
@@ -698,6 +701,52 @@ defined relative to a baseline means nothing if the baseline can move.
 Tightening a pass mark after seeing a result that failed it is not an amendment. It is the
 failure mode this document exists to prevent.
 
+### Amendment 4, v4 to v5: the investigation layer's thresholds, and two stop conditions
+
+Date: 2026-10-06. Made **after** the investigation layer was implemented and run on development
+episodes, and labelled as such wherever a dependent result is reported. Prompted by independent
+review, which pointed out that section 18 as tagged contained no numeric threshold at all while every
+decision the layer makes turns on one.
+
+**The thresholds, all chosen after the v4 tag.** They are recorded here so a reader can see which
+numbers are pre-registered and which are not, rather than having to read the source to find out.
+
+| constant | value | what it decides |
+|---|---|---|
+| `STRONG_SHIFT` | 1.0 sd | a channel movement that can support a hypothesis |
+| `WEAK_SHIFT` | 0.5 sd | a movement that can make one plausible |
+| `MIN_RELATIVE_SHIFT` | 0.10 | the movement must also be this large in its own units |
+| `WATER_CUT_RISE` | 0.05 | a water-cut rise that supports the water hypothesis |
+| `MIN_DAYS_FOR_A_SUMMARY` | 3 | readings a channel needs before anything is concluded from it |
+| `EVIDENCE_WINDOW_DAYS` | 45 | how far either side of an episode a report may be dated |
+| baseline `MIN_STANDARDISED_SHIFT` | 1.0 sd | when `strongest-deviation` names a channel |
+| baseline window | 60 days | the well's own comparison period |
+
+Two of these need more than a row. **`MIN_RELATIVE_SHIFT` was added in response to an observed
+result**, which is the most serious thing on this page: a test showed that a well whose choke had sat
+at 50, 51, 52 for two months has a baseline spread near 0.8, so a drop to 50 is a 1.2-sigma movement
+and a 2 percent change, and the layer was ready to call that the supported explanation for a lost
+third of the rate. The fix is defensible on physical grounds and it is still a threshold chosen after
+seeing output, and it moves the verdict distribution and the baseline-agreement figure. Both are
+reported as post-inspection. **`EVIDENCE_WINDOW_DAYS` is outcome-determining**: at 45 days, 12 of 14
+episodes have no drilling report in range; at 180 days, 10 of 14 do. Any claim about document
+availability has to name the window, and ADR 0008 does.
+
+**Section 18.3, conditions 1 and 2, corrected to what the implementation does.** Condition 1 said
+`evidence_threshold_met` means "every open hypothesis is supported or contradicted". The layer sets it
+when no hypothesis remains **plausible**, treating a `weak` one as settled. That is the correct
+reading and the original wording was wrong: a weak hypothesis is one whose channel moved slightly,
+and no amount of narrative turns a slight movement into support or a contradiction, so "open" can only
+mean a hypothesis more evidence could still move. Condition 2, `evidence_exhausted`, likewise now
+means a pass added nothing new **or** the pass budget ran out while something remained plausible.
+
+Condition 3 is also narrowed to what the code does: it fires when no hypothesis is supported and an
+unresolved one needs a channel this well and period do not have, rather than on "the leading
+hypothesis", which does not exist when nothing is supported.
+
+Nothing here loosens a pass mark. Section 18.7's five gates are untouched, section 18.8's deferral is
+untouched, and both baselines named in sections 3 and 14.4 are untouched.
+
 ### Amendment 3, v2 to v3: a section added to the labelling guide after labelling
 
 Date: 2026-10-06. Made **after** the development sample was labelled, and labelled as such wherever
@@ -1170,7 +1219,14 @@ override rate, and a figure computed from a second model pass would not be one.
 ## 18. The investigation layer
 
 Fixed before any investigation has been run, on a repository where the deterministic expectation
-engine, the episode detector and the extraction layer already exist and are measured. What follows
+engine, the episode detector and the extraction layer already exist and are measured.
+
+**One disclosure about what was known when this was written.** The sensor-coverage study in
+`docs/data_profile.md`, including the finding that downhole pressure is usable on under a third of
+`15/9-F-12`'s producing days, was carried out immediately before this section and committed
+immediately after it. Section 18.2 below cites it. So this section was written knowing how much
+pressure data exists, which is what made an unavailable mandatory channel worth making a stop
+condition. It was not written knowing any investigation's output, because none had been run. What follows
 judges the layer that reads an episode and tries to explain it.
 
 ### 18.1 What an investigation is, and what it may not be
@@ -1254,6 +1310,12 @@ than a score.
 mandatory channels by standardised deviation from the well's own stable reference window, names the
 largest as the proximate driver, and always reports `documented_root_cause` as unresolved. Where a
 channel is unavailable it is skipped rather than imputed.
+
+**Its threshold is part of its definition and is stated here**, because an exemption a reader cannot
+check is not an exemption: the baseline names a channel only when the movement reaches **1.0** of the
+baseline window's own standard deviation, and abstains otherwise. The baseline window is the **60**
+producing days of the well's own record immediately before onset. Amendment 4 records that both
+numbers were fixed after v4 was tagged; they cannot move again.
 
 This is not a straw opponent, which is the point of naming it before any investigation runs. A great
 deal of well underperformance really is explained by on-stream hours or choke position, both of which

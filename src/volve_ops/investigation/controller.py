@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict
 
 from volve_ops.domain.episodes import Episode
 from volve_ops.domain.sensors import Channel
+from volve_ops.domain.well_naming import well_of
 from volve_ops.investigation import INVESTIGATOR_VERSION
 from volve_ops.investigation.diagnostics import DiagnosticBundle
 from volve_ops.investigation.schemas import (
@@ -37,6 +38,7 @@ from volve_ops.investigation.schemas import (
     verdict_for,
 )
 from volve_ops.investigation.trace import Stage, Trace, TraceRecorder
+from volve_ops.investigation.validator import CitableDocument
 from volve_ops.provenance.facts import FactLedger
 from volve_ops.retrieval.index import BM25Index
 
@@ -55,8 +57,29 @@ WATER_CUT_RISE: Final[float] = 0.05
 
 #: How far either side of an episode a drilling report may sit and still bear on it. A report just
 #: before onset is often what explains the episode, so the window is not the episode alone.
+#: Recorded as protocol amendment 4: chosen after the tag, and it changes which documents an
+#: investigation can see, so it is a post-inspection parameter and is labelled as one.
 EVIDENCE_WINDOW_DAYS: Final[int] = 45
-OFFSET_FIELD_WIDE_DROP: Final[float] = -0.20
+
+#: Phrases that mark a document stating *why* something was done rather than only what. Reaching
+#: `documented_root_cause` needs a cited span containing one of these alongside a hypothesis the
+#: structured data already supports: the data establishes what changed, the document why.
+#:
+#: This is a lexical proxy for a judgement and is weaker than a model would be. It is here because
+#: the first version of this controller could not emit the top causal level by any path, which made
+#: project's published claim that the level was unreached "for want of documents" untestable.
+INTENT_MARKERS: Final[tuple[str, ...]] = (
+    "to prepare",
+    "in preparation",
+    "in order to",
+    "due to",
+    "because of",
+    "for the purpose",
+    "as per",
+    "according to programme",
+    "planned",
+    "requested by",
+)
 
 
 class Budget(BaseModel):
@@ -77,6 +100,13 @@ class Judgement(Protocol):
     """
 
     name: str
+    cost_per_call_usd: float
+    """What one judgement call costs. Zero for a deterministic role.
+
+    It exists so that `cost_budget_reached` is reachable at all. Review found the condition listed
+    in the protocol, in `CURTAILED` and in the pass-mark checks, while nothing in the codebase could
+    ever set a cost. That made it decoration.
+    """
 
     def retrieval_query(
         self, bundle: DiagnosticBundle, hypotheses: Sequence[Hypothesis], pass_number: int
@@ -99,10 +129,11 @@ class RuleBasedJudgement:
     """
 
     name = "rule-based"
+    cost_per_call_usd = 0.0
 
     _TERMS: Final[dict[str, str]] = {
-        "H-choke": "choke reduced rate production restriction",
-        "H-uptime": "shut in downtime production stop",
+        "H-choke": "choke reduced closed in well restriction handover",
+        "H-uptime": "shut in downtime production stop closed",
         "H-water": "water cut injection breakthrough",
         "H-pressure": "pressure drawdown reservoir decline",
         "H-field": "platform shutdown field process trip",
@@ -111,16 +142,27 @@ class RuleBasedJudgement:
     def retrieval_query(
         self, bundle: DiagnosticBundle, hypotheses: Sequence[Hypothesis], pass_number: int
     ) -> str:
-        open_ones = [h for h in hypotheses if h.status is HypothesisStatus.PLAUSIBLE]
-        chosen = open_ones[pass_number % len(open_ones)] if open_ones else None
-        if chosen is None:
+        """Query the next hypothesis worth testing, supported ones included.
+
+        The first version drew only from `plausible`, so the hypothesis a finding rested on was
+        never put to the documents. Review found a report dated one day before an episode's onset
+        that the controller had been built never to ask about.
+        """
+        order = testable(hypotheses)
+        if not order:
             return "well intervention production"
-        return self._TERMS.get(chosen.hypothesis_id, chosen.description)
+        return self._TERMS.get(
+            order[pass_number % len(order)].hypothesis_id,
+            order[pass_number % len(order)].description,
+        )
 
     def another_pass(self, hypotheses: Sequence[Hypothesis], pass_number: int, found: int) -> bool:
-        if found == 0:
-            return False
-        return any(h.status is HypothesisStatus.PLAUSIBLE for h in hypotheses)
+        """Continue while a hypothesis worth testing has not been asked about yet.
+
+        Not "while the last pass found something", which was the first version and which made every
+        run exactly one pass long and `max_evidence_passes` dead.
+        """
+        return pass_number + 1 < len(testable(hypotheses))
 
 
 class ReplayJudgement:
@@ -131,6 +173,7 @@ class ReplayJudgement:
     """
 
     name = "replay"
+    cost_per_call_usd = 0.0
 
     def __init__(self, trace: Trace) -> None:
         self._judgements = trace.judgements
@@ -152,6 +195,21 @@ class ReplayJudgement:
         return value
 
 
+def testable(hypotheses: Sequence[Hypothesis]) -> list[Hypothesis]:
+    """The hypotheses a document could still say something about, in a fixed order.
+
+    Supported ones are included: a document explaining *why* a supported change was made is what
+    lifts it to `documented_root_cause`, and that is the whole purpose of the retrieval stage.
+    Contradicted ones are excluded, and so are unresolved ones, whose channel is missing, because no
+    narrative recovers a measurement that was never taken.
+    """
+    return [
+        h
+        for h in hypotheses
+        if h.status in {HypothesisStatus.SUPPORTED, HypothesisStatus.PLAUSIBLE}
+    ]
+
+
 class InvestigationResult(BaseModel):
     """A finding and the trace that produced it, or the reason there is no finding."""
 
@@ -170,15 +228,11 @@ def _signed(
     comparison = bundle.comparison(channel)
     if comparison is None or comparison.standardised_shift is None:
         return None, None
-    relative = (
-        None if comparison.relative_shift is None else comparison.relative_shift * direction
-    )
+    relative = None if comparison.relative_shift is None else comparison.relative_shift * direction
     return comparison.standardised_shift * direction, relative
 
 
-def _status(
-    signal: float | None, relative: float | None, *, available: bool
-) -> HypothesisStatus:
+def _status(signal: float | None, relative: float | None, *, available: bool) -> HypothesisStatus:
     """Read one channel's movement into a status.
 
     Three distinctions the simpler version lost. A channel that is absent is `unresolved`, not
@@ -260,9 +314,7 @@ def form_hypotheses(bundle: DiagnosticBundle) -> list[Hypothesis]:
             hypothesis_id="H-pressure",
             description="Downhole pressure declined, reducing drawdown.",
             causal_level=CausalLevel.SUPPORTED_MECHANISM,
-            status=_status(
-                pressure, pressure_relative, available=avail(Channel.DOWNHOLE_PRESSURE)
-            ),
+            status=_status(pressure, pressure_relative, available=avail(Channel.DOWNHOLE_PRESSURE)),
             required_channels=(Channel.DOWNHOLE_PRESSURE,),
             missing_evidence=()
             if avail(Channel.DOWNHOLE_PRESSURE)
@@ -302,33 +354,51 @@ def _first_sentence_with(text: str, terms: Sequence[str]) -> str | None:
     return next((text for t in terms if t in lowered), None)
 
 
+def _states_a_reason(refs: Sequence[EvidenceRef]) -> bool:
+    """Whether any cited span says why, rather than only what."""
+    return any(
+        ref.span is not None and any(m in ref.span.lower() for m in INTENT_MARKERS) for ref in refs
+    )
+
+
 def _attach(
     hypotheses: list[Hypothesis],
     hypothesis_id: str,
     refs: Sequence[EvidenceRef],
-) -> int:
-    """Attach retrieved evidence, raising plausibility but never to supported.
+) -> tuple[int, bool]:
+    """Attach retrieved evidence. Returns how many refs landed, and whether a level was raised.
 
-    A lexical match is not evidence of a mechanism, so retrieval under a rule-based judgement can
-    make a hypothesis worth keeping open and cannot make it supported. That ceiling is the thing a
-    model-backed role would have to beat, and leaving it unstated would make the baseline look
-    stronger than it is.
+    Two ceilings, both deliberate. A bare lexical match cannot make a hypothesis supported, because
+    matching a term is not evidence of a mechanism: it can only move an unresolved or weak
+    hypothesis to plausible. But a span that states a *reason*, landing on a hypothesis the data
+    already supports, does lift it to `documented_root_cause`. The data established what changed and
+    the document says why, which is what section 18.4 requires of that level.
+
+    The reason test is lexical, so it is weaker than a model's judgement and is documented as such.
+    It exists because without it no code path could emit the top level at all, which made this
+    project's published claim about why the level was unreached impossible to test.
     """
     added = 0
+    raised = False
     for index, hypothesis in enumerate(hypotheses):
         if hypothesis.hypothesis_id != hypothesis_id or not refs:
             continue
         status = hypothesis.status
+        level = hypothesis.causal_level
         if status in {HypothesisStatus.UNRESOLVED, HypothesisStatus.WEAK}:
             status = HypothesisStatus.PLAUSIBLE
+        if status is HypothesisStatus.SUPPORTED and _states_a_reason(refs):
+            level = CausalLevel.DOCUMENTED_ROOT_CAUSE
+            raised = True
         hypotheses[index] = hypothesis.model_copy(
             update={
                 "supporting": (*hypothesis.supporting, *refs),
                 "status": status,
+                "causal_level": level,
             }
         )
         added = len(refs)
-    return added
+    return added, raised
 
 
 def _narrative(
@@ -345,9 +415,25 @@ def _narrative(
     supported = [h for h in hypotheses if h.status is HypothesisStatus.SUPPORTED]
     contradicted = [h for h in hypotheses if h.status is HypothesisStatus.CONTRADICTED]
     unresolved = [h for h in hypotheses if h.status is HypothesisStatus.UNRESOLVED]
+    documented = [h for h in supported if h.causal_level is CausalLevel.DOCUMENTED_ROOT_CAUSE]
 
     lines = [f"Well {bundle.well} produced below expectation over the episode window."]
-    if supported:
+    if documented:
+        # Section 18.4's third row is the only wording that may claim a root cause, and a finding
+        # that reached the level must say so rather than repeating the disclosure for a lower one.
+        # An earlier version always appended "Root cause unresolved", which contradicted the level
+        # on the one episode that reached it.
+        drivers = "; ".join(h.description for h in documented)
+        spans = [
+            f"{ref.span!r} in {ref.document}"
+            for h in documented
+            for ref in h.supporting
+            if ref.span is not None
+        ]
+        lines.append(f"Root cause documented: {drivers}")
+        if spans:
+            lines.append("Stated in " + "; ".join(spans[:2]) + ".")
+    elif supported:
         drivers = "; ".join(h.description for h in supported)
         levels = {h.causal_level for h in supported}
         if levels == {CausalLevel.PROXIMATE_DRIVER}:
@@ -380,7 +466,7 @@ def investigate(
     episode: Episode,
     bundle: DiagnosticBundle,
     index: BM25Index,
-    documents: Mapping[str, str],
+    documents: Mapping[str, CitableDocument],
     ledger: FactLedger,
     *,
     judgement: Judgement | None = None,
@@ -475,15 +561,19 @@ def investigate(
             break
 
         query = role.retrieval_query(bundle, hypotheses, pass_number)
-        open_ones = [h for h in hypotheses if h.status is HypothesisStatus.PLAUSIBLE]
-        target = open_ones[pass_number % len(open_ones)].hypothesis_id if open_ones else "H-choke"
+        order = testable(hypotheses)
+        target = order[pass_number % len(order)].hypothesis_id if order else "H-choke"
         # The date range goes to the index rather than filtering its output: asking for three
         # hits on the well and then discarding those outside the window returned nothing at all,
         # because a well's three best lexical matches are usually years from any one episode.
+        # `well_of`, not `episode.well`. An episode names a wellbore, `15/9-F-15 D`, while a chunk
+        # names its well, `15/9-F-15`. Filtering on the wellbore silently returned nothing for two
+        # of the six development wells, which is exactly how "the documents do not exist" becomes a
+        # false conclusion on a different split.
         hits = index.search(
             query,
             limit=5,
-            well=episode.well,
+            well=well_of(episode.well),
             on_or_after=(episode.onset - dt.timedelta(days=EVIDENCE_WINDOW_DAYS)).isoformat(),
             on_or_before=(episode.offset + dt.timedelta(days=EVIDENCE_WINDOW_DAYS)).isoformat(),
         )
@@ -498,7 +588,8 @@ def investigate(
             )
             for hit in in_window
             if (span := _first_sentence_with(hit.chunk.text, hit.matched_terms)) is not None
-            and span in documents.get(hit.chunk.chunk_id, "")
+            and hit.chunk.chunk_id in documents
+            and span in documents[hit.chunk.chunk_id].text
         )
         recorder.record(
             Stage.RETRIEVE_EVIDENCE,
@@ -506,13 +597,15 @@ def investigate(
             f"{len(in_window)} inside the window, {len(refs)} citable",
             judgement_key=f"retrieval_query:{pass_number}",
             judgement=query,
+            cost_usd=role.cost_per_call_usd,
         )
 
-        added = _attach(hypotheses, target, refs)
+        added, raised = _attach(hypotheses, target, refs)
         recorder.record(
             Stage.SEEK_CONTRADICTION,
-            f"attached {added} refs to {target}; "
-            f"contradicted {_ids(hypotheses, HypothesisStatus.CONTRADICTED)}",
+            f"attached {added} refs to {target}"
+            + ("; raised to documented_root_cause" if raised else "")
+            + f"; contradicted {_ids(hypotheses, HypothesisStatus.CONTRADICTED)}",
         )
 
         if bundle.unavailable_mandatory and any(
@@ -535,13 +628,18 @@ def investigate(
             f"another pass: {keep_going}",
             judgement_key=f"another_pass:{pass_number}",
             judgement=keep_going,
+            cost_usd=role.cost_per_call_usd,
         )
         pass_number += 1
         if not keep_going:
-            if any(h.status is HypothesisStatus.PLAUSIBLE for h in hypotheses):
-                stop = StopReason.EVIDENCE_EXHAUSTED
-            else:
-                stop = StopReason.EVIDENCE_THRESHOLD_MET
+            # Amendment 4's wording: "open" means a hypothesis more evidence could still move, which
+            # is a plausible one. A weak hypothesis is one whose channel moved slightly, and no
+            # amount of narrative turns that into support or a contradiction.
+            stop = (
+                StopReason.EVIDENCE_EXHAUSTED
+                if any(h.status is HypothesisStatus.PLAUSIBLE for h in hypotheses)
+                else StopReason.EVIDENCE_THRESHOLD_MET
+            )
             break
 
     assert stop is not None
@@ -589,15 +687,6 @@ def investigate(
 
 def _ids(hypotheses: Sequence[Hypothesis], status: HypothesisStatus) -> list[str]:
     return [h.hypothesis_id for h in hypotheses if h.status is status]
-
-
-def _within(report_date: str, onset: dt.date, offset: dt.date, *, days: int) -> bool:
-    """Whether a report falls near the episode. A report just before onset is what explains it."""
-    try:
-        when = dt.date.fromisoformat(report_date)
-    except ValueError:  # pragma: no cover - chunk dates are written by the extractor
-        return False
-    return (onset - dt.timedelta(days=days)) <= when <= (offset + dt.timedelta(days=days))
 
 
 def _falsifiers(hypotheses: Sequence[Hypothesis], bundle: DiagnosticBundle) -> tuple[str, ...]:

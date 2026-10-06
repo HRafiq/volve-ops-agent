@@ -45,7 +45,8 @@ seen the data, so those criteria could fail honestly. Two of them did.
 - [`labels/development_pass1.jsonl`](labels/development_pass1.jsonl) is the label set itself, all
   135 rows, each carrying its provenance, its verbatim span and the rule that settled it.
 - [`docs/investigation_results.md`](docs/investigation_results.md) is the investigation layer
-  measured: five gates passing on fourteen episodes, and the finding that bounds the whole layer.
+  measured: five gates on fourteen episodes, how much each gate is worth on this corpus, and the
+  document coverage that bounds what any of it can claim.
 - [`docs/architecture_decisions/`](docs/architecture_decisions/) holds the decisions and the
   reasoning, including both feasibility results.
 
@@ -135,40 +136,48 @@ which one leads. And where both baselines name an actual cause and agree, **the 
 event in sixteen**. Either the structured fields are badly wrong about those events or the labels
 are, and the project cannot currently say which.
 
-### The investigation layer, and the document that does not exist
+### The investigation layer
 
 The controller owns nine declared stages and four stop conditions. A model's judgement enters at
 exactly two points: how to phrase a retrieval query, and whether another evidence pass is justified.
-It is never asked what to do next from an open list of tools, and that constraint is checked from the
-recorded trace rather than asserted in prose.
+It is never asked what to do next from an open list of tools.
 
-All five pre-registered gates pass over the fourteen episodes: every finding clears the provenance
-gate, every recorded stop condition matches the controller state, every trace replays to a
-byte-identical finding, abstention is reached on four episodes, and no finding claims a root cause at
-a level that does not license one. Replay is the one worth explaining: the trace records the
-judgements rather than the output, so replaying recomputes the finding, which makes it a determinism
-test on the controller as much as a provenance one.
+All five pre-registered gates pass over the fourteen episodes. The one that earns its place
+unassisted is replay: the trace records the judgements rather than the output, so replaying
+recomputes the finding instead of reading it back, which makes it a determinism test on the
+controller. The others are reported with how much that is worth on this corpus, because independent
+review pointed out that two of the five have almost nothing to examine here. The provenance gate
+itself is not weak: review built a finding citing another well's report from five years away under a
+fabricated filename, with invented figures and a root-cause claim, and the first version of the gate
+passed it. All four holes are closed and the reconstruction is a test.
 
-**Then the layer ran out of documents.** Zero document citations across all fourteen findings, and the
-top causal level reached zero times. Not one of the 3,673 extracted drilling-report events falls inside
-any episode window. The reports cluster in 2007 to 2008 and 2016; the episodes fall in 2009 to 2014.
-A daily drilling report is written when a rig is on the well, and a quietly producing well has no rig.
+**One episode in fourteen gets a documented root cause.** `15/9-F-14` from 31 January 2012, citing a
+report dated the day before: *"Closed in well to prepare for handover."* The choke reduction the data
+established is explained, cited verbatim. The other thirteen have nothing to cite: not one of the
+3,673 extracted drilling-report events falls inside any episode window, and at ±45 days twelve of
+fourteen have none. The reports cluster in 2007–08 and 2016 while the episodes fall in 2009–14,
+because a daily drilling report is written when a rig is on the well and a producing well has no rig.
 
-So the honest output for a production episode is the one the design asked for in exactly these words:
-what changed, from data, and no report explains why. Three episodes stop earlier still, on
-`mandatory_evidence_unavailable`, because `15/9-F-12` has usable downhole pressure on 31.2 percent of
-its producing days where counting non-empty cells reports 99.8. The controller does not impute it and
-the gate will not let a hypothesis that needs it be called supported.
+An earlier version of this README claimed zero citations and a structurally unreachable top level.
+Both were wrong: the level was never implemented, and retrieval was asking about the wrong hypothesis
+on the one episode where documents existed. Review caught both, and
+[ADR 0008](docs/architecture_decisions/0008-drilling-reports-rarely-overlap-production-episodes.md)
+records the correction alongside the finding, because an ADR that reasons from a correct table to a
+self-flattering conclusion is the more useful thing to have written down.
 
-This is the third pre-registered capability the dataset has declined to support, after both
-feasibility criteria, and all three fail the same way: Volve is generous about measurements and thin
-about the operational record that explains them. See
-[ADR 0008](docs/architecture_decisions/0008-documented-root-cause-is-unreachable-for-production-episodes.md).
+Three episodes stop earlier still, on `mandatory_evidence_unavailable`: `15/9-F-12` has usable
+downhole pressure on 31.2 percent of its producer rows where counting non-empty cells reports 99.8,
+because 2,095 rows record `0.00` on a gauge three kilometres down. The controller does not impute it
+and the gate will not let a hypothesis that needs it be called supported.
 
 Against the fixed `strongest-deviation` baseline, which reads nothing, the controller agrees on 5 of
-the 6 episodes where both named a driver. On production episodes the reading layer currently adds
-nothing over a deterministic ranking of five channels, which is what you would expect when there is
-nothing to read.
+the 7 episodes where both named a driver. That figure is reported with its weaknesses: the two share
+most of their implementation, so it largely measures shared code, and an earlier version reported 5 of
+6 by dropping the one episode where they disagreed.
+
+This is the third pre-registered capability the dataset has constrained, after both feasibility
+criteria, and all three are constrained the same way: Volve is generous about measurements and thin
+about the operational record that explains them.
 
 Results, limitations and reproduction instructions grow as the work produces them. A figure
 appears here only when a run has produced it.

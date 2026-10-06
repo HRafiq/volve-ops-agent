@@ -92,43 +92,64 @@ and `AVG_DOWNHOLE_TEMPERATURE` are recorded as `0.00` on 2,312 rows, all of them
 degrees Celsius, and a well cannot flow for hours at zero downhole pressure. The two channels are
 zero on exactly the same rows, which is a paired gauge outage rather than two coincidences.
 
-Usable coverage over the 9,161 producing well-days, where "usable" treats those zeros as absences
-and takes every other channel at face value:
+Coverage over the **9,161 producer rows**, which is every row the source marks as a production flow,
+including downtime and shut-in days. "Usable" treats the two sentinel channels' zeros as absences and
+takes every other channel at face value. The `zeros` column is every recorded `0.00`, published for
+all nine channels so that the line drawn here can be disagreed with:
 
-| channel | present | usable | sentinel zeros | usable share |
+| channel | present | usable | zeros | treated as absent | usable share |
+|---|---:|---:|---:|---:|---:|
+| on-stream hours | 9,161 | 9,161 | 1,141 | 0 | 100.0% |
+| wellhead pressure | 9,155 | 9,155 | 279 | 0 | 99.9% |
+| choke differential pressure | 9,155 | 9,155 | 57 | 0 | 99.9% |
+| wellhead temperature | 9,146 | 9,146 | 302 | 0 | 99.8% |
+| tubing differential pressure | 8,980 | 8,980 | 188 | 0 | 98.0% |
+| choke size | 8,919 | 8,919 | 227 | 0 | 97.4% |
+| annulus pressure | 7,890 | 7,890 | 1,204 | 0 | 86.1% |
+| **downhole pressure** | 8,980 | **6,668** | 2,312 | 2,312 | **72.8%** |
+| **downhole temperature** | 8,980 | **6,668** | 2,312 | 2,312 | **72.8%** |
+
+An earlier version of this table published the "treated as absent" column alone, which is zero for
+every channel without a sentinel rule by construction, so it read as "these channels have no zeros".
+Annulus pressure has 1,204. The two columns are now separate, which is what
+`src/volve_ops/domain/sensors.py` says it provides so a reader can check where the line was drawn.
+
+On the five channels left alone, the justifications hold for the bulk of their zeros and not for every
+one. 275 of the 279 zero wellhead-pressure rows are non-flowing, which is the bled-down shut-in well
+the module describes; 4 read 0 bar while flowing and producing oil, which is the same sentinel pattern
+and is accepted as a reading. Restricted to valid producing days, wellhead pressure, wellhead
+temperature, tubing differential and choke differential have no zeros at all, so three of the five
+justifications defend rows that do not occur in the population the investigation layer actually uses.
+
+Per well, downhole pressure is far more uneven than the total suggests, and it falls hardest on the
+well the production results depend on most:
+
+| wellbore | producer rows | present | usable | sentinel zeros |
 |---|---:|---:|---:|---:|
-| on-stream hours | 9,161 | 9,161 | 0 | 100.0% |
-| wellhead pressure | 9,155 | 9,155 | 0 | 99.9% |
-| choke differential pressure | 9,155 | 9,155 | 0 | 99.9% |
-| wellhead temperature | 9,146 | 9,146 | 0 | 99.8% |
-| tubing differential pressure | 8,980 | 8,980 | 0 | 98.0% |
-| choke size | 8,919 | 8,919 | 0 | 97.4% |
-| annulus pressure | 7,890 | 7,890 | 0 | 86.1% |
-| **downhole pressure** | 8,980 | **6,668** | 2,312 | **72.8%** |
-| **downhole temperature** | 8,980 | **6,668** | 2,312 | **72.8%** |
+| 15/9-F-15 D | 978 | 100.0% | 100.0% | 0 |
+| 15/9-F-1 C | 746 | 99.6% | 99.3% | 2 |
+| 15/9-F-11 | 1,165 | 99.5% | 98.2% | 15 |
+| 15/9-F-14 | 3,056 | 99.8% | 93.3% | 200 |
+| **15/9-F-12** | 3,056 | **99.8%** | **31.2%** | 2,095 |
+| **15/9-F-5** | 160 | **0.0%** | **0.0%** | 0, the column is simply empty |
 
-Per well it is far more uneven than the total suggests, and it falls hardest on the well the
-production results depend on most:
+**Which denominator, stated because the two differ and a reader will try to reconcile them.** The
+figures above count producer rows. The investigation layer runs on valid producing days, as section 6
+defines them, which is a smaller population: 7,893 rather than 9,161. Under that denominator F-12's
+usable downhole pressure is **32.6 percent** rather than 31.2, and the whole-field figure is 74.2
+rather than 72.8. The conclusion is the same either way; the numbers are not, and the one a finding's
+own availability record will show is the valid-producing one.
 
-| wellbore | producing days | usable downhole pressure | sentinel zeros |
-|---|---:|---:|---:|
-| 15/9-F-15 D | 978 | 100.0% | 0 |
-| 15/9-F-1 C | 746 | 99.3% | 2 |
-| 15/9-F-11 | 1,165 | 98.2% | 15 |
-| 15/9-F-14 | 3,056 | 93.3% | 200 |
-| **15/9-F-12** | 3,056 | **31.2%** | 2,095 |
-| **15/9-F-5** | 160 | **0.0%** | 0, the column is simply empty |
-
-`15/9-F-12` is one of only two wells that reach the 150-day calibration gate and it carries most of
-the detected episodes, so the well that matters most for production investigations has downhole
-pressure on under a third of its producing days. A presence check would have reported 99.8% for it.
+`15/9-F-12` is one of only two wells that reach the 150-day calibration gate and it carries nine of
+the fourteen detected episodes, so the well that matters most for production investigations has
+downhole pressure on under a third of its days. A presence check would have reported 99.8 percent.
 `15/9-F-5` has no downhole pressure at all.
 
 This is why a pressure diagnostic cannot be a required input to an investigation. Protocol section
-18 makes unavailable mandatory evidence an explicit stop condition and a published field of the
+18.2 makes unavailable mandatory evidence an explicit stop condition and a published field of the
 finding, rather than something an investigation works around silently. The judgement about which
-zeros are absences lives in `src/volve_ops/domain/sensors.py`, in one place, with the five channels
-it deliberately leaves alone.
+zeros are absences lives in `src/volve_ops/domain/sensors.py`, in one place, with the five channels it
+deliberately leaves alone.
 
 ### What the pre-registered physical checks found
 

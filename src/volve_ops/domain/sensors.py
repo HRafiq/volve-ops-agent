@@ -85,6 +85,15 @@ class ChannelCoverage(BaseModel):
     days: int
     present: int
     usable: int
+    zeros: int
+    """How many rows record exactly zero, whether or not this channel treats that as missing.
+
+    Separate from `sentinel_zeros` because the module docstring promises that the five non-sentinel
+    channels are "reported with their zero counts rather than silently cleaned", and review found
+    that promise unkept: `sentinel_zeros` is `present - usable`, which is identically zero for a
+    channel with no sentinel rule, so the published table showed 0 for all five and a reader would
+    have read that as "these channels have no zeros". Annulus pressure has 835 on producing days.
+    """
 
     @property
     def fraction(self) -> float:
@@ -92,6 +101,7 @@ class ChannelCoverage(BaseModel):
 
     @property
     def sentinel_zeros(self) -> int:
+        """Zeros this channel treats as absences. Zero for every non-sentinel channel, by design."""
         return self.present - self.usable
 
 
@@ -109,10 +119,12 @@ def coverage(days: Sequence[ProductionDay], channel: Channel) -> ChannelCoverage
     """Count how often a channel is present and how often it is usable."""
     present = sum(1 for d in days if getattr(d, channel.value) is not None)
     usable = sum(1 for d in days if reading(d, channel) is not None)
+    zeros = sum(1 for d in days if getattr(d, channel.value) == 0.0)
     return ChannelCoverage(
         channel=channel,
         unit=UNITS[channel],
         days=len(days),
         present=present,
         usable=usable,
+        zeros=zeros,
     )

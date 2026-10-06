@@ -39,13 +39,39 @@ from volve_ops.investigation.controller import (
 from volve_ops.investigation.diagnostics import build_bundle
 from volve_ops.investigation.schemas import (
     CausalLevel,
+    Finding,
     HypothesisStatus,
+    StopReason,
     Verdict,
     forbidden_root_cause_wording,
 )
-from volve_ops.investigation.validator import check
+from volve_ops.investigation.trace import Stage, Trace
+from volve_ops.investigation.validator import CitableDocument, check
 from volve_ops.provenance.facts import FactLedger
 from volve_ops.retrieval.index import BM25Index, chunks_from_events
+
+
+def stop_matches_trace(trace: Trace, finding: Finding) -> bool:
+    """Whether the recorded steps support the stop condition the finding reports.
+
+    Section 18.7 mark 2 asks whether the stop "matches the controller state that produced it". The
+    first implementation compared the finding's `curtailed` flag against the frozenset it had just
+    been derived from, which is a tautology. This reads the trace instead.
+    """
+    if finding.stop_reason is StopReason.STEP_BUDGET_REACHED:
+        return finding.curtailed and len(trace.steps) >= 1
+    if finding.stop_reason is StopReason.COST_BUDGET_REACHED:
+        return finding.curtailed and trace.cost_usd > 0.0
+    if finding.stop_reason is StopReason.MANDATORY_EVIDENCE_UNAVAILABLE:
+        return (
+            finding.curtailed
+            and bool(finding.unavailable_mandatory)
+            and any("unavailable" in step.summary for step in trace.steps)
+        )
+    # The two settled endings must not be marked curtailed, and must follow a decision step.
+    return not finding.curtailed and any(
+        step.stage is Stage.DECIDE_CONTINUE for step in trace.steps
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -86,7 +112,18 @@ def main(argv: list[str] | None = None) -> int:
 
     events = list(EventStore(args.store).read(args.version))
     index = BM25Index(chunks_from_events(events))
-    documents = {event.event_id: event.comment for event in events}
+    # The gate checks a citation's filename, well and date, not only its text, so it needs the
+    # event's metadata rather than its comment alone.
+    documents = {
+        event.event_id: CitableDocument(
+            event_id=event.event_id,
+            source_document=event.source_document,
+            well=event.well,
+            report_date=event.report_date,
+            text=event.comment,
+        )
+        for event in events
+    }
 
     print(f"development wells {len(usable)}; episodes {len(episodes)}")
     print(f"narrative index   {len(index)} chunks over {len({e.well for e in events})} wells")
@@ -140,9 +177,7 @@ def main(argv: list[str] | None = None) -> int:
             h.hypothesis_id for h in finding.hypotheses if h.status is HypothesisStatus.SUPPORTED
         ]
         families = {
-            baseline.HYPOTHESIS_FAMILY[h]
-            for h in supported
-            if h in baseline.HYPOTHESIS_FAMILY
+            baseline.HYPOTHESIS_FAMILY[h] for h in supported if h in baseline.HYPOTHESIS_FAMILY
         }
         citations = sum(len(h.supporting) for h in finding.hypotheses)
         print(
@@ -173,14 +208,18 @@ def main(argv: list[str] | None = None) -> int:
                 "gate_passed": gate.passed,
                 "gate_violations": [v.model_dump(mode="json") for v in gate.violations],
                 "replays_exactly": replays,
+                "stop_matches_trace": stop_matches_trace(result.trace, finding),
                 "baseline_driver": call.proximate_driver,
                 "baseline_abstained": call.abstained,
                 # Compared at the level of the physical event, not the column. See
-                # baseline.DRIVER_FAMILY. None where either side made no comparable claim.
+                # baseline.DRIVER_FAMILY.
+                #
+                # None only where one side named nothing. Review caught the first version returning
+                # None when the controller's supported hypothesis lay outside the baseline's
+                # vocabulary, which silently dropped the one episode where the two named different
+                # drivers and turned 5 of 7 into 5 of 6, the most favourable of three framings.
                 "agrees_with_baseline": (
-                    None
-                    if call.family is None or not families
-                    else call.family in families
+                    None if call.family is None or not supported else call.family in families
                 ),
                 "supported_families": sorted(families),
             }
@@ -211,14 +250,11 @@ def main(argv: list[str] | None = None) -> int:
     print("\nsection 18.7 pass marks:")
     marks = {
         "provenance validity is 100 percent": gate_failures == 0,
-        "stop-condition honesty is 100 percent": all(
-            r["curtailed"]
-            == (
-                r["stop_reason"]
-                in {"mandatory_evidence_unavailable", "step_budget_reached", "cost_budget_reached"}
-            )
-            for r in rows
-        ),
+        # Checked against the trace that produced the finding, not against the finding's own
+        # `curtailed` flag. The first version compared `curtailed` with the frozenset the controller
+        # had just set it from, so it was a value tested against its own definition and could not
+        # fail. What it checks now: the stop the finding reports is one the recorded steps support.
+        "stop-condition honesty is 100 percent": all(r["stop_matches_trace"] for r in rows),
         "trace replay is exact": replay_failures == 0,
         "abstention is reachable and used": verdicts[Verdict.INSUFFICIENT_EVIDENCE.value] > 0,
         "no forbidden root-cause wording": wording_failures == 0,

@@ -26,6 +26,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from volve_ops.domain.sensors import Channel
 
+#: How many readings a channel needs over a window before anything may be concluded from it. Matches
+#: `diagnostics.MIN_DAYS_FOR_A_SUMMARY`, which is where the comparison gives up for the same reason.
+MIN_READINGS_FOR_A_CHANNEL: Final[int] = 3
+
 
 class CausalLevel(StrEnum):
     """How far the evidence reaches. Section 18.4 fixes what each level permits saying."""
@@ -147,7 +151,13 @@ class ChannelAvailability(BaseModel):
 
     @property
     def available(self) -> bool:
-        return self.usable > 0
+        """Whether this channel can support a hypothesis over this window.
+
+        `usable > 0` was wrong and review caught it: one reading in twenty days left the channel out
+        of `unavailable_mandatory`, so neither the section 18.3 stop nor the missing-evidence
+        disclosure fired, even though the comparison was `None` and nothing could be concluded.
+        """
+        return self.usable >= MIN_READINGS_FOR_A_CHANNEL
 
 
 class Finding(BaseModel):
@@ -209,13 +219,22 @@ class Finding(BaseModel):
 
 
 # Section 18.4 forbids root-cause wording below `documented_root_cause`. Checked against the
-# narrative because that is the text a reader acts on, and a level recorded correctly in a field
-# while the prose says "root cause" has still made the stronger claim.
+# narrative because that is the text a reader acts on: a level recorded correctly in a field while
+# the prose says "root cause" has still made the stronger claim.
+#
+# This is a blacklist and therefore a backstop, not a proof. Review found that "the underlying
+# reason was the operator's decision" and "this shortfall originated from a planned curtailment"
+# both evaded the first version, and no list of phrases closes that gap. What does close it is that
+# the level lives in a typed field and the narrative is generated from the level; the blacklist
+# catches a generator, or a model, that drifts away from it.
 _ROOT_CAUSE_WORDING: Final[tuple[re.Pattern[str], ...]] = (
-    re.compile(r"\broot[\s-]?cause(?!\s+(?:unresolved|not\s+(?:established|documented)))", re.I),
+    re.compile(r"\broot[\s-]?causes?(?!\s+(?:unresolved|not\s+(?:established|documented)))", re.I),
     re.compile(r"\bcaused\s+by\b", re.I),
+    re.compile(r"\bunderlying\s+(?:reason|cause)\b", re.I),
+    re.compile(r"\boriginated\s+(?:from|in)\b", re.I),
     re.compile(r"\bbecause\s+the\s+operator\b", re.I),
-    re.compile(r"\bdue\s+to\s+a\s+decision\b", re.I),
+    re.compile(r"\bdue\s+to\s+a\s+(?:decision|plan)\b", re.I),
+    re.compile(r"\boperator's\s+decision\b", re.I),
 )
 
 
