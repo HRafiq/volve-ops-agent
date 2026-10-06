@@ -5,11 +5,16 @@ exactly what the model will be given and nothing else, it takes the evidence spa
 substring and refuses one that is not, and it saves after every event so a session can be
 stopped and resumed without losing work.
 
-    python scripts/label_npt.py data/cache/npt_store extractor-v0 --out data/cache/labels
+    python scripts/label_npt.py data/cache/npt_store extractor-v0 --source expert
 
 Pass one is the label set. The guide reserves pass two for estimating agreement and says it
 must never overwrite pass one, so the tool writes passes to separate files and refuses to mix
 them.
+
+`--source` is required and has no default. Protocol section 17 suspends two pass marks on this
+field, and a tool that guessed it would decide what the resulting figures are allowed to claim.
+The published development set was written with `machine_assisted`; `expert` belongs to an
+adjudication under section 17.4, and the tool records who or what did the labelling alongside it.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from pathlib import Path
 
 from volve_ops.extraction.npt import CauseLabel, NPTEvent
 from volve_ops.extraction.sampling import draw_sample
+from volve_ops.extraction.scoring import LabelSource
 from volve_ops.extraction.store import EventStore
 
 CHOICES: Sequence[CauseLabel] = tuple(CauseLabel)
@@ -79,9 +85,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("store", type=Path)
     parser.add_argument("version")
-    parser.add_argument("--out", type=Path, default=Path("data/cache/labels"))
+    parser.add_argument("--out", type=Path, default=Path("labels"))
     parser.add_argument("--split", default="development", choices=["development", "hold-out"])
     parser.add_argument("--pass", dest="label_pass", type=int, default=1, choices=[1, 2])
+    parser.add_argument(
+        "--source",
+        required=True,
+        choices=[s.value for s in LabelSource],
+        help="who is assigning these causes; see protocol section 17",
+    )
+    parser.add_argument(
+        "--labeller",
+        required=True,
+        help="the person or model doing the labelling, recorded on every row",
+    )
     args = parser.parse_args(argv)
 
     events = {e.event_id: e for e in EventStore(args.store).read(args.version)}
@@ -117,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         if span is None and cause is not CauseLabel.NOT_STATED:
             print("  no span given, so the cause is not stated by the comment; recording that")
             cause = CauseLabel.NOT_STATED
+        rule = input("which guide rule settled it (optional)> ").strip()
         note = input("note (optional)> ").strip()
         disagrees = input("does the source's own coding look wrong? [y/N]> ").strip().lower()
 
@@ -135,6 +153,9 @@ def main(argv: list[str] | None = None) -> int:
             "source_coding_looks_wrong": disagrees == "y",
             "labeller_pass": args.label_pass,
             "labelled_at": dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
+            "label_source": args.source,
+            "labeller": args.labeller,
+            "applied_rule": rule or None,
         }
         with target.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row) + "\n")

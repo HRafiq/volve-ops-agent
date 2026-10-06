@@ -21,11 +21,14 @@ from volve_ops.extraction.sampling import (
 )
 from volve_ops.extraction.scoring import (
     LabelledEvent,
+    LabelSource,
     condition_abstention,
     condition_relative_margin,
     condition_spans_are_verbatim,
     score_macro,
 )
+
+SRC = LabelSource.EXPERT
 
 
 def event(
@@ -100,6 +103,7 @@ class TestSpanGate:
     def test_a_verbatim_span_passes(self) -> None:
         labelled = [
             LabelledEvent(
+                label_source=SRC,
                 event_id="a",
                 cause=C.EQUIPMENT_FAILURE,
                 comment="Mud pump 1 failed, changed liners.",
@@ -113,7 +117,12 @@ class TestSpanGate:
     def test_attributing_a_cause_without_a_span_fails_the_gate(self) -> None:
         """Section 14.2 fixes the output as a cause and a span. Citing nothing is not passing."""
         labelled = [
-            LabelledEvent(event_id="a", cause=C.EQUIPMENT_FAILURE, comment="Mud pump 1 failed.")
+            LabelledEvent(
+                label_source=SRC,
+                event_id="a",
+                cause=C.EQUIPMENT_FAILURE,
+                comment="Mud pump 1 failed.",
+            )
         ]
         result = condition_spans_are_verbatim(labelled, {"a": None}, [C.EQUIPMENT_FAILURE])
         assert not result.passed
@@ -121,8 +130,13 @@ class TestSpanGate:
 
     def test_an_abstention_needs_no_span(self) -> None:
         labelled = [
-            LabelledEvent(event_id="a", cause=C.NOT_STATED, comment="POOH."),
-            LabelledEvent(event_id="b", cause=C.EQUIPMENT_FAILURE, comment="Mud pump 1 failed."),
+            LabelledEvent(label_source=SRC, event_id="a", cause=C.NOT_STATED, comment="POOH."),
+            LabelledEvent(
+                label_source=SRC,
+                event_id="b",
+                cause=C.EQUIPMENT_FAILURE,
+                comment="Mud pump 1 failed.",
+            ),
         ]
         result = condition_spans_are_verbatim(
             labelled, {"b": "pump 1 failed"}, [C.NOT_STATED, C.EQUIPMENT_FAILURE]
@@ -132,8 +146,15 @@ class TestSpanGate:
     def test_one_fabricated_span_fails_the_gate(self) -> None:
         """A cited span that is not in the source is a fabricated citation, and one is too many."""
         labelled = [
-            LabelledEvent(event_id="a", cause=C.EQUIPMENT_FAILURE, comment="Mud pump 1 failed."),
-            LabelledEvent(event_id="b", cause=C.HOLE_PROBLEM, comment="Stuck pipe."),
+            LabelledEvent(
+                label_source=SRC,
+                event_id="a",
+                cause=C.EQUIPMENT_FAILURE,
+                comment="Mud pump 1 failed.",
+            ),
+            LabelledEvent(
+                label_source=SRC, event_id="b", cause=C.HOLE_PROBLEM, comment="Stuck pipe."
+            ),
         ]
         result = condition_spans_are_verbatim(
             labelled,
@@ -145,7 +166,12 @@ class TestSpanGate:
 
     def test_a_paraphrase_is_not_verbatim(self) -> None:
         labelled = [
-            LabelledEvent(event_id="a", cause=C.EQUIPMENT_FAILURE, comment="Mud pump 1 failed.")
+            LabelledEvent(
+                label_source=SRC,
+                event_id="a",
+                cause=C.EQUIPMENT_FAILURE,
+                comment="Mud pump 1 failed.",
+            )
         ]
         assert not condition_spans_are_verbatim(
             labelled, {"a": "the mud pump broke"}, [C.EQUIPMENT_FAILURE]

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Callable, Mapping, Sequence
+from enum import StrEnum
 from typing import Final
 
 from pydantic import BaseModel, ConfigDict
@@ -29,15 +30,38 @@ BOOTSTRAP_SAMPLES: Final[int] = 2000
 BOOTSTRAP_SEED: Final[int] = 20261006
 
 
+class LabelSource(StrEnum):
+    """Who assigned the cause. Protocol section 17 turns on this distinction.
+
+    There is deliberately no default anywhere this appears. A labelled set whose provenance can
+    be left unstated is one whose provenance gets inferred from surrounding prose, and section
+    17.2 suspends two pass marks on exactly this field.
+    """
+
+    EXPERT = "expert"
+    MACHINE_ASSISTED = "machine_assisted"
+
+
 class LabelledEvent(BaseModel):
-    """One hand-labelled event: what the labeller recorded, per docs/labelling_guide.md."""
+    """One labelled event: what the labeller recorded, per docs/labelling_guide.md."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     event_id: str
     cause: CauseLabel
+    label_source: LabelSource
     evidence_span: str | None = None
     comment: str = ""
+
+
+def selection_permitted(labelled: Sequence[LabelledEvent]) -> bool:
+    """Whether this label set may select an approach, per protocol section 17.2.
+
+    One machine-assisted label is enough to withdraw it. A set that mixes provenances cannot
+    support a selection claim on the expert part alone, because the macro average is taken over
+    the whole sample.
+    """
+    return all(e.label_source is LabelSource.EXPERT for e in labelled)
 
 
 class ClassScore(BaseModel):
@@ -149,6 +173,14 @@ class ConditionResult(BaseModel):
     name: str
     passed: bool
     detail: str
+    gates: bool = True
+    """Whether passing this condition selects anything.
+
+    False on conditions 1 and 2 when the labels are machine-assisted, per protocol section 17.2.
+    The condition is still computed and still reports `passed`; what it loses is the authority to
+    select. Keeping the computed value rather than suppressing it is deliberate: the figure is
+    reportable as a diagnostic, and a reader can see what it was.
+    """
 
 
 def condition_relative_margin(
@@ -268,6 +300,24 @@ def condition_abstention(
     )
 
 
+def approach_is_selected(results: Sequence[ConditionResult]) -> bool:
+    """Whether section 14.5 selects this approach. The only path to saying an approach passed.
+
+    A suspended condition makes selection impossible rather than dropping out of the conjunction.
+    That distinction is the whole of protocol section 17.2: `all(r.passed for r in results if
+    r.gates)` is the aggregation a caller writes by hand, and on a machine-assisted label set it
+    quietly reduces a four-condition bar to a two-condition one. Worse, the two survivors are both
+    conditions an approach controls unilaterally, since condition 3 is satisfied by copying a
+    substring and condition 4 compares the approach with itself. So that aggregation would select
+    an approach that no condition could fail for being wrong about a cause.
+    """
+    if not results:
+        return False
+    if any(not r.gates for r in results):
+        return False
+    return all(r.passed for r in results)
+
+
 def evaluate(
     labelled: Sequence[LabelledEvent],
     candidate: Callable[[str], CauseLabel],
@@ -275,7 +325,13 @@ def evaluate(
     spans: Mapping[str, str | None],
     baselines: Mapping[str, Callable[[str], CauseLabel]],
 ) -> list[ConditionResult]:
-    """Run all four conditions. An approach is selected only if every one passes."""
+    """Run all four conditions.
+
+    An approach is selected only if every **gating** condition passes. On a machine-assisted
+    label set, conditions 1 and 2 do not gate, so passing them selects nothing: the suspension in
+    protocol section 17.2 is applied here rather than left to whoever reads the output, because a
+    number that reads like a pass mark will be used as one.
+    """
     gold = [e.cause for e in labelled]
     predicted = [candidate(e.event_id) for e in labelled]
     forced_predicted = [forced(e.event_id) for e in labelled]
@@ -283,10 +339,16 @@ def evaluate(
         name: [fn(e.event_id) for e in labelled] for name, fn in baselines.items()
     }
 
+    gates = selection_permitted(labelled)
+    suffix = "" if gates else "; reported only, not a gate: labels are machine-assisted (s17.2)"
+
     margin, best_name = condition_relative_margin(gold, predicted, baseline_predictions)
+    resampling = condition_margin_survives_resampling(
+        gold, predicted, baseline_predictions[best_name]
+    )
     return [
-        margin,
-        condition_margin_survives_resampling(gold, predicted, baseline_predictions[best_name]),
+        margin.model_copy(update={"gates": gates, "detail": margin.detail + suffix}),
+        resampling.model_copy(update={"gates": gates, "detail": resampling.detail + suffix}),
         condition_spans_are_verbatim(labelled, spans, predicted),
         condition_abstention(gold, predicted, forced_predicted),
     ]

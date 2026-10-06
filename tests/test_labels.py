@@ -15,7 +15,9 @@ from volve_ops.extraction.labels import (
     read_label_file,
 )
 from volve_ops.extraction.npt import CauseLabel, NPTEvent
-from volve_ops.extraction.scoring import LabelledEvent
+from volve_ops.extraction.scoring import LabelledEvent, LabelSource
+
+SRC = LabelSource.EXPERT
 
 
 def event(event_id: str, comment: str = "Mud pump 1 failed.") -> NPTEvent:
@@ -47,6 +49,7 @@ def row(
     event_id: str = "a",
     cause: str = "equipment_failure",
     span: str | None = "pump 1 failed",
+    source: str = "expert",
 ) -> dict[str, object]:
     return {
         "event_id": event_id,
@@ -59,6 +62,9 @@ def row(
         "source_coding_looks_wrong": False,
         "labeller_pass": 1,
         "labelled_at": "2026-10-06T12:00:00+00:00",
+        "label_source": source,
+        "labeller": "a-person",
+        "applied_rule": "R2",
     }
 
 
@@ -103,12 +109,12 @@ def test_an_unknown_cause_is_refused(tmp_path: Path) -> None:
 
 def test_agreement_is_computed_over_the_overlap() -> None:
     first = [
-        LabelledEvent(event_id="a", cause=CauseLabel.EQUIPMENT_FAILURE),
-        LabelledEvent(event_id="b", cause=CauseLabel.NOT_STATED),
-        LabelledEvent(event_id="c", cause=CauseLabel.HOLE_PROBLEM),
+        LabelledEvent(label_source=SRC, event_id="a", cause=CauseLabel.EQUIPMENT_FAILURE),
+        LabelledEvent(label_source=SRC, event_id="b", cause=CauseLabel.NOT_STATED),
+        LabelledEvent(label_source=SRC, event_id="c", cause=CauseLabel.HOLE_PROBLEM),
     ]
     second = [
-        LabelledEvent(event_id="a", cause=CauseLabel.EQUIPMENT_FAILURE),
-        LabelledEvent(event_id="b", cause=CauseLabel.RIG_SERVICE),
+        LabelledEvent(label_source=SRC, event_id="a", cause=CauseLabel.EQUIPMENT_FAILURE),
+        LabelledEvent(label_source=SRC, event_id="b", cause=CauseLabel.RIG_SERVICE),
     ]
     assert agreement(first, second) == (1, 2)

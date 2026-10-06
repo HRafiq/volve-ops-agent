@@ -13,14 +13,16 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 from volve_ops.extraction.npt import CauseLabel, NPTEvent
-from volve_ops.extraction.scoring import LabelledEvent
+from volve_ops.extraction.scoring import LabelledEvent, LabelSource
 
 
 class LabelFileError(Exception):
     """The label file does not say what the labelling guide requires."""
 
 
-REQUIRED_FIELDS = ("event_id", "cause", "labeller_pass")
+# `label_source` is required rather than defaulted. Protocol section 17.2 suspends two pass
+# marks on its value, so a row that omits it is a row whose provenance would be guessed.
+REQUIRED_FIELDS = ("event_id", "cause", "labeller_pass", "label_source")
 
 
 def read_label_file(path: Path) -> list[dict[str, object]]:
@@ -66,16 +68,46 @@ def join_to_events(
         except ValueError as exc:
             raise LabelFileError(f"{event_id}: {row['cause']!r} is not a cause label") from exc
 
-        span = row.get("evidence_span")
+        if "label_source" not in row:
+            raise LabelFileError(
+                f"{event_id}: no label_source. Protocol section 17.2 suspends two pass marks on "
+                "this field, so it is required rather than assumed"
+            )
+        try:
+            source = LabelSource(str(row["label_source"]))
+        except ValueError as exc:
+            raise LabelFileError(
+                f"{event_id}: {row['label_source']!r} is not a label source; "
+                f"expected one of {[s.value for s in LabelSource]}"
+            ) from exc
+
+        raw_span = row.get("evidence_span")
+        span = None if raw_span is None else str(raw_span)
+        if cause is CauseLabel.NOT_STATED and span is not None:
+            raise LabelFileError(
+                f"{event_id}: cause is not_stated but a span is cited. The guide defines "
+                "not_stated as the absence of a supporting substring, so the two cannot coexist"
+            )
+        if cause is not CauseLabel.NOT_STATED and span is None:
+            raise LabelFileError(
+                f"{event_id}: cause {cause.value} carries no span. A cause without a span is "
+                "the thing the labelling guide exists to prevent"
+            )
+        if span is not None and span not in event.comment:
+            raise LabelFileError(
+                f"{event_id}: the cited span is not a substring of the comment it cites"
+            )
+
         labelled.append(
             LabelledEvent(
                 event_id=event_id,
                 cause=cause,
-                evidence_span=None if span is None else str(span),
+                label_source=source,
+                evidence_span=span,
                 comment=event.comment,
             )
         )
-        spans[event_id] = None if span is None else str(span)
+        spans[event_id] = span
 
     return labelled, spans
 

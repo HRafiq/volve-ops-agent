@@ -3,8 +3,10 @@
 Produced by `scripts/run_extraction.py`, which is committed, alongside a run manifest carrying
 the store version, the content hash and the parser and extractor versions.
 
-No cause attribution exists yet. This document covers the deterministic layer only: what counts
-as a non-productive event, how much of it there is, and what the two fixed baselines predict.
+No cause-attribution system exists yet. This document covers the deterministic layer only: what
+counts as a non-productive event, how much of it there is, and what the two fixed baselines
+predict over the whole corpus. The labelled sample and its scoring are in
+[`labelling_results.md`](labelling_results.md).
 The pass marks that will judge an attribution approach were fixed in protocol v2 before any of
 this ran, and are not restated here.
 
@@ -110,4 +112,9 @@ taxonomy class it maps to would then be unscoreable.
 Nothing here measures a system. The deterministic layer is arithmetic and parsing, and its two
 pass marks are exactness rather than skill. The question protocol section 14 exists to answer,
 whether reading a comment adds anything over restating the label beside it, needs the labelled
-sample, and the labels need a human.
+sample.
+
+That sample now exists and is measured in [`labelling_results.md`](labelling_results.md), including
+both deterministic pass marks, which pass. It needed a human and did not get one: the labels are
+machine-assisted, protocol section 17 records what that costs, and amendment 2 suspends the two
+pass marks that depend on the labels being right.

@@ -1,11 +1,22 @@
 # Data manifest
 
-Version: v1
-Date: 2026-10-04
+Version: v2
+Date: 2026-10-06
 
 Raw and processed data are never committed to this repository. This manifest is what gets
 committed instead: enough metadata for a reader to obtain the same inputs and verify they have
 the same bytes.
+
+**One exception, added in v2.** `labels/development_pass1.jsonl` is committed, and it embeds 60 short
+verbatim spans of drilling-report comments. It is committed because a benchmark whose labels nobody
+can inspect makes every figure built on it an assertion, and these labels are machine-produced, so
+their inspectability is the only thing standing in for expert provenance. The Equinor Open Data
+Licence permits producing and sharing adapted material with attribution and without sale, which
+`NOTICE-VOLVE.md` and `DATA_LICENSE.md` carry. The reasoning is in
+[ADR 0007](architecture_decisions/0007-cause-labels-are-machine-assisted.md).
+
+Nothing else changes. The drilling reports, the production data, the extraction store and every other
+processed artifact stay out of the repository, and `.gitignore` excludes `/data/` outright.
 
 ## Source
 
