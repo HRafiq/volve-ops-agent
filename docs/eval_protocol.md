@@ -1,6 +1,6 @@
 # Evaluation protocol
 
-Version: v5
+Version: v6
 Date: 2026-10-06
 Status: pre-registered. Pushed before the work it judges.
 Amendments since v0: three, in sections 6 and 14.5 and in the labelling guide, all recorded in
@@ -11,6 +11,8 @@ New in v4: section 18 fixes the investigation layer, before any investigation ha
 New in v5: amendment 4 records every threshold the investigation layer turned out to need, all of
 them chosen after v4 was tagged and all labelled post-inspection, and corrects two stop-condition
 definitions that the implementation did not match.
+New in v6: section 19 fixes the evaluation harness, before it is built. Unlike section 18 it states
+its own numbers, which is the lesson amendment 4 recorded.
 
 This file states how the project will be judged, and it is pushed to the public remote
 before the runs it judges happen. The published history is the evidence. Pass marks,
@@ -1386,3 +1388,188 @@ against raw evidence. Verification splits in two and the halves are not equally 
 
 The hold-out is not investigated in this phase. Section 10's rule stands: it is scored once, in
 Phase 8.
+
+## 19. The evaluation harness
+
+Fixed before the harness exists. Section 18 was tagged without a single numeric threshold and
+amendment 4 had to record nine of them afterwards; this section states its numbers, and where it has
+none it says so rather than leaving a reader to find out from the source.
+
+What this section judges is not a layer but the project's account of itself: whether every reported
+figure is traceable to a frozen version, whether the hold-out really is untouched, and which of the
+handoff's intended metrics this dataset and this project's circumstances actually permit.
+
+### 19.1 The version freeze, and what a result is
+
+A scored run records all of the following, and **a result quoted without a complete manifest is not a
+result**. This restates section 12 for the evaluation layer and names the fields:
+
+```text
+dataset_version          the source files and their checksums, per docs/data_manifest.md
+label_set_version        the cause-label file and its provenance, per section 17
+parser_version           ingest
+extractor_version        drilling-report extraction
+investigator_version     the investigation controller
+retrieval_index_version  the index build and its chunk count
+correction_store_version the corrections in force, or `none`
+model_roles              each semantic role mapped to a model, or `none` where no model is called
+commit                   the repository state
+```
+
+**Pass mark, gating: every field is present and non-empty on every scored run, at 100 percent.** A
+field whose value is legitimately absent records `none` rather than being omitted, because an omitted
+field and a field that is deliberately empty are different claims and a reader cannot tell them apart.
+
+**Pass mark, gating: a run repeated on unchanged inputs produces an identical manifest hash.** A
+version freeze that does not reproduce is a record of nothing.
+
+### 19.2 The leakage audit, which gates
+
+The Phase 4 gate is "dev results table; hold-out untouched", and untouched is a claim that should be
+checked rather than asserted. Five checks, each mechanical, **all gating at 100 percent**:
+
+1. No hold-out well, as section 16 fixes them, contributes to any model fit, any threshold choice or
+   any labelled event.
+2. No report dated after the section 10 production boundary of 25 July 2014 appears in the labelled
+   sample, on any well.
+3. Every scored development figure derives from a day set that the split filter produced, not from one
+   filtered afterwards. Filtering after the fact is how a hold-out day reaches a fit through a path
+   nobody audited.
+4. The correction store version recorded on a scored run contains no correction derived from a
+   hold-out event.
+5. No hold-out episode has been investigated, and no hold-out label file exists.
+
+A failure here is an incident, not a score: the affected result is withdrawn rather than reported with
+a caveat.
+
+### 19.3 The development results table
+
+One table, consolidating every measured figure in the project, and every row carries three things
+beyond its value: the **denominator**, because `docs/data_profile.md` has already produced one figure
+that differs by two points depending on which population it is taken over; the **status**, one of
+`gated`, `reported` or `deferred`; and for a deferred row, **what would settle it**.
+
+**Pass mark, gating: every published figure in the repository appears in the table, at 100 percent.**
+Checked by the harness against the run manifests, not by reading the documents. A figure quoted in a
+document and absent from the table is either stale or unreproducible, and both have happened in this
+project already.
+
+### 19.4 Calibration: bands, not probabilities, and the reason
+
+Section 7.7 of the plan permits evidence-strength bands instead of a numeric probability where the
+sample is too small. **It is too small, and by a wide margin: fourteen development episodes.** A
+calibrated probability from fourteen outcomes would have a 95 percent interval roughly 25 points wide
+in each bin, which is not a calibration.
+
+So the harness computes an **evidence score** from observable features only, never from a model's
+stated confidence, and reports bands:
+
+| band | evidence score |
+|---|---|
+| `high` | at least 0.70 |
+| `moderate` | 0.40 to 0.70 |
+| `low` | below 0.40 |
+
+The score is the mean of these six features, each scaled to the unit interval and all computable
+without a model: the strongest standardised channel movement, capped at three standard deviations; the
+number of mandatory channels available, over the number required; whether a documentary cause was
+cited; the count of contradicting evidence, inverted; the fraction of the episode window that is
+neither quarantined nor missing; and whether the run was curtailed.
+
+**No pass mark, and no outcome rates, and the reason is the one section 18.8 already gave.** Bands are
+calibrated against whether the conclusion was right, and nobody available to this project can say
+whether it was. What is reported is the band distribution and its relationship to the things that can
+be measured: verdict, stop condition, citation count. **What a later version must fix, before any
+calibrated figure is reported:** the outcome definition, who determines it, the calibrator, and the
+interval. Reporting a reliability diagram against outcomes this project assigned to itself would be
+the labelling problem of section 17 wearing a statistician's hat.
+
+### 19.5 The false-root-cause rate, split into the half that can be measured
+
+Section 7.6 of the plan calls this the important safety metric, and it is, which is why it is worth
+separating cleanly rather than reporting one number that mixes the two halves.
+
+**The mechanical half gates.** A finding at `documented_root_cause` whose cited spans contain no
+stated reason is a false root-cause claim detectable without domain knowledge, because the claim is
+about the document rather than about the well. **Pass mark: zero such findings, at 100 percent.**
+Likewise zero findings that claim a root cause in prose below the level that licenses it, which
+section 18.7 already gates and which is counted here too so the safety metric is in one place.
+
+**The half that needs a domain reader is deferred**, with the same wording as section 18.8: a finding
+whose documented root cause is cited correctly and is nonetheless the wrong explanation cannot be
+detected here. What a later version must fix: who adjudicates, on what sample, and the pass mark. The
+asymmetry the plan asks for is recorded now so it cannot be chosen later: **a false confident
+root-cause claim counts against the system more heavily than an abstention**, at a ratio fixed here of
+**five to one**, and an unnecessary abstention counts against it at **one**.
+
+### 19.6 Risk and coverage, deferred for the same reason, with the shape fixed
+
+A risk–coverage curve plots error rate against the fraction of cases the system chose to answer, and
+error rate needs correctness. Deferred. Fixed now so the axes cannot be chosen to flatter a result:
+coverage is the fraction of episodes with a verdict other than `insufficient_evidence`; risk is the
+fraction of those whose conclusion the adjudication of section 19.5 finds wrong; and the curve is
+traced by varying the evidence-score band required to answer. The three bands of section 19.4 give
+three points, which is a curve only by courtesy, and the report says so.
+
+### 19.7 Trajectory, stability and cost, which are measurable now
+
+All reported, none gated except the first:
+
+- **Repeated identical tool calls: zero. Gating.** A controller that asks the same question twice has
+  a defect, and this is cheap to check from the trace.
+- Steps per investigation, and the distribution of stop conditions.
+- Verdict and hypothesis stability over repeated runs. With no model called this is exactly 1.0 by
+  construction, and the report states that rather than presenting determinism as a result.
+- Tokens and cost. Zero while no model is called, and reported as zero rather than omitted.
+- Early-exit reason distribution, which section 18.3 already produces.
+
+### 19.8 The prose judge, specified and not run
+
+Section 7.9 of the plan confines a model judge to prose quality and never to correctness. The rubric
+is fixed here so that it cannot be written to match whatever a judge happens to score well:
+**clarity**, whether a reader can state the finding's conclusion after one reading;
+**structure**, whether the conclusion, the evidence and the limitation are separable;
+**actionability**, whether the recommended next check is specific enough to carry out.
+Each scored 1 to 5.
+
+Not run, for a plain reason: no model provider key is configured in this project. Validation would
+also need a human's own scores on a sample to measure agreement against, and **prose quality is the
+one thing in this project the author can judge without drilling-operations experience**, so this is
+deferred on the key rather than on the limitation of section 18.8. What a later version must fix: the
+sample size, the agreement statistic, and the threshold below which judge scores are not reported at
+all.
+
+### 19.9 Data-quality tests
+
+The eight checks of plan section 7.1, each gating at 100 percent except where noted: coverage against
+the manifest, unit validity, alias and well-name resolution, zero-versus-missing behaviour per the
+sentinel rule, duplicate detection, chronology, parse failures quarantined rather than dropped, and
+the leakage checks of section 19.2. Coverage is reported rather than gated, because what fraction of a
+channel exists is a property of the dataset and not a defect in this code.
+
+### 19.10 CI, and what may spend money
+
+**Free CI, on every push and pull request, and it must pass with no API key:** unit tests, parser and
+schema tests, domain services, the provenance gate, the leakage audit, the version-freeze
+reproducibility check, and the security invariants that already run.
+
+**Paid evaluation, manually triggered only:** anything that calls a model. It may not run on a push,
+on a pull request, or on a schedule. A scored hold-out run is manual, once, and in Phase 8.
+
+**Pass mark, gating: the free workflow does not read any model credential.** Checked by the absence of
+the secret from the workflow rather than by inspection of the code, because a workflow that cannot see
+a key cannot spend one.
+
+### 19.11 What this section does not do
+
+It does not score the hold-out, which section 10 reserves for Phase 8 and which section 19.2 gates
+against touching.
+
+It does not create the curated episode set that plan section 7.3 would need for detector precision and
+recall. Fourteen episodes from one detector on two wells is not a benchmark, and manufacturing
+precision from it is the failure this document exists to prevent. Deterministic invariants and the
+section 19.3 table stand in its place, and the limitation is reported wherever an episode figure
+appears.
+
+It does not report an end-to-end correctness figure, for the reason given three times now in three
+sections, which is the honest number of times to give it.
