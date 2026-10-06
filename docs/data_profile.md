@@ -24,8 +24,14 @@ can change the volume path. Checksums rather than paths are what tie a result to
 One workbook, two sheets, covering 1 September 2007 to 1 December 2016.
 
 The daily sheet has 15,634 rows over 24 columns and seven wellbores. Of those, six are oil
-producers and three are water injectors; two wellbores appear under both roles at different
-times.
+producers and two are water injectors, counted by the flow recorded on the day. One wellbore,
+15/9-F-5, appears under both roles at different times, which is why those two counts sum to
+eight rather than seven.
+
+An earlier version of this document said three injectors and two dual-role wellbores. That came
+from the well-type column rather than from the flow kind, and the two columns disagree on
+eighteen rows. The reader that produces every other figure here classifies by flow kind, because
+the day classification is about what the well did that day, so these counts now match it.
 
 Valid producing days, under the definition fixed in `docs/eval_protocol.md` section 6, which
 requires at least 6.0 on-stream hours, a recorded oil volume, production status, and no failed

@@ -1,9 +1,11 @@
 # Evaluation protocol
 
-Version: v1
-Date: 2026-10-04
+Version: v2
+Date: 2026-10-06
 Status: pre-registered. Pushed before the work it judges.
 Amendments since v0: one, in section 6, recorded in section 13 and labelled post-inspection.
+New in v2: sections 14 to 16 fix the drilling-report extraction and retrieval layers, which v0
+deferred. No v0 or v1 number changes.
 
 This file states how the project will be judged, and it is pushed to the public remote
 before the runs it judges happen. The published history is the evidence. Pass marks,
@@ -78,17 +80,24 @@ Deferred, with the reason:
   what a production record of this field looks like. Guarded in section 9: the labelling
   guide is pushed before any label is made, and labels are made without seeing detector
   output.
-- Splits for the layers section 10 does not cover, named in section 10.
+
+Settled in v2, and no longer deferred: the extraction and retrieval pass marks and the split
+for those layers, in sections 14 to 16. They are fixed before any extraction is run and before
+any label is made, which is what makes them pre-registration rather than description.
 
 Anything else these definitions leave open is, when it is later set, an amendment under
 section 13 and carries that label. That clause exists so the deferred list cannot be
 extended by discovering a convenient gap in it.
 
-None of the three deferred items is drawn from this dataset: one comes from a published
-capacity figure, one from a labelling guide, one from calendar arithmetic. That is deliberate.
-Had any of them been a data statistic, it would have had to be computed from pre-boundary
-data only, because a threshold drawn from a whole-record profile is a threshold choice using
-hold-out data, which section 10 forbids.
+Neither remaining deferred item is drawn from this dataset: one comes from a published capacity
+figure, the other from a labelling guide. That is deliberate. Had either been a data statistic,
+it would have had to be computed from pre-boundary data only, because a threshold drawn from a
+whole-record profile is a threshold choice using hold-out data, which section 10 forbids.
+
+Section 16 does report a whole-record statistic, the proportion of drilling-report events its
+split holds out. That figure is a consequence of a rule fixed before it was computed, recorded
+so a reader can check the rule was not reverse-engineered, and it sets no threshold. It is not
+an exception to the paragraph above; it is a different kind of number.
 
 The contract on the next version is narrow. It may fill only the blanks named above. It
 may not change any number fixed in this version. A later version that alters a v0
@@ -723,3 +732,216 @@ No threshold moved. No pass mark moved. The change was not prompted by any resul
 criterion, and the detector had not been run when it was made. A reader who wants to check this
 rather than take it on trust can reclassify under both wordings; the counts above are what that
 produces.
+
+## 14. Drilling-report extraction
+
+What the reports contain was established during data profiling and is recorded in
+`docs/data_profile.md`: 1,759 WITSML drill reports carrying 23,447 activity blocks, each with
+start and end timestamps, a two-level activity code, an ok-or-fail state, a detail state, and a
+free-text comment. What is not known, and what these pass marks judge, is how well anything
+extracts from them.
+
+### 14.1 What counts as a non-productive event
+
+A block is non-productive if its activity code begins `interruption`, **or** its state is
+`fail`. Both, because the two do not coincide: 3,577 blocks carry an interruption head, 480
+carry a fail state, and 96 of those fail-state blocks sit under a different head, mostly
+`drilling -- casing` and `drilling -- drill`. A failed casing run is lost time whatever it is
+filed under, and the union is 3,673 blocks.
+
+This restates ADR 0005, which named both the interruption head and the failure states. An
+earlier draft of this section used the interruption head alone, which would have made counting
+any of those 96 blocks a parser defect.
+
+### 14.2 The division of labour, and why it is not negotiable
+
+Non-productive time is identified **deterministically** by the rule above. Duration is the
+difference between the block's timestamps. The subcategory is the code's second level. None of
+that goes near a model, because none of it needs judgement, and a model asked to classify what
+is already classified can only introduce error.
+
+The model is asked one question the structured fields cannot answer: given an event the source
+has already categorised and timed, what does the narrative say caused it. Its output is a cause
+attribution and a verbatim span of the comment supporting it.
+
+The model is given exactly what the labeller is given, and no more: the comment, the activity
+code, the state and detail state, and the timestamps. Pinning this matters because two of the
+three baselines below are built from those same structured fields, and a model with access to
+material the labeller lacked would be scored against labels made in ignorance of it.
+
+This also fixes what the metrics mean. Category accuracy against hand labels would measure the
+operator's coding from 2008, not this system's extraction, and reporting it as an extraction
+score would be a borrowed number. It is reported as a data-quality statistic instead.
+
+### 14.3 Deterministic layer: pass marks
+
+Measured against the hand-labelled sample described in `docs/labelling_guide.md`.
+
+1. **Event detection is exact.** Every block meeting the 14.1 rule in the labelled sample
+   becomes exactly one event, and no block failing it does. The pass mark is 100 percent
+   agreement, because disagreement is a parser defect rather than a difficulty.
+2. **Duration is exact.** Computed duration equals the labeller's reading of the block's own
+   timestamps to within one minute. The same reasoning: this is arithmetic.
+
+A failure of either is reported as a parser incident and blocks the layer, rather than being
+absorbed into an aggregate score that a strong model could hide.
+
+### 14.4 Cause attribution: the baselines
+
+Two baselines, fixed here and exempt from amendment on the same reasoning as section 3. Both
+read nothing. Both are built from structured fields the model also sees, so neither is a straw
+opponent, and a system that reads the comment must be shown to add something beyond restating
+a label it was handed.
+
+**`echo-subcategory`** maps the activity subcategory onto a cause, by this fixed table:
+
+| subcategory | cause | | subcategory | cause |
+|---|---|---|---|---|
+| `repair` | `equipment_failure` | | `wait` | `not_stated` |
+| `maintain` | `equipment_maintenance` | | `other` | `not_stated` |
+| `waiting on weather` | `waiting_on_weather` | | `sidetrack` | `hole_problem` |
+| `fish` | `hole_problem` | | `rig up/down` | `rig_service` |
+| `lost circulation` | `hole_problem` | | `well control` | `well_control` |
+
+**`echo-statedetail`** maps the detail state onto a cause, by this fixed table:
+
+| detail state | cause | | detail state | cause |
+|---|---|---|---|---|
+| `equipment failure` | `equipment_failure` | | `circulation loss` | `hole_problem` |
+| `stuck equipment` | `hole_problem` | | `mud loss` | `hole_problem` |
+| `operation failed` | `not_stated` | | `success` | `not_stated` |
+
+Naming both matters. `stateDetailActivity` marks 1,535 interruption blocks `equipment failure`
+outright, which is a strong free signal, and fixing only the weaker baseline while the exemption
+locks it in would have left the easier opponent standing. Where a block has neither field, the
+baseline emits `not_stated`.
+
+Both tables are part of the baseline definition and are exempt from amendment with it. A
+mapping supplied after seeing results is a baseline chosen after seeing results.
+
+### 14.5 Cause attribution: pass marks
+
+An approach is selected only if all four hold.
+
+1. **Macro-F1 at least 20 percent higher, relatively, than the better of the two baselines**,
+   on the labelled development sample.
+
+2. **That margin survives resampling.** The 95 percent bootstrap interval over labelled events,
+   for the difference between the approach and the better baseline, excludes zero. Without this
+   the first condition is not a bar: a macro average over eleven classes at a sample of 120 to
+   150 events moves by several points when one event in a rare class changes, which is larger
+   than the margin being tested.
+
+3. **Evidence-span validity of 100 percent.** Every span must be a verbatim substring of the
+   comment it cites, in the document version cited. A hard gate, not a score: a cited span that
+   is not in the source is a fabricated citation, and one is too many.
+
+4. **Abstention is available, used, and earns its place.** The approach must be able to return
+   no cause. On the labelled sample it must attribute a cause on at least 60 percent of events
+   whose label is not `not_stated`, and its precision on the events where it does attribute must
+   exceed, by at least 10 percentage points, the precision of the same approach with
+   `not_stated` struck from its permitted outputs. The coverage floor is what stops a system
+   passing by abstaining on everything except its single most confident event; the margin is
+   what stops it passing by a hundredth of a point.
+
+**How the macro average is taken**, fixed here because it changes the number more than the
+margin does. Only cause classes with at least five true instances in the labelled sample enter
+the average. Classes below that are reported individually with their counts and excluded, and
+the number of classes entering the average is reported with every figure. A class absent from
+the sample is not scored zero: scoring an unobserved class as a failure measures the sampling,
+not the system.
+
+If no approach passes, the deterministic layer ships without cause attribution. Per-well NPT
+totals by category and duration are still reportable from the structured fields alone, and that
+is an honest product rather than a degraded one.
+
+### 14.6 Reported without a pass mark
+
+Needs-review precision and recall, the labelled sample's own category distribution, the fraction
+of comments too short to support any attribution, inter-pass label agreement on the re-labelled
+subsample, the distribution of extraction confidence against correctness, and the rate at which
+the source's own coding disagrees with the comment.
+
+## 15. Retrieval
+
+Retrieval covers narrative text only: drilling-report comments and the per-well engineering
+documents. Structured data is queried through typed tools and is never embedded, because vector
+similarity over numeric tables retrieves the wrong well and the wrong month and gives no way to
+tell that it has.
+
+Retrieval failures are recorded separately from reasoning failures. A conclusion that was wrong
+because the evidence was never retrieved is a different defect from one that was wrong with the
+evidence in hand, and an aggregate that merges them points at neither.
+
+The baseline is fixed here and exempt from amendment:
+
+- `bm25-only`, lexical retrieval with no embedding component, over the same chunks with the same
+  metadata filters.
+
+**The pass marks are deferred, and named rather than implied.** Retrieval is scored against a
+gold evidence set: for each curated episode, the documents and spans that bear on it. That set
+cannot be built yet, because the curated episode set it is evidence *for* is itself deferred by
+section 9. Fixing a recall threshold against a set whose construction is unknown would be a
+number with nothing behind it.
+
+What is fixed now: the baseline above, the narrative-only scope, and the separation of retrieval
+from reasoning failures. What the next protocol version must fix, pushed before any retrieval is
+scored: how queries are sampled, the relevance scale, who judges and when, the pooling depth,
+the restriction to development wells, and the pass marks themselves.
+
+An earlier draft of this section set recall and precision thresholds against "the gold evidence
+sets" as though they existed. They did not, which made both pass marks unmeasurable as written
+and would have let the real thresholds be chosen later under cover of having pre-registered
+something.
+
+## 16. The split for the drilling-report layer
+
+Section 10's temporal boundary governs the production record. It does not transfer here: the
+drilling reports run from 1992 to 2018, most of them clustered in campaigns years apart from the
+production the boundary was computed from, and a date cut would put whole wells on one side by
+accident.
+
+**The split is by well, and here it can be.** The drilling reports cover 26 wellbores belonging
+to 11 distinct wells, enough that holding out whole wells leaves something on both sides. The
+production record's six producers are not the reason; they are a different layer with a
+different split, and an earlier draft cited them here as though they justified this choice.
+
+**The rule, and the sort it uses.** The hold-out is the four wells whose canonical names sort
+last in byte order over the canonical string form, which is the ordering Python's `sorted`
+gives and the one `splits.py` already uses elsewhere. Naming the sort is not pedantry: read as
+a natural ordering, where `F-15` follows `F-9`, the same sentence selects F-11, F-12, F-14 and
+F-15 instead, holds out 44 percent of events, and strips every retained production producer out
+of the development set. One rule, two readings, opposite outcomes.
+
+Applying it gives `15/9-F-4`, `15/9-F-5`, `15/9-F-7` and `15/9-F-9`, leaving seven development
+wells. Every wellbore of a hold-out well goes with it, so `15/9-F-9 A` is held out with
+`15/9-F-9`: a sidetrack shares its parent's campaign, its crew and often its problems.
+
+**What the rule produced**, recorded after fixing it rather than used to revise it: 3,673
+non-productive events in total, of which 616 are on hold-out wells: 16.8 percent. That is
+lighter than the production split's 25 percent, and of the 330 possible four-well splits only
+ten are this light.
+The rule was fixed first; the alternative is choosing wells until the proportion looks right.
+
+**Three consequences worth stating plainly rather than discovering later.**
+
+The two hold-outs are disjoint. `15/9-F-4` is injection only, `15/9-F-7` and `15/9-F-9` do not
+appear in the production record at all, and `15/9-F-5` has no production development days and is
+already excluded from production hold-out scoring as a cold start. So no well is scored on both
+layers, and cause attribution is generalised largely on a water injector and two wells the
+production record never saw. That is what a by-well rule fixed in advance produced, and it
+limits what a joint claim about the two layers could mean.
+
+The development wells include 155 reports dated after the production boundary of 25 July 2014,
+on wells whose production hold-out is scored. Labelling causes from a 2015 report on 15/9-F-12
+means reading narrative about a period the production detector is scored on. Section 10 permits
+profiling over the whole record as structural exposure while forbidding fits, labels and
+threshold choices on post-boundary data, and a label read from a post-boundary drilling report
+is a label, not profiling. **Labels, few-shot examples and prompt iteration therefore use
+development wells and pre-boundary reports only.** Reports after 25 July 2014 on development
+wells are available for extraction at run time and are not labelled or shown to a prompt.
+
+The hold-out label budget is fixed here, not later: 60 events, drawn by the same stratified rule
+as the development sample. Leaving it open would make the final scoring's sample size a free
+parameter chosen once the development results were known.
+
