@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import re
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
@@ -22,6 +23,8 @@ from pydantic import BaseModel, ConfigDict
 from volve_ops import INGEST_VERSION
 from volve_ops.extraction import EXTRACTOR_VERSION
 from volve_ops.extraction.npt import NPTEvent
+
+_VERSION_NAME = re.compile(r"[A-Za-z0-9._-]+")
 
 
 class StoreManifest(BaseModel):
@@ -68,6 +71,14 @@ class EventStore:
         self.root = root
 
     def _version_dir(self, version: str) -> Path:
+        # The version becomes a directory name, so it is checked here rather than in each
+        # caller. A CLI that takes it positionally would otherwise read or write anywhere the
+        # process can reach.
+        if not _VERSION_NAME.fullmatch(version):
+            raise ValueError(
+                f"version {version!r} is not a plain name; letters, digits, dot, dash and "
+                "underscore only"
+            )
         return self.root / version
 
     def versions(self) -> list[str]:
@@ -134,7 +145,13 @@ class EventStore:
     def verify(self, version: str) -> None:
         """Raise unless the stored events still hash to what the manifest recorded."""
         recorded = self.manifest(version)
-        actual = content_hash(list(self.read(version)))
+        events = list(self.read(version))
+        if len(events) != recorded.event_count:
+            raise ValueError(
+                f"version {version!r} holds {len(events)} events, manifest says "
+                f"{recorded.event_count}"
+            )
+        actual = content_hash(events)
         if actual != recorded.content_hash:
             raise ValueError(
                 f"version {version!r} does not match its manifest: "

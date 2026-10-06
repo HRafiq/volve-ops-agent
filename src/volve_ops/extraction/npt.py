@@ -148,7 +148,14 @@ def extract_from_report(path: Path) -> Iterator[NPTEvent]:
             start = _parse_timestamp(_text(activity, "dTimStart"))
             end = _parse_timestamp(_text(activity, "dTimEnd"))
             if start is None or end is None:
-                continue
+                # Section 14.3 requires every block meeting the 14.1 rule to become exactly one
+                # event, so a qualifying block that cannot be timed is a parser defect and is
+                # raised rather than skipped. Dropping it silently would make the exactness
+                # pass mark pass by losing the evidence against it.
+                raise UnsafeInputError(
+                    f"{path.name}: a non-productive block has no usable timestamps "
+                    f"({_text(activity, 'dTimStart')!r} to {_text(activity, 'dTimEnd')!r})"
+                )
 
             duration = (end - start).total_seconds() / 3600.0
             reasons: list[str] = []

@@ -6,7 +6,9 @@ human review.
 
 ## Status
 
-Data profiled, both feasibility criteria executed, deterministic expectation and episode layer built and measured. No agent exists yet.
+Data profiled, both feasibility criteria executed, the deterministic expectation and episode
+layer built and measured, and drilling-report extraction running. No agent exists yet, and no
+cause attribution: that is pre-registered and waiting on hand labels.
 
 The evaluation protocol was pushed before any dataset file was retrieved. That ordering is the
 point: every threshold the project will be judged against was fixed while its author had not
@@ -37,6 +39,12 @@ holds the engine; `src/volve_ops/tools/` wraps it in typed, bounded tools that r
 over-large request rather than truncating it; and `src/volve_ops/mcp_server/` exposes those
 tools over MCP as an optional extra. The adapter decides nothing, which is the point: a rule
 about what a caller may ask for lives in the tool layer, once.
+
+Alongside it, `src/volve_ops/extraction/` turns the drilling reports into typed non-productive
+events in a versioned store, `src/volve_ops/retrieval/` indexes their narrative lexically, and
+`src/volve_ops/provenance/` holds the fact ledger that refuses a derived value whose inputs it
+does not have. Two committed scripts regenerate the published figures:
+`scripts/run_expectation_study.py` and `scripts/run_extraction.py`, each writing a run manifest.
 
 ### Feasibility results
 

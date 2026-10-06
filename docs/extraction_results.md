@@ -42,12 +42,24 @@ exempt from amendment.
 
 **They agree on only 36% of events.** That is the practical reason both are named. Naming only
 `echo-subcategory`, as an earlier draft did, would have left the free signal in
-`stateDetailActivity` unopposed: it marks 1,535 events `equipment failure` outright, and a
+`stateDetailActivity` unopposed: it marks 1,555 of these events `equipment failure` outright,
+1,535 of them under the interruption head, and a
 candidate could have cleared the bar without beating it. Because baselines are exempt from
 amendment, adding the second one later would not have been possible.
 
 Neither is degenerate. Both can abstain, so neither scores zero on the largest class, and
 neither can be beaten by predicting one label everywhere.
+
+## What is indexed
+
+3,673 narrative chunks, one per event comment, indexed lexically with BM25. That is the
+`bm25-only` baseline protocol section 15 fixes, and for now it is the whole index.
+
+Two things it does not yet cover, recorded so its scope is not mistaken for the section's.
+Section 15 scopes retrieval to drilling-report comments **and** the per-well engineering
+documents, and no programme or completion report is indexed. And only the comments on
+non-productive events are chunked, which is 3,673 of the corpus's 23,447 activity comments; the
+rest describe productive work, and no retrieval question yet asks about them.
 
 ## What is stored, and how it stays traceable
 
@@ -59,9 +71,14 @@ Each version carries a content hash computed over the events themselves, indepen
 order they were written, so a changed digest means changed content rather than a differently
 scheduled directory walk. `verify()` recomputes it.
 
-Event ids derive from the event's own content rather than from extraction order. A re-run on
-unchanged reports produces the same ids, which is what lets a correction stay attached to the
-event it corrected.
+Event ids derive from the source document, the event's start time, its activity code, and its
+position among the report's activity blocks. A re-run on unchanged reports produces the same
+ids, which is what lets a correction stay attached to the event it corrected.
+
+The limit is worth stating rather than discovering. Because the position counts every activity
+block and not only the non-productive ones, inserting or removing any earlier block in a
+corrected report changes the id of every later event in that report. Ids are stable across
+re-runs of unchanged input, not across edits to a report.
 
 ## The labelling sample
 
@@ -73,8 +90,14 @@ rather than taken on trust.
 | development | 135 | 2,538 |
 | hold-out | 60 | 616 |
 
-The development pool is 2,538 rather than 2,961 because protocol section 16 excludes reports
-dated after the production boundary even on development wells. A label read from a 2015 report
+The development pool is 2,538 of the 3,057 events on development wells: protocol section 16
+excludes reports dated after the production boundary even on development wells, and the date
+cut removes 519.
+
+An earlier version of this sentence gave the pre-cut figure as 2,961. That is the count under
+the interruption head alone, which is the narrower rule section 14.1 exists to reject, and the
+difference between the two is exactly the 96 fail-state events this document argues for
+including two sections above. A label read from a 2015 report
 on a well whose production hold-out is scored is a label, not profiling, and section 10 permits
 profiling over the whole record while forbidding labels on post-boundary data.
 

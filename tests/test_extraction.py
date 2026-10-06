@@ -128,13 +128,32 @@ class TestExtraction:
         assert first == second
         assert len(set(first)) == 2
 
-    def test_a_block_without_timestamps_is_skipped(self, tmp_path: Path) -> None:
+    def test_a_qualifying_block_without_timestamps_is_refused_not_skipped(
+        self, tmp_path: Path
+    ) -> None:
+        """Section 14.3 requires every 14.1 block to become exactly one event.
+
+        Skipping one silently, as an earlier version did, would let the exactness pass mark
+        pass by losing the evidence against it.
+        """
         broken = (
             "<witsml:activity>"
             "<witsml:proprietaryCode>interruption -- repair</witsml:proprietaryCode>"
             "<witsml:state>ok</witsml:state></witsml:activity>"
         )
-        assert list(extract_from_report(report(tmp_path, broken))) == []
+        with pytest.raises(UnsafeInputError, match="no usable timestamps"):
+            list(extract_from_report(report(tmp_path, broken)))
+
+    def test_a_productive_block_without_timestamps_is_simply_not_an_event(
+        self, tmp_path: Path
+    ) -> None:
+        """The rule applies to blocks that qualify under 14.1, not to every block."""
+        ignorable = (
+            "<witsml:activity>"
+            "<witsml:proprietaryCode>drilling -- drill</witsml:proprietaryCode>"
+            "<witsml:state>ok</witsml:state></witsml:activity>"
+        )
+        assert list(extract_from_report(report(tmp_path, ignorable))) == []
 
     def test_an_empty_comment_is_flagged_for_review(self, tmp_path: Path) -> None:
         (event,) = extract_from_report(report(tmp_path, activity(comment="")))

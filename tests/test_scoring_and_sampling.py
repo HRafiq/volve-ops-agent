@@ -14,6 +14,7 @@ from volve_ops.extraction.npt import CauseLabel as C
 from volve_ops.extraction.npt import NPTEvent
 from volve_ops.extraction.sampling import (
     HOLD_OUT_WELLS,
+    PRODUCTION_BOUNDARY_ISO,
     draw_sample,
     is_development,
     is_hold_out,
@@ -104,7 +105,28 @@ class TestSpanGate:
                 comment="Mud pump 1 failed, changed liners.",
             )
         ]
-        result = condition_spans_are_verbatim(labelled, {"a": "pump 1 failed"})
+        result = condition_spans_are_verbatim(
+            labelled, {"a": "pump 1 failed"}, [C.EQUIPMENT_FAILURE]
+        )
+        assert result.passed
+
+    def test_attributing_a_cause_without_a_span_fails_the_gate(self) -> None:
+        """Section 14.2 fixes the output as a cause and a span. Citing nothing is not passing."""
+        labelled = [
+            LabelledEvent(event_id="a", cause=C.EQUIPMENT_FAILURE, comment="Mud pump 1 failed.")
+        ]
+        result = condition_spans_are_verbatim(labelled, {"a": None}, [C.EQUIPMENT_FAILURE])
+        assert not result.passed
+        assert "no span" in result.detail
+
+    def test_an_abstention_needs_no_span(self) -> None:
+        labelled = [
+            LabelledEvent(event_id="a", cause=C.NOT_STATED, comment="POOH."),
+            LabelledEvent(event_id="b", cause=C.EQUIPMENT_FAILURE, comment="Mud pump 1 failed."),
+        ]
+        result = condition_spans_are_verbatim(
+            labelled, {"b": "pump 1 failed"}, [C.NOT_STATED, C.EQUIPMENT_FAILURE]
+        )
         assert result.passed
 
     def test_one_fabricated_span_fails_the_gate(self) -> None:
@@ -113,7 +135,11 @@ class TestSpanGate:
             LabelledEvent(event_id="a", cause=C.EQUIPMENT_FAILURE, comment="Mud pump 1 failed."),
             LabelledEvent(event_id="b", cause=C.HOLE_PROBLEM, comment="Stuck pipe."),
         ]
-        result = condition_spans_are_verbatim(labelled, {"a": "pump 1 failed", "b": "losses"})
+        result = condition_spans_are_verbatim(
+            labelled,
+            {"a": "pump 1 failed", "b": "losses"},
+            [C.EQUIPMENT_FAILURE, C.HOLE_PROBLEM],
+        )
         assert not result.passed
         assert "fabricated" in result.detail
 
@@ -121,7 +147,9 @@ class TestSpanGate:
         labelled = [
             LabelledEvent(event_id="a", cause=C.EQUIPMENT_FAILURE, comment="Mud pump 1 failed.")
         ]
-        assert not condition_spans_are_verbatim(labelled, {"a": "the mud pump broke"}).passed
+        assert not condition_spans_are_verbatim(
+            labelled, {"a": "the mud pump broke"}, [C.EQUIPMENT_FAILURE]
+        ).passed
 
 
 class TestAbstention:
@@ -182,8 +210,50 @@ class TestSampling:
         manifest = draw_sample(self._corpus(), split="hold-out", target=20)
         assert all(i.startswith("ho_") for i in manifest.event_ids)
 
-    def test_the_split_rule_matches_the_protocol(self) -> None:
-        assert {"15/9-F-4", "15/9-F-5", "15/9-F-7", "15/9-F-9"} == HOLD_OUT_WELLS
+    def test_the_hold_out_set_is_what_the_rule_produces(self) -> None:
+        """Derived from the corpus's wells, not restated. A literal would go stale silently.
+
+        Section 16's rule is the four wells whose canonical names sort last in byte order.
+        """
+        corpus_wells = [
+            "15/9-19",
+            "15/9-F-1",
+            "15/9-F-10",
+            "15/9-F-11",
+            "15/9-F-12",
+            "15/9-F-14",
+            "15/9-F-15",
+            "15/9-F-4",
+            "15/9-F-5",
+            "15/9-F-7",
+            "15/9-F-9",
+        ]
+        assert set(sorted(corpus_wells)[-4:]) == HOLD_OUT_WELLS
+
+    def test_the_boundary_matches_the_one_the_production_split_derives(self) -> None:
+        """Hard-coded in sampling, computed in splits. Nothing else ties the two together."""
+        from volve_ops.domain.day_class import ClassifiedDay, DayClass
+        from volve_ops.domain.splits import derive_split
+        from volve_ops.ingest.production import ProductionDay, WellStatus
+
+        start = dt.date(2008, 2, 12)
+        days = [
+            ClassifiedDay(
+                day=ProductionDay(
+                    well="15/9-F-12",
+                    production_date=start + dt.timedelta(days=i),
+                    on_stream_hours=24.0,
+                    oil_volume_sm3=2400.0,
+                    well_status=WellStatus.PRODUCING,
+                    source="test",
+                ),
+                day_class=DayClass.VALID_PRODUCING,
+            )
+            for i in range(3141)
+        ]
+        assert str(derive_split(days).boundary) == PRODUCTION_BOUNDARY_ISO
+
+    def test_the_two_restrictions_apply(self) -> None:
         assert is_hold_out(event("x", well="15/9-F-7"))
         assert is_development(event("x", well="15/9-F-12", date="2010-01-01"))
         assert not is_development(event("x", well="15/9-F-12", date="2015-01-01"))

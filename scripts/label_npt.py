@@ -15,6 +15,7 @@ them.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import sys
 from collections.abc import Sequence
@@ -119,13 +120,21 @@ def main(argv: list[str] | None = None) -> int:
         note = input("note (optional)> ").strip()
         disagrees = input("does the source's own coding look wrong? [y/N]> ").strip().lower()
 
+        # Every field docs/labelling_guide.md fixes. The source document, activity code and
+        # state are carried so a label can be audited without re-joining the store, and
+        # labelled_at is the only thing the guide's "at least a week later" rule for pass two
+        # could ever be checked against.
         row = {
             "event_id": event.event_id,
+            "source_document": event.source_document,
+            "activity_code": event.activity_code,
+            "state": event.state,
             "cause": cause.value,
             "evidence_span": span,
             "cause_notes": note or None,
             "source_coding_looks_wrong": disagrees == "y",
             "labeller_pass": args.label_pass,
+            "labelled_at": dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
         }
         with target.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row) + "\n")

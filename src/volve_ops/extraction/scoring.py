@@ -163,8 +163,8 @@ def condition_relative_margin(
     own = score_macro(gold, candidate).macro_f1
     improvement = (own - best) / best if best > 0 else float("inf") if own > 0 else 0.0
     detail = (
-        f"candidate {own:.4f} vs best baseline {best_name} {best:.4f}, {improvement:+.1%}"
-        + "; ".join(f" {n}={s:.4f}" for n, s in sorted(scores.items()))
+        f"candidate {own:.4f} vs best baseline {best_name} {best:.4f}, {improvement:+.1%}; "
+        + ", ".join(f"{n}={s:.4f}" for n, s in sorted(scores.items()))
     )
     return (
         ConditionResult(
@@ -191,24 +191,38 @@ def condition_margin_survives_resampling(
 
 
 def condition_spans_are_verbatim(
-    events: Sequence[LabelledEvent], spans: Mapping[str, str | None]
+    events: Sequence[LabelledEvent],
+    spans: Mapping[str, str | None],
+    attributions: Sequence[CauseLabel],
 ) -> ConditionResult:
-    """Every cited span is a verbatim substring of the comment it cites. A hard gate."""
-    failures: list[str] = []
+    """Every attributed cause carries a verbatim span of the comment it cites. A hard gate.
+
+    Checked against what the approach attributed, not against which spans it happened to
+    supply, so an approach cannot pass by attributing a cause and citing nothing.
+    """
+    fabricated: list[str] = []
+    missing: list[str] = []
     checked = 0
-    for event in events:
-        span = spans.get(event.event_id)
-        if span is None:
+    for event, attributed in zip(events, attributions, strict=True):
+        if attributed is CauseLabel.NOT_STATED:
             continue
         checked += 1
-        if span not in event.comment:
-            failures.append(event.event_id)
+        span = spans.get(event.event_id)
+        if span is None:
+            # Section 14.2 fixes the output as a cause attribution *and* a span. An approach
+            # that attributes causes and cites nothing is not passing this gate; it is skipping
+            # it, which is what an earlier version of this function allowed.
+            missing.append(event.event_id)
+        elif span not in event.comment:
+            fabricated.append(event.event_id)
+    broken = len(fabricated) + len(missing)
     return ConditionResult(
         name="evidence spans verbatim",
-        passed=not failures and checked > 0,
+        passed=broken == 0 and checked > 0,
         detail=(
-            f"{checked - len(failures)}/{checked} spans found verbatim"
-            + (f"; fabricated: {failures[:5]}" if failures else "")
+            f"{checked - broken}/{checked} attributions carry a verbatim span"
+            + (f"; fabricated: {fabricated[:5]}" if fabricated else "")
+            + (f"; attributed with no span: {missing[:5]}" if missing else "")
         ),
     )
 
@@ -273,6 +287,6 @@ def evaluate(
     return [
         margin,
         condition_margin_survives_resampling(gold, predicted, baseline_predictions[best_name]),
-        condition_spans_are_verbatim(labelled, spans),
+        condition_spans_are_verbatim(labelled, spans, predicted),
         condition_abstention(gold, predicted, forced_predicted),
     ]

@@ -122,7 +122,11 @@ class BM25Index:
             candidates.update(self._postings.get(term, ()))
 
         scored: list[ScoredChunk] = []
-        unique_terms = set(terms)
+        # Sorted, not a set. Float addition is not associative, so iterating a set made each
+        # score depend on the hash seed: the same query gave 10.655254513445765 under one seed
+        # and ...63 under another, and the chunk_id tiebreak only fires on exact equality, so a
+        # genuine tie could be broken differently between runs.
+        unique_terms = sorted(set(terms))
         for position in candidates:
             chunk = self.chunks[position]
             if well is not None and chunk.well != well:
