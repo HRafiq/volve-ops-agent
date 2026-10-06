@@ -76,6 +76,19 @@ class ProductionDay(BaseModel):
     choke_size: FiniteFloat | None = None
     choke_unit: str | None = None
 
+    # Control and sensor channels, in the workbook's own units: bar for pressures, degrees
+    # Celsius for temperatures. Carried raw, including the zeros that some channels use as a
+    # missing-value sentinel. volve_ops.domain.sensors is the single place that decides which
+    # zeros are readings and which are absences, because that is a judgement and a parser that
+    # makes it silently is a parser that hides it.
+    downhole_pressure_bar: FiniteFloat | None = None
+    downhole_temperature_c: FiniteFloat | None = None
+    tubing_dp_bar: FiniteFloat | None = None
+    annulus_pressure_bar: FiniteFloat | None = None
+    wellhead_pressure_bar: FiniteFloat | None = None
+    wellhead_temperature_c: FiniteFloat | None = None
+    choke_dp_bar: FiniteFloat | None = None
+
     source: str
     parser_version: str = INGEST_VERSION
 

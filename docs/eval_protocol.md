@@ -1,12 +1,16 @@
 # Evaluation protocol
 
-Version: v3
+Version: v5
 Date: 2026-10-06
 Status: pre-registered. Pushed before the work it judges.
 Amendments since v0: three, in sections 6 and 14.5 and in the labelling guide, all recorded in
 section 13 and all labelled post-inspection.
 New in v3: section 17 fixes where the cause labels come from, and suspends the section 14.5
 selection gate because they are not expert labels. No threshold is lowered and no baseline moves.
+New in v4: section 18 fixes the investigation layer, before any investigation has been run.
+New in v5: amendment 4 records every threshold the investigation layer turned out to need, all of
+them chosen after v4 was tagged and all labelled post-inspection, and corrects two stop-condition
+definitions that the implementation did not match.
 
 This file states how the project will be judged, and it is pushed to the public remote
 before the runs it judges happen. The published history is the evidence. Pass marks,
@@ -697,6 +701,52 @@ defined relative to a baseline means nothing if the baseline can move.
 Tightening a pass mark after seeing a result that failed it is not an amendment. It is the
 failure mode this document exists to prevent.
 
+### Amendment 4, v4 to v5: the investigation layer's thresholds, and two stop conditions
+
+Date: 2026-10-06. Made **after** the investigation layer was implemented and run on development
+episodes, and labelled as such wherever a dependent result is reported. Prompted by independent
+review, which pointed out that section 18 as tagged contained no numeric threshold at all while every
+decision the layer makes turns on one.
+
+**The thresholds, all chosen after the v4 tag.** They are recorded here so a reader can see which
+numbers are pre-registered and which are not, rather than having to read the source to find out.
+
+| constant | value | what it decides |
+|---|---|---|
+| `STRONG_SHIFT` | 1.0 sd | a channel movement that can support a hypothesis |
+| `WEAK_SHIFT` | 0.5 sd | a movement that can make one plausible |
+| `MIN_RELATIVE_SHIFT` | 0.10 | the movement must also be this large in its own units |
+| `WATER_CUT_RISE` | 0.05 | a water-cut rise that supports the water hypothesis |
+| `MIN_DAYS_FOR_A_SUMMARY` | 3 | readings a channel needs before anything is concluded from it |
+| `EVIDENCE_WINDOW_DAYS` | 45 | how far either side of an episode a report may be dated |
+| baseline `MIN_STANDARDISED_SHIFT` | 1.0 sd | when `strongest-deviation` names a channel |
+| baseline window | 60 days | the well's own comparison period |
+
+Two of these need more than a row. **`MIN_RELATIVE_SHIFT` was added in response to an observed
+result**, which is the most serious thing on this page: a test showed that a well whose choke had sat
+at 50, 51, 52 for two months has a baseline spread near 0.8, so a drop to 50 is a 1.2-sigma movement
+and a 2 percent change, and the layer was ready to call that the supported explanation for a lost
+third of the rate. The fix is defensible on physical grounds and it is still a threshold chosen after
+seeing output, and it moves the verdict distribution and the baseline-agreement figure. Both are
+reported as post-inspection. **`EVIDENCE_WINDOW_DAYS` is outcome-determining**: at 45 days, 12 of 14
+episodes have no drilling report in range; at 180 days, 10 of 14 do. Any claim about document
+availability has to name the window, and ADR 0008 does.
+
+**Section 18.3, conditions 1 and 2, corrected to what the implementation does.** Condition 1 said
+`evidence_threshold_met` means "every open hypothesis is supported or contradicted". The layer sets it
+when no hypothesis remains **plausible**, treating a `weak` one as settled. That is the correct
+reading and the original wording was wrong: a weak hypothesis is one whose channel moved slightly,
+and no amount of narrative turns a slight movement into support or a contradiction, so "open" can only
+mean a hypothesis more evidence could still move. Condition 2, `evidence_exhausted`, likewise now
+means a pass added nothing new **or** the pass budget ran out while something remained plausible.
+
+Condition 3 is also narrowed to what the code does: it fires when no hypothesis is supported and an
+unresolved one needs a channel this well and period do not have, rather than on "the leading
+hypothesis", which does not exist when nothing is supported.
+
+Nothing here loosens a pass mark. Section 18.7's five gates are untouched, section 18.8's deferral is
+untouched, and both baselines named in sections 3 and 14.4 are untouched.
+
 ### Amendment 3, v2 to v3: a section added to the labelling guide after labelling
 
 Date: 2026-10-06. Made **after** the development sample was labelled, and labelled as such wherever
@@ -1165,3 +1215,174 @@ agreement**, withdrawn by amendment 2 above. And the **anchoring rate**: an earl
 model recommend a label and the author accept or override it, so that the override rate would
 measure how much the recommendation moved the human. With no human in the loop there is no
 override rate, and a figure computed from a second model pass would not be one.
+
+## 18. The investigation layer
+
+Fixed before any investigation has been run, on a repository where the deterministic expectation
+engine, the episode detector and the extraction layer already exist and are measured.
+
+**One disclosure about what was known when this was written.** The sensor-coverage study in
+`docs/data_profile.md`, including the finding that downhole pressure is usable on under a third of
+`15/9-F-12`'s producing days, was carried out immediately before this section and committed
+immediately after it. Section 18.2 below cites it. So this section was written knowing how much
+pressure data exists, which is what made an unavailable mandatory channel worth making a stop
+condition. It was not written knowing any investigation's output, because none had been run. What follows
+judges the layer that reads an episode and tries to explain it.
+
+### 18.1 What an investigation is, and what it may not be
+
+One investigation answers one question: why did well X underperform during episode Y, where the
+episode comes from the section 9 detector and not from a model's choice of interesting period. A
+model picking its own episodes would be selecting the cases it can explain.
+
+The controller owns the stages and the stop conditions. The model's judgement is exercised inside
+them, and there is no stage at which the model is asked what to do next from an open list of tools.
+
+**Which judgements, corrected by amendment 4.** This section originally named four: which hypothesis
+needs more evidence, how to phrase a retrieval query, which report section to read, and whether
+another evidence pass is justified. The implementation exposes **two**, the query and the decision to
+continue. Which hypothesis is queried next is taken by the controller, in a fixed order over the
+hypotheses still worth testing, and "which report section to read" does not exist because the
+retrieval unit is a single activity comment rather than a sectioned document. A narrower judgement
+surface is a stronger version of this section's claim, not a weaker one, but it is a difference
+between what was registered and what was built, and it is recorded rather than quietly absorbed.
+
+**How much the trace checks, stated precisely.** The stage of every step is recorded, and a sequence
+the declared controller could not have produced is refused: a once-only stage repeating, stages out of
+order, retrieval before any hypothesis exists or after the finding is composed. What that is worth is
+narrower than it first appears, and independent review was right to press on it. The controller
+assigns the stage labels itself and the step carries no tool identity, so the check cannot detect a
+controller that did something else and labelled it correctly. It is a guard against this controller
+changing into an unbounded one, enforced on every run, and not a proof that the current one is bounded.
+The proof of that is the code, which a reader can read. Making the trace itself sufficient would need
+the step to record the tool called rather than a stage name the caller chose, and that is not done
+here.
+
+### 18.2 The mandatory diagnostic bundle, and what happens when it is unavailable
+
+Before any hypothesis is formed, these are retrieved deterministically: on-stream hours, choke
+setting and its differential pressure, downhole and wellhead pressure, water cut and gas-oil ratio,
+an offset comparison against the other producing wells over the same dates, and the day-class and
+quarantine flags from section 6.
+
+**Availability is data, not a detail.** `docs/data_profile.md` records that downhole pressure is
+usable on 31.2 percent of `15/9-F-12`'s producing days and on none of `15/9-F-5`'s, where a
+presence check reports 99.8 percent and nothing. So the bundle is defined with an explicit
+availability record per channel, computed by `src/volve_ops/domain/sensors.py`, and every finding
+publishes it. An investigation that reached a conclusion without a channel must say which channel it
+lacked, in the finding, not in a log.
+
+A channel is **mandatory** when the hypothesis under test depends on it. A hypothesis whose
+mandatory channel is unavailable may not be marked supported, whatever else is present. It is marked
+`unresolved` with the missing channel named. This is the one place the protocol forbids an inference
+rather than scoring it, because a pressure-driven explanation asserted on a well with no pressure
+data is not a weak conclusion, it is an unfounded one.
+
+### 18.3 Stop conditions, all four of them explicit
+
+An investigation ends when exactly one of these first becomes true, and the trace records which:
+
+1. `evidence_threshold_met`: every open hypothesis is supported or contradicted.
+2. `evidence_exhausted`: a retrieval pass returned nothing not already in evidence.
+3. `mandatory_evidence_unavailable`: a channel the leading hypothesis requires does not exist for
+   this well and period.
+4. `step_budget_reached` or `cost_budget_reached`.
+
+A budget breach is a reported incident, not a silent truncation. A finding produced under condition
+3 or 4 carries that fact in the finding itself, because a conclusion reached because the money ran
+out is a different object from one reached because the evidence settled.
+
+### 18.4 Causal levels, and what each permits saying
+
+Three levels, and the wording each licenses is fixed here so that it cannot drift upward later:
+
+| level | what it requires | what may be said |
+|---|---|---|
+| `proximate_driver` | a deterministic channel shows the mechanical immediate cause | "Proximate driver identified: choke reduction." |
+| `supported_mechanism` | the proximate driver plus a physical account consistent with the other channels | "Mechanism supported: drawdown fell with choke, and water cut did not move." |
+| `documented_root_cause` | a cited document says why the operational change was made | "Root cause documented: planned choke reduction for gas-lift reallocation, per report X span Y." |
+
+**"Root cause identified" is forbidden at the first two levels.** The permitted output is the one
+the handoff states plainly: proximate driver identified, root cause unresolved, with the reason the
+reports do not explain it. A system that rephrases a choke observation as a root cause has not
+reached a stronger conclusion, it has made a weaker one sound stronger.
+
+### 18.5 The provenance hard gate
+
+A finding is blocked, not scored, when any of the following holds:
+
+1. A cited fact id is not in the ledger, or its lineage does not reach measured facts.
+2. A cited evidence span is not a verbatim substring of the document version cited.
+3. A quantitative claim in the narrative has no corresponding fact or derived fact.
+4. A hypothesis is marked supported while a mandatory channel it depends on is unavailable.
+
+Blocked means the finding is not published and the investigation is recorded as failed. One
+fabricated citation is one too many, for the same reason section 14.5 condition 3 is a gate rather
+than a score.
+
+### 18.6 The baseline, fixed here and exempt from amendment
+
+**`strongest-deviation`**, deterministic and reading nothing. For the episode window it ranks the
+mandatory channels by standardised deviation from the well's own stable reference window, names the
+largest as the proximate driver, and always reports `documented_root_cause` as unresolved. Where a
+channel is unavailable it is skipped rather than imputed.
+
+**Its threshold is part of its definition and is stated here**, because an exemption a reader cannot
+check is not an exemption: the baseline names a channel only when the movement reaches **1.0** of the
+baseline window's own standard deviation, and abstains otherwise. The baseline window is the **60**
+producing days of the well's own record immediately before onset. Amendment 4 records that both
+numbers were fixed after v4 was tagged; they cannot move again.
+
+This is not a straw opponent, which is the point of naming it before any investigation runs. A great
+deal of well underperformance really is explained by on-stream hours or choke position, both of which
+are in the structured data, and an agent that reads documents has to be shown to add something beyond
+noticing the biggest number. Like the section 3 and 14.4 baselines, it cannot be amended: a baseline
+that can move after results exist makes a relative pass mark meaningless.
+
+### 18.7 Pass marks that gate now
+
+1. **Provenance validity is 100 percent.** Every published finding passes 18.5. A gate, not a score.
+2. **Stop-condition honesty is 100 percent.** Every finding's recorded stop condition matches the
+   controller state that produced it, and every finding reached under conditions 3 or 4 says so.
+3. **Trace replay is exact.** Replaying a recorded trace reproduces the same finding, byte for byte,
+   including its verdict and every citation. A trace that does not replay is not evidence of what
+   happened.
+4. **Abstention is reachable and used.** `insufficient_evidence` must be a reachable verdict on the
+   development episodes, demonstrated on at least one, and the conditions under which it is returned
+   must be the recorded stop conditions rather than a model's unexplained reticence.
+5. **No forbidden wording.** No finding below `documented_root_cause` contains a root-cause claim,
+   checked mechanically against the level.
+
+### 18.8 Pass marks that are deferred, and exactly why
+
+**Whether an explanation is correct is not scored in this version, and no threshold is invented for
+it.** Scoring that needs someone who can say whether a choke reduction explains a shortfall on a
+specific North Sea well, and section 17 records that this project does not have that person. Writing
+a number here that nobody can apply would be the failure mode this document exists to prevent.
+
+What a later version must fix, pushed before any correctness figure is reported: how an episode's
+reference explanation is established and by whom, the agreement statistic and its interval, the
+treatment of partially correct explanations, and the pass mark against `strongest-deviation`. Until
+then the layer reports its verdict distribution, its citation counts, its stop-condition
+distribution, and its agreement with `strongest-deviation` on the proximate driver, all without a
+pass mark.
+
+Note what this means and does not mean. The gates in 18.7 are real and an implementation can fail
+them. None of them can fail because an explanation is wrong, exactly as section 17.3 records for the
+cause layer. That is the second time this limitation has bitten, it has the same cause both times,
+and it is stated twice rather than mentioned once.
+
+### 18.9 The Phase 3 gate
+
+Five development investigations, including at least one `insufficient_evidence`, each verified
+against raw evidence. Verification splits in two and the halves are not equally strong:
+
+- **Mechanically verifiable, and required:** every cited fact resolves to the row it claims, every
+  span is verbatim in the document cited, every number in the narrative has lineage, the stop
+  condition matches the controller state, the trace replays exactly, and the wording matches the
+  causal level. All of this is checked by a committed script.
+- **Not verifiable here:** whether the explanation is right. Recorded as unverified rather than
+  presented as verified.
+
+The hold-out is not investigated in this phase. Section 10's rule stands: it is scored once, in
+Phase 8.

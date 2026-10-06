@@ -106,12 +106,19 @@ class BM25Index:
         limit: int = 5,
         well: str | None = None,
         wellbore: str | None = None,
+        on_or_after: str | None = None,
+        on_or_before: str | None = None,
     ) -> list[ScoredChunk]:
-        """Rank chunks against a query, optionally filtered to one well or wellbore.
+        """Rank chunks against a query, optionally filtered to a well, wellbore or date range.
 
-        The filter applies before scoring, not after. Filtering a ranked list spends the budget
+        Every filter applies before scoring, not after. Filtering a ranked list spends the budget
         on results that are then discarded: ask for five and get two, because three belonged to
-        another well.
+        another well. The date range exists for the same reason and was added once an investigation
+        asked for three hits near an episode and got none, because the well's three best matches
+        were years away from it.
+
+        Dates are ISO strings compared lexically, which is exactly right for `YYYY-MM-DD` and is
+        how the chunks already store them.
         """
         terms = tokenise(query)
         if not terms:
@@ -132,6 +139,10 @@ class BM25Index:
             if well is not None and chunk.well != well:
                 continue
             if wellbore is not None and chunk.wellbore != wellbore:
+                continue
+            if on_or_after is not None and chunk.report_date < on_or_after:
+                continue
+            if on_or_before is not None and chunk.report_date > on_or_before:
                 continue
 
             counts = self._frequencies[position]

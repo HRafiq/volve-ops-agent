@@ -6,10 +6,12 @@ human review.
 
 ## Status
 
-Data profiled, both feasibility criteria executed, the deterministic expectation and episode
-layer built and measured, drilling-report extraction running, and the development cause-label set
-produced and scored against both fixed baselines. No agent exists yet, and no cause-attribution
-model has been run.
+Data profiled, both feasibility criteria executed, the deterministic expectation and episode layer
+built and measured, drilling-report extraction running, the development cause-label set produced and
+scored against both fixed baselines, and a bounded investigation controller running over all fourteen
+detected episodes with its five pre-registered gates passing. No model has yet been called by either
+the cause-attribution layer or the investigation layer; both run deterministically, which is what
+makes them testable.
 
 The cause labels are **machine-assisted**: produced by a language model applying a labelling guide
 written and pushed beforehand, not by a domain expert. That is a real limitation rather than a
@@ -42,6 +44,9 @@ seen the data, so those criteria could fail honestly. Two of them did.
   external check on the labels fails.
 - [`labels/development_pass1.jsonl`](labels/development_pass1.jsonl) is the label set itself, all
   135 rows, each carrying its provenance, its verbatim span and the rule that settled it.
+- [`docs/investigation_results.md`](docs/investigation_results.md) is the investigation layer
+  measured: five gates on fourteen episodes, how much each gate is worth on this corpus, and the
+  document coverage that bounds what any of it can claim.
 - [`docs/architecture_decisions/`](docs/architecture_decisions/) holds the decisions and the
   reasoning, including both feasibility results.
 
@@ -54,10 +59,11 @@ about what a caller may ask for lives in the tool layer, once.
 Alongside it, `src/volve_ops/extraction/` turns the drilling reports into typed non-productive
 events in a versioned store, `src/volve_ops/retrieval/` indexes their narrative lexically, and
 `src/volve_ops/provenance/` holds the fact ledger that refuses a derived value whose inputs it
-does not have. Three committed scripts regenerate the published figures:
-`scripts/run_expectation_study.py`, `scripts/run_extraction.py` and
-`scripts/run_label_scoring.py`, each writing a run manifest. A fourth,
-`scripts/draw_adjudication.py`, draws the expert adjudication subsample described below.
+does not have. `src/volve_ops/investigation/` holds the bounded controller over those services.
+Four committed scripts regenerate the published figures: `scripts/run_expectation_study.py`,
+`scripts/run_extraction.py`, `scripts/run_label_scoring.py` and `scripts/run_investigations.py`, each
+writing a run manifest. A fifth, `scripts/draw_adjudication.py`, draws the expert adjudication
+subsample described below.
 
 ### Feasibility results
 
@@ -129,6 +135,49 @@ exception, independent review rejected it, and the correction changed both basel
 which one leads. And where both baselines name an actual cause and agree, **the labels match on one
 event in sixteen**. Either the structured fields are badly wrong about those events or the labels
 are, and the project cannot currently say which.
+
+### The investigation layer
+
+The controller owns nine declared stages and four stop conditions. A model's judgement enters at
+exactly two points: how to phrase a retrieval query, and whether another evidence pass is justified.
+It is never asked what to do next from an open list of tools.
+
+All five pre-registered gates pass over the fourteen episodes. The one that earns its place
+unassisted is replay: the trace records the judgements rather than the output, so replaying
+recomputes the finding instead of reading it back, which makes it a determinism test on the
+controller. The others are reported with how much that is worth on this corpus, because independent
+review pointed out that two of the five have almost nothing to examine here. The provenance gate
+itself is not weak: review built a finding citing another well's report from five years away under a
+fabricated filename, with invented figures and a root-cause claim, and the first version of the gate
+passed it. All four holes are closed and the reconstruction is a test.
+
+**One episode in fourteen gets a documented root cause.** `15/9-F-14` from 31 January 2012, citing a
+report dated the day before: *"Closed in well to prepare for handover."* The choke reduction the data
+established is explained, cited verbatim. The other thirteen have nothing to cite: not one of the
+3,673 extracted drilling-report events falls inside any episode window, and at ±45 days twelve of
+fourteen have none. The reports cluster in 2007–08 and 2016 while the episodes fall in 2009–14,
+because a daily drilling report is written when a rig is on the well and a producing well has no rig.
+
+An earlier version of this README claimed zero citations and a structurally unreachable top level.
+Both were wrong: the level was never implemented, and retrieval was asking about the wrong hypothesis
+on the one episode where documents existed. Review caught both, and
+[ADR 0008](docs/architecture_decisions/0008-drilling-reports-rarely-overlap-production-episodes.md)
+records the correction alongside the finding, because an ADR that reasons from a correct table to a
+self-flattering conclusion is the more useful thing to have written down.
+
+Three episodes stop earlier still, on `mandatory_evidence_unavailable`: `15/9-F-12` has usable
+downhole pressure on 31.2 percent of its producer rows where counting non-empty cells reports 99.8,
+because 2,095 rows record `0.00` on a gauge three kilometres down. The controller does not impute it
+and the gate will not let a hypothesis that needs it be called supported.
+
+Against the fixed `strongest-deviation` baseline, which reads nothing, the controller agrees on 5 of
+the 7 episodes where both named a driver. That figure is reported with its weaknesses: the two share
+most of their implementation, so it largely measures shared code, and an earlier version reported 5 of
+6 by dropping the one episode where they disagreed.
+
+This is the third pre-registered capability the dataset has constrained, after both feasibility
+criteria, and all three are constrained the same way: Volve is generous about measurements and thin
+about the operational record that explains them.
 
 Results, limitations and reproduction instructions grow as the work produces them. A figure
 appears here only when a run has produced it.
