@@ -69,9 +69,19 @@ MANIFESTS: Final[dict[str, str]] = {
     "investigation": "investigation_run.json",
 }
 
-#: Manifest paths that are detail rather than a headline figure: per-class breakdowns, identifier
-#: lists, provenance strings, and the per-finding rows that the investigation table summarises.
-#: Enumerated rather than matched by shape, so a reader can audit what is left out.
+#: Manifest paths excused from needing a table row. Independent review found the first version
+#: excusing 87 of 131 numeric leaves, including the project's headline WAPE table, the label
+#: distribution the README calls "the most important figure here", and `investigation.pass_marks` —
+#: so a reviewer injected a **failing** pass mark under that prefix and the gate certified full
+#: coverage. Section 19.3's claim was false, and false on the accuracy metric.
+#:
+#: What remains is version strings, identifier lists, per-class breakdowns the table carries in
+#: aggregate, and the per-finding rows the investigation table summarises. Nothing here is a figure
+#: a document quotes.
+#:
+#: Prefixes, not exact paths, for the two that are genuinely open vocabularies: `per_subcategory`
+#: spans twenty activity subcategories and `per_class` the taxonomy. Everywhere else a new sub-key
+#: now needs a new row, which is the point.
 EXCLUDED_PREFIXES: Final[tuple[str, ...]] = (
     "expectation.generated",
     "expectation.commit_sha",
@@ -81,31 +91,32 @@ EXCLUDED_PREFIXES: Final[tuple[str, ...]] = (
     "expectation.split",
     "expectation.horizons",
     "expectation.candidates",
-    "expectation.wape",
-    "expectation.episodes_detail",
+    "expectation.selected_model",
+    "expectation.fitted_day_dates",
     "extraction.store_version",
     "extraction.content_hash",
     "extraction.parser_version",
     "extraction.extractor_version",
     "extraction.protocol_version",
-    "extraction.development_sample",
-    "extraction.hold_out_sample",
+    "extraction.development_sample.seed",
+    "extraction.development_sample.split",
+    "extraction.development_sample.event_ids",
+    "extraction.development_sample.per_subcategory",
+    "extraction.hold_out_sample.seed",
+    "extraction.hold_out_sample.split",
+    "extraction.hold_out_sample.event_ids",
+    "extraction.hold_out_sample.per_subcategory",
     "labels.protocol_version",
     "labels.labels",
     "labels.label_provenance",
-    "labels.label_distribution",
-    "labels.applied_rule",
     "labels.baselines.echo-subcategory.per_class",
     "labels.baselines.echo-statedetail.per_class",
     "labels.section_14_3.findings",
     "investigation.protocol_version",
     "investigation.development_wells",
+    "investigation.bundle_day_dates",
     "investigation.baseline",
     "investigation.findings",
-    "investigation.verdicts",
-    "investigation.stop_conditions",
-    "investigation.highest_levels",
-    "investigation.pass_marks",
 )
 
 
@@ -195,10 +206,14 @@ def as_markdown(rows: Iterable[MetricRow]) -> str:
         if row.layer != current:
             current = row.layer
             lines.append(f"\n### {current}\n")
-            lines.append("| metric | value | denominator | status | what would settle it |")
-            lines.append("|---|---|---|---|---|")
+            lines.append("| metric | value | denominator | status | what would settle it | note |")
+            lines.append("|---|---|---|---|---|---|")
+        # `note` is rendered. Review found eight declared and none reaching the table, and they are
+        # the load-bearing caveats: that a figure largely measures shared implementation, that a
+        # count of one is unresolved and published as unresolved, that fourteen episodes on two
+        # wells is not a benchmark.
         lines.append(
             f"| {row.metric} | {row.rendered} | {row.denominator} | `{row.status.value}` | "
-            f"{row.settled_by or '—'} |"
+            f"{row.settled_by or '—'} | {row.note or '—'} |"
         )
     return "\n".join(lines).strip() + "\n"

@@ -1,6 +1,6 @@
 # Evaluation protocol
 
-Version: v7
+Version: v8
 Date: 2026-10-06
 Status: pre-registered. Pushed before the work it judges.
 Amendments since v0: three, in sections 6 and 14.5 and in the labelling guide, all recorded in
@@ -15,6 +15,9 @@ New in v6: section 19 fixes the evaluation harness, before it is built. Unlike s
 its own numbers, which is the lesson amendment 4 recorded.
 New in v7: amendment 5 corrects section 19.2's first leakage check, which applied the drilling
 layer's by-well hold-out to the production layer, where a temporal split governs instead.
+New in v8: amendment 6 corrects three section 19 pass marks that could not fail, narrows section
+19.3's claim to what it checks, and corrects amendment 5's own overreach. Independent review found
+all four.
 
 This file states how the project will be judged, and it is pushed to the public remote
 before the runs it judges happen. The published history is the evidence. Pass marks,
@@ -705,6 +708,63 @@ defined relative to a baseline means nothing if the baseline can move.
 Tightening a pass mark after seeing a result that failed it is not an amendment. It is the
 failure mode this document exists to prevent.
 
+**Relaxing one after seeing a result that failed it is the cheaper version of the same move**, and
+this document was silent on it until amendment 6. The rule now: an amendment that weakens a check
+which has just failed must state what the check was examining when it failed, why the failure was the
+check's rather than the project's, and what still audits the thing the check was supposed to audit. If
+it cannot, the finding stands and the project is in breach, not the check.
+
+### Amendment 6, v7 to v8: three pass marks that could not fail, and amendment 5's overreach
+
+Date: 2026-10-06. Made **after** the harness was run, labelled as such, and prompted entirely by
+independent review. It changes published figures, which is recorded where each appears.
+
+**Three section 19 pass marks could not fail.** This is the third phase in which that has happened and
+the pattern is now explicit enough to name: a check written in the same breath as the thing it checks
+tends to test that thing against itself.
+
+1. **19.2's third leakage check** tested whether a fitted day fell outside the development window,
+   over a day set the harness had built with `development_only` — the negation of the comprehension
+   that produced its own input. Review demonstrated it by making the expectation study fit on the whole
+   record: 3,201 hold-out producing days, audit reported clean, all six marks passed. The scripts now
+   record the dates they actually fitted on in their own manifests, and the audit reads those. A run
+   that records nothing is now a finding rather than a pass, and the reconstructed leak is caught: 5,108
+   out-of-window dates across six wells.
+2. **19.1's field-presence mark** applied `missing_fields` to a freshly validated model whose own
+   validator refuses a blank field. It now runs against the manifest read back from disk, which is
+   where a field can be absent.
+3. **19.1's reproducibility mark** compared a hash with the hash of `model_copy()` of the same object.
+   It now compares against the hash the previous run persisted, and only on the same commit, since the
+   commit is one of the nine hashed fields.
+
+**Amendment 5 overreached in three ways**, and correcting them matters more than the original
+correction did.
+
+Its claim that "the two layers share no data" is **false**. The production layer consumes drilling
+report activity dates through `stable_reference_windows`. And review found `15/9-F-5`, a section 16
+hold-out well, inside the population every investigation's offset comparison reads, in all fourteen
+findings, while producing no finding of its own and so being invisible to a check that looked at
+findings. The precise statement is the one that should have been made: section 16's hold-out governs
+which wells may be **labelled or investigated**, and nothing scored on the production layer is scored
+on a hold-out well's drilling reports. Check 5 now covers the whole investigation population rather
+than the wells that produced a finding.
+
+It leaned on a sentence of section 16 that its own next paragraph refutes. Section 16 says `15/9-F-5`
+"has no production development days"; the amendment then says the well has 2,429 development rows. Both
+cannot be true. The section 16 sentence means *valid producing* days, and the amendment should have
+argued from section 10 alone rather than quoting it.
+
+It named one well where two qualify. `15/9-F-4` has the same shape, 2,429 development rows and zero
+valid producing days, and is also a hold-out well. Both are now excluded from every producing-well
+population at the source, which removes the "six producing wells" figure this project had been
+publishing: the real number is five.
+
+**Also corrected here**, each found by review and each changing a published figure: the evidence score's
+sixth feature was inert, since nothing writes the field it read, so it sat at 1.0 on every finding and
+the published band distribution had no `low` band at all; the circularity disclosure said two of six
+features when four of five are derived from inputs to the verdict; and `trajectory.verdicts_stable` was
+a constant defaulted to true and set by nobody, reported as though it were a measurement.
+
 ### Amendment 5, v6 to v7: section 19.2's first leakage check applied the wrong hold-out
 
 Date: 2026-10-06. Made **after** the harness was first run and labelled as such, though no published
@@ -717,8 +777,9 @@ The failure was the check's, not the project's. Section 16's hold-out is **by we
 drilling-report layer**. The production layer is split **temporally** by section 10, and the two are
 deliberately different: section 16 says so in as many words, and says of this very well that it "has
 no production development days and is already excluded from production hold-out scoring as a cold
-start". Nothing leaks by fitting production on a well whose drilling reports are held out, because the
-two layers share no data.
+start". Nothing scored on the production layer is scored on a hold-out well's drilling reports.
+Amendment 6 corrects this paragraph's original claim that "the two layers share no data", which was
+false in two ways it records.
 
 Check 1 now covers labelled events and investigations, which is the constraint section 16 actually
 imposes. Check 3, every fitted day passing the temporal split's own test, is what audits production
@@ -1480,10 +1541,15 @@ beyond its value: the **denominator**, because `docs/data_profile.md` has alread
 that differs by two points depending on which population it is taken over; the **status**, one of
 `gated`, `reported` or `deferred`; and for a deferred row, **what would settle it**.
 
-**Pass mark, gating: every published figure in the repository appears in the table, at 100 percent.**
-Checked by the harness against the run manifests, not by reading the documents. A figure quoted in a
-document and absent from the table is either stale or unreproducible, and both have happened in this
-project already.
+**Pass mark, gating: every numeric figure in the four run manifests, other than an enumerated
+exclusion list, has a table row, at 100 percent.** Booleans count: a pass mark is a published result.
+
+That wording is amendment 6's, and it is narrower than the wording it replaces. The original claimed
+"every published figure in the repository", which was false: the exclusion list excused 87 of 131
+numeric manifest leaves, including the WAPE table that section 4's selection rule is defined in, the
+label distribution, and `pass_marks` itself. Independent review injected a **failing** pass mark under
+that prefix and the gate certified full coverage. The exclusions now cover version strings, identifier
+lists and per-class breakdowns the table carries in aggregate, and nothing a document quotes.
 
 ### 19.4 Calibration: bands, not probabilities, and the reason
 
@@ -1520,11 +1586,20 @@ the labelling problem of section 17 wearing a statistician's hat.
 Section 7.6 of the plan calls this the important safety metric, and it is, which is why it is worth
 separating cleanly rather than reporting one number that mixes the two halves.
 
-**The mechanical half gates.** A finding at `documented_root_cause` whose cited spans contain no
-stated reason is a false root-cause claim detectable without domain knowledge, because the claim is
-about the document rather than about the well. **Pass mark: zero such findings, at 100 percent.**
-Likewise zero findings that claim a root cause in prose below the level that licenses it, which
-section 18.7 already gates and which is counted here too so the safety metric is in one place.
+**The mechanical half gates, and amendment 6 narrows what it means.** A finding at
+`documented_root_cause` whose cited spans contain no stated reason is a false claim detectable without
+domain knowledge, because the claim is about the document rather than about the well. **Pass mark: zero
+such findings, at 100 percent.** Likewise zero findings claiming a root cause in prose below the level
+that licenses it, which section 18.7 already gates and which is counted here so the safety metric sits
+in one place.
+
+**It is a consistency check on the controller, not an independent safety measurement**, and review was
+right to press on this. The level is assigned by exactly the condition this check then tests: the same
+function, the same phrase list, over the same spans. No finding the controller produces can fail it. It
+is worth keeping, because a controller that stops enforcing its own rule would be caught and because a
+finding written by any other producer would be checked properly, and it is worth not describing as
+more than that. An independent version needs the reason re-derived from the document by something that
+did not assign the level, which is a model's judgement and is deferred with the rest.
 
 **The half that needs a domain reader is deferred**, with the same wording as section 18.8: a finding
 whose documented root cause is cited correctly and is nonetheless the wrong explanation cannot be

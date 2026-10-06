@@ -50,7 +50,7 @@ ROWS: Final[tuple[MetricRow, ...]] = (
         metric="Episodes opened on development data",
         manifest="expectation",
         key="episodes",
-        denominator="development days of 6 producing wells",
+        denominator="development days of 5 producing wells",
         status=Status.REPORTED,
         note="one detector, two wells carry all of them; not a benchmark, per section 19.11",
     ),
@@ -469,5 +469,152 @@ ROWS: Final[tuple[MetricRow, ...]] = (
         status=Status.DEFERRED,
         settled_by="a configured model provider key; the rubric is fixed in section 19.8, and "
         "prose quality is the one thing here the author can judge unaided",
+    ),
+    # ------------------------------------------------------------------ figures review found hidden
+    #
+    # Everything below was excused by an over-broad prefix in the first version, including the
+    # project's headline accuracy table and `investigation.pass_marks`, under which a reviewer
+    # injected a failing gate and the coverage check still certified 100 percent. The vocabularies
+    # here are enumerated literally rather than read from the manifest, so a new model, a new
+    # rule or a sixth pass mark needs a new row instead of being auto-excused.
+    *(
+        MetricRow(
+            layer="Expectation engine",
+            metric=f"WAPE, {model}, horizon {horizon}",
+            manifest="expectation",
+            key=f"wape.{model}.{horizon}",
+            denominator="development valid producing days at that horizon",
+            status=Status.REPORTED,
+            note="section 4's selection rule is defined in these; none clears section 8's bar",
+        )
+        for model in (
+            "naive-median28",
+            "naive-persistence",
+            "exponential-decline",
+            "hyperbolic-decline",
+            "choke-scaled",
+        )
+        for horizon in (7, 14, 28)
+    ),
+    *(
+        MetricRow(
+            layer="Drilling-report extraction",
+            metric=f"Labelling sample, {split}, {field}",
+            manifest="extraction",
+            key=f"{key}_sample.{field}",
+            denominator="non-productive events eligible under section 16",
+            status=Status.REPORTED,
+        )
+        for split, key in (("development", "development"), ("hold-out", "hold_out"))
+        for field in ("target", "drawn", "eligible")
+    ),
+    *(
+        MetricRow(
+            layer="Cause labels",
+            metric=f"Labels assigned `{cause}`",
+            manifest="labels",
+            key=f"label_distribution.{cause}",
+            denominator="135 labelled events",
+            status=Status.REPORTED,
+        )
+        for cause in (
+            "not_stated",
+            "equipment_failure",
+            "hole_problem",
+            "waiting_on_weather",
+            "other",
+            "waiting_on_cement",
+            "waiting_on_logistics",
+            "well_control",
+            "human_or_procedural",
+            "equipment_maintenance",
+            "rig_service",
+            "cementing_problem",
+        )
+    ),
+    *(
+        MetricRow(
+            layer="Cause labels",
+            metric=f"Labels settled by rule `{rule}`",
+            manifest="labels",
+            key=f"applied_rule.{rule}",
+            denominator="135 labelled events",
+            status=Status.REPORTED,
+        )
+        for rule in (
+            "P1",
+            "taxonomy",
+            "P2",
+            "P1-unreachable",
+            "P1-span",
+            "P1-monitor",
+            "P1-outcome",
+            "P1-total",
+            "P2-test",
+            "L2-ambiguous",
+            "L4",
+            "P3",
+            "guide-rig_service",
+        )
+    ),
+    *(
+        MetricRow(
+            layer="Investigation",
+            metric=f"Findings with verdict `{verdict}`",
+            manifest="investigation",
+            key=f"verdicts.{verdict}",
+            denominator="14 episodes",
+            status=Status.REPORTED,
+        )
+        for verdict in (
+            "supported_explanation",
+            "multiple_plausible_explanations",
+            "insufficient_evidence",
+        )
+    ),
+    *(
+        MetricRow(
+            layer="Investigation",
+            metric=f"Findings stopping on `{stop}`",
+            manifest="investigation",
+            key=f"stop_conditions.{stop}",
+            denominator="14 episodes",
+            status=Status.REPORTED,
+        )
+        for stop in (
+            "evidence_threshold_met",
+            "evidence_exhausted",
+            "mandatory_evidence_unavailable",
+            "step_budget_reached",
+            "cost_budget_reached",
+        )
+    ),
+    *(
+        MetricRow(
+            layer="Investigation",
+            metric=f"Findings reaching level `{level}`",
+            manifest="investigation",
+            key=f"highest_levels.{level}",
+            denominator="14 episodes",
+            status=Status.REPORTED,
+        )
+        for level in ("proximate_driver", "supported_mechanism", "documented_root_cause", "None")
+    ),
+    *(
+        MetricRow(
+            layer="Investigation",
+            metric=f"Section 18.7 gate: {mark}",
+            manifest="investigation",
+            key=f"pass_marks.{mark}",
+            denominator="14 findings",
+            status=Status.GATED,
+        )
+        for mark in (
+            "provenance validity is 100 percent",
+            "stop-condition honesty is 100 percent",
+            "trace replay is exact",
+            "abstention is reachable and used",
+            "no forbidden root-cause wording",
+        )
     ),
 )

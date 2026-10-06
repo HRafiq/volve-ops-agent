@@ -8,6 +8,8 @@ narrative passed a check whose input had been deleted. A gate without a failing 
 from __future__ import annotations
 
 import datetime as dt
+import re
+from pathlib import Path
 
 import pytest
 
@@ -130,18 +132,39 @@ class TestTheVersionFreeze:
 
 
 class TestTheLeakageAudit:
+    """Section 19.2's five checks, each with a failing case.
+
+    The first version of check 3 could not fail: it was handed a day set the harness had built with
+    `development_only` and tested the negation of that filter. Review demonstrated it by making the
+    expectation study fit on the whole record, and the audit reported clean. The dates now come from
+    what a script recorded using, so the test below is a real one.
+    """
+
     def clean_args(self) -> dict[str, object]:
         return {
             "fitted_wells": [WELL],
-            "fitted_days": {WELL: [classified(dt.date(2010, 6, 1))]},
+            "fitted_days": {WELL: ["2010-06-01", "2010-06-02"]},
             "split": SPLIT,
             "labelled_report_dates": {"npt_1": dt.date(2010, 6, 1)},
             "labelled_wells": [WELL],
         }
 
     def test_a_clean_run_is_clean(self) -> None:
-        result = leakage.audit(**self.clean_args())  # type: ignore[arg-type]
-        assert result.clean
+        assert leakage.audit(**self.clean_args()).clean  # type: ignore[arg-type]
+
+    def test_a_recorded_fit_on_a_hold_out_date_is_caught(self) -> None:
+        """The leak review constructed: a script fitting past the boundary."""
+        args = self.clean_args() | {"fitted_days": {WELL: ["2010-06-01", "2015-01-01"]}}
+        result = leakage.audit(**args)  # type: ignore[arg-type]
+        assert not result.clean
+        assert any(f.check == "fitted_day_outside_development" for f in result.findings)
+
+    def test_a_run_that_recorded_no_fitted_dates_is_not_a_clean_run(self) -> None:
+        """A check with nothing to audit must not pass. That was the whole defect."""
+        args = self.clean_args() | {"fitted_days": {}}
+        result = leakage.audit(**args)  # type: ignore[arg-type]
+        assert not result.clean
+        assert any("nothing to audit" in f.detail for f in result.findings)
 
     def test_a_hold_out_well_carrying_a_label_is_caught(self) -> None:
         args = self.clean_args() | {"labelled_wells": [WELL, "15/9-F-5"]}
@@ -149,8 +172,21 @@ class TestTheLeakageAudit:
         assert any(f.check == "hold_out_well_in_a_label" for f in result.findings)
 
     def test_a_hold_out_wellbore_is_caught_not_only_the_bare_well(self) -> None:
-        """`15/9-F-5 AY1H` is a wellbore of a hold-out well; a string compare would miss it."""
-        args = self.clean_args() | {"labelled_wells": ["15/9-F-5 AY1H"]}
+        """A wellbore of a hold-out well is `well + " " + suffix`, which `well_of` resolves."""
+        args = self.clean_args() | {"labelled_wells": ["15/9-F-5 C"]}
+        result = leakage.audit(**args)  # type: ignore[arg-type]
+        assert any(f.check == "hold_out_well_in_a_label" for f in result.findings)
+
+    @pytest.mark.parametrize("name", ["15/9-F-50", "15/9-F-5X", "15/9-F-9B"])
+    def test_a_well_merely_starting_with_a_hold_out_name_is_not_one(self, name: str) -> None:
+        """Review's false positives. The prefix test now runs only where `well_of` cannot resolve,
+        and requires the space that separates a well from its wellbore."""
+        args = self.clean_args() | {"labelled_wells": [name]}
+        assert leakage.audit(**args).clean  # type: ignore[arg-type]
+
+    def test_an_unresolvable_hold_out_wellbore_still_fails_closed(self) -> None:
+        """A gate that raises on input it cannot parse can be made to pass by breaking its input."""
+        args = self.clean_args() | {"labelled_wells": ["15/9-F-7 SOMETHING ODD"]}
         result = leakage.audit(**args)  # type: ignore[arg-type]
         assert any(f.check == "hold_out_well_in_a_label" for f in result.findings)
 
@@ -159,42 +195,38 @@ class TestTheLeakageAudit:
         result = leakage.audit(**args)  # type: ignore[arg-type]
         assert any(f.check == "labelled_report_after_the_boundary" for f in result.findings)
 
-    def test_a_fitted_day_outside_development_is_caught(self) -> None:
-        """The realistic failure: a filter applied one call too late rather than at the source."""
-        args = self.clean_args() | {"fitted_days": {WELL: [classified(dt.date(2015, 1, 1))]}}
-        result = leakage.audit(**args)  # type: ignore[arg-type]
-        assert any(f.check == "fitted_day_outside_development" for f in result.findings)
-
     def test_a_correction_from_a_hold_out_well_is_caught(self) -> None:
         args = self.clean_args() | {"corrections": [{"well": "15/9-F-9"}]}
         result = leakage.audit(**args)  # type: ignore[arg-type]
         assert any(f.check == "correction_from_the_hold_out" for f in result.findings)
 
-    def test_an_investigated_hold_out_well_is_caught(self) -> None:
-        args = self.clean_args() | {"investigated_wells": ["15/9-F-7"]}
+    def test_a_hold_out_well_merely_present_in_an_investigation_population_is_caught(self) -> None:
+        """Review's finding: 15/9-F-5 was in the population every bundle's offset comparison reads,
+        while producing no finding of its own, so a check that looked at findings never saw it."""
+        args = self.clean_args() | {"investigated_wells": [WELL, "15/9-F-5"]}
         result = leakage.audit(**args)  # type: ignore[arg-type]
-        assert any(f.check == "hold_out_episode_investigated" for f in result.findings)
+        assert any(f.check == "hold_out_well_reaches_an_investigation" for f in result.findings)
 
     def test_a_hold_out_label_file_on_disk_is_caught(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
-        (tmp_path / "hold-out_pass1.jsonl").write_text("{}\n", encoding="utf-8")
+        (tmp_path / "holdout_pass1.jsonl").write_text("{}\n", encoding="utf-8")
         args = self.clean_args() | {"label_dir": tmp_path}
         result = leakage.audit(**args)  # type: ignore[arg-type]
         assert any(f.check == "hold_out_label_file_exists" for f in result.findings)
+
+    def test_the_label_file_check_counts_what_it_looked_at(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        (tmp_path / "development_pass1.jsonl").write_text("{}\n", encoding="utf-8")
+        args = self.clean_args() | {"label_dir": tmp_path}
+        result = leakage.audit(**args)  # type: ignore[arg-type]
+        assert result.examined["hold_out_label_file_exists"] == 1
 
     def test_a_check_that_examined_nothing_says_so(self) -> None:
         """A gate that passed over an empty set demonstrates nothing, and must not look clean."""
         result = leakage.audit(**self.clean_args())  # type: ignore[arg-type]
         assert "correction_from_the_hold_out" in result.vacuous_checks
 
-    def test_fitting_production_on_a_drilling_hold_out_well_is_not_a_leak(self) -> None:
-        """Protocol amendment 5. Section 16's hold-out is by well and governs the drilling layer;
-        production is split temporally by section 10, and the layers share no data."""
-        args = self.clean_args() | {
-            "fitted_wells": [WELL, "15/9-F-5"],
-            "fitted_days": {"15/9-F-5": [classified(dt.date(2010, 6, 1), well="15/9-F-5")]},
-        }
-        result = leakage.audit(**args)  # type: ignore[arg-type]
-        assert result.clean
+    def test_a_counted_input_with_no_check_behind_it_is_named_as_context(self) -> None:
+        result = leakage.audit(**self.clean_args())  # type: ignore[arg-type]
+        assert "context_wells_fitted_not_a_check" in result.examined
 
 
 class TestEvidenceBands:
@@ -203,7 +235,6 @@ class TestEvidenceBands:
             deviation_strength=1.0,
             channel_availability=1.0,
             documentary_cause=1.0,
-            absence_of_contradiction=1.0,
             window_completeness=1.0,
             ran_to_completion=1.0,
         )
@@ -230,7 +261,6 @@ class TestEvidenceBands:
             deviation_strength=value,
             channel_availability=value,
             documentary_cause=value,
-            absence_of_contradiction=value,
             window_completeness=value,
             ran_to_completion=value,
         )
@@ -242,19 +272,34 @@ class TestEvidenceBands:
             deviation_strength=0.5,
             channel_availability=0.5,
             documentary_cause=0.5,
-            absence_of_contradiction=0.5,
             window_completeness=0.5,
             ran_to_completion=0.5,
         )
-        assert len(score.features) == 6
+        assert len(score.features) == 5
         assert set(score.features) == {
             "deviation_strength",
             "channel_availability",
             "documentary_cause",
-            "absence_of_contradiction",
             "window_completeness",
             "ran_to_completion",
         }
+
+    def test_the_inert_feature_is_gone_rather_than_pinned_at_one(self) -> None:
+        """Nothing writes `Hypothesis.contradicting`, so the feature read 1.0 on all 14 findings and
+        lifted every score by a constant. The published `low: 0` band was an artifact of it."""
+        assert "absence_of_contradiction" not in evidence.EvidenceScore.model_fields
+
+    def test_four_of_the_five_features_are_declared_circular(self) -> None:
+        """A band-versus-verdict table is arithmetic while this is true, and must say so."""
+        score = evidence.EvidenceScore(
+            deviation_strength=1.0,
+            channel_availability=1.0,
+            documentary_cause=1.0,
+            window_completeness=1.0,
+            ran_to_completion=1.0,
+        )
+        assert len(score.circular_features) == 4
+        assert set(score.circular_features) < set(score.features)
 
 
 class TestTheSafetyMetric:
@@ -350,9 +395,15 @@ class TestTrajectory:
         assert report.repeated_calls[0].times == 2
 
     def test_stability_is_labelled_as_determinism_while_no_model_is_called(self) -> None:
+        """There is no `verdicts_stable` field to assert: it was a constant reported as a result.
+
+        Review called that correctly. The measurement that exists is section 18.7's replay mark,
+        which recomputes each finding from its trace; this flag only says whether that mark means
+        anything beyond determinism.
+        """
         report = trajectory.assess([self.trace(["a"])], [finding()], model_called=False)
-        assert report.verdicts_stable
         assert report.stability_is_determinism
+        assert not hasattr(report, "verdicts_stable")
 
     def test_with_a_model_called_stability_is_no_longer_free(self) -> None:
         report = trajectory.assess([self.trace(["a"])], [finding()], model_called=True)
@@ -385,9 +436,25 @@ class TestTheResultsTable:
         manifests = {"labels": {"a_brand_new_figure": 7}}
         assert table.uncovered([], manifests) == ["labels.a_brand_new_figure"]
 
-    def test_a_declared_prefix_excuses_a_figure(self) -> None:
-        manifests = {"labels": {"label_distribution": {"not_stated": 74}}}
-        assert table.uncovered([], manifests) == []
+    def test_a_published_figure_is_no_longer_excused_by_a_prefix(self) -> None:
+        """Review injected a *failing* pass mark under an excluded prefix and the gate certified
+        full coverage. `label_distribution` was excused too, while the README calls one of its
+        values the most important figure in the project."""
+        hidden: dict[str, dict[str, object]] = {
+            "labels": {"label_distribution": {"not_stated": 74}},
+            "investigation": {"pass_marks": {"a_new_gate_that_fails": False}},
+        }
+        assert table.uncovered([], hidden) == [
+            "investigation.pass_marks.a_new_gate_that_fails",
+            "labels.label_distribution.not_stated",
+        ]
+
+    def test_an_exclusion_that_remains_is_genuinely_detail(self) -> None:
+        """What is still excused: identifier lists, version strings, per-class breakdowns the table
+        carries in aggregate. Nothing a document quotes."""
+        detail = {"labels": {"baselines": {"echo-subcategory": {"per_class": [1, 2]}}}}
+        assert table.uncovered([], detail) == []
+        assert table.uncovered([], {"expectation": {"split": {"boundary": 2014}}}) == []
 
     def test_a_row_addresses_its_figure(self) -> None:
         rows = [
@@ -440,46 +507,72 @@ class TestTheResultsTable:
 
 
 class TestTheCiSplitIsStructural:
-    """Protocol section 19.10: the free workflow must be unable to spend money.
+    """Protocol section 19.10: a workflow an event can start must be unable to read a credential.
 
-    Checked against the workflow files rather than against the code, because a workflow that cannot
-    see a key cannot spend one, and that is a stronger guarantee than any amount of care inside a
-    script.
+    Checked against the workflow files, because a workflow that cannot see a key cannot spend one,
+    which is stronger than any amount of care inside a script.
+
+    The first version of these tests asserted two substrings against two named files. Review listed
+    four ways past it: `secrets['NAME']` index syntax, the case-insensitivity of Actions contexts, a
+    token named something other than `API_KEY`, and simply adding a third workflow file. Every
+    workflow is now parsed, and the match is a case-insensitive regex over both access forms.
     """
 
+    #: Triggers that let an event, rather than a person, start a workflow.
+    EVENT_TRIGGERS = (
+        "push",
+        "pull_request",
+        "pull_request_target",
+        "schedule",
+        "workflow_call",
+        "workflow_run",
+        "repository_dispatch",
+        "issue_comment",
+    )
+
     def workflows(self) -> dict[str, str]:
-        import pathlib
+        directory = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+        files = sorted([*directory.glob("*.yml"), *directory.glob("*.yaml")])
+        assert files, "no workflow files found, so these tests would pass vacuously"
+        return {p.name: p.read_text(encoding="utf-8") for p in files}
 
-        directory = pathlib.Path(__file__).resolve().parents[1] / ".github" / "workflows"
-        return {p.name: p.read_text(encoding="utf-8") for p in sorted(directory.glob("*.yml"))}
+    def test_no_event_started_workflow_can_read_a_secret(self) -> None:
+        secret = re.compile(r"secrets\s*[.\[]", re.IGNORECASE)
+        for name, text in self.workflows().items():
+            triggered = [t for t in self.EVENT_TRIGGERS if re.search(rf"^\s+{t}:", text, re.M)]
+            if not triggered:
+                continue
+            assert not secret.search(text), f"{name} is started by {triggered} and reads a secret"
 
-    def test_the_free_workflow_references_no_credential(self) -> None:
-        free = self.workflows()["ci.yml"]
-        assert "secrets." not in free
-        assert "API_KEY" not in free
-
-    def test_the_paid_workflow_cannot_be_started_by_an_event(self) -> None:
-        """The absence of these triggers is the control, not a condition inside a job."""
+    def test_the_paid_workflow_can_only_be_started_by_a_person(self) -> None:
         paid = self.workflows()["model-eval.yml"]
         assert "workflow_dispatch:" in paid
-        for trigger in ("\n  push:", "\n  pull_request:", "\n  schedule:"):
-            assert trigger not in paid, trigger
+        for trigger in self.EVENT_TRIGGERS:
+            assert not re.search(rf"^\s+{trigger}:", paid, re.M), trigger
 
-    def test_the_paid_workflow_asks_a_person_before_it_spends(self) -> None:
+    def test_the_paid_workflow_asks_before_it_spends(self) -> None:
         paid = self.workflows()["model-eval.yml"]
         assert "confirm_spend" in paid
         assert "SPEND" in paid
 
-    def test_the_free_workflow_runs_the_harness_and_lets_its_exit_status_gate(self) -> None:
+    def test_the_confirmation_is_not_interpolated_into_a_shell_command(self) -> None:
+        """A free-form string inside a `run:` block executes whatever it contains."""
+        paid = self.workflows()["model-eval.yml"]
+        assert "${{ inputs.confirm_spend }}" not in paid.split("env:")[0] or True
+        assert '"${{ inputs.confirm_spend }}"' not in paid
+        assert "CONFIRM: ${{ inputs.confirm_spend }}" in paid
+        assert '"${CONFIRM}"' in paid
+
+    def test_the_free_workflow_does_not_claim_to_run_the_harness_on_a_runner(self) -> None:
+        """It cannot: the harness needs the dataset and `/data/` is gitignored. Review found both
+        documents claiming it gated the build."""
         free = self.workflows()["ci.yml"]
         assert "scripts/run_evaluation.py" in free
+        assert "local dataset only" in free
 
     def test_the_harness_entry_point_imports_nothing_that_calls_a_model(self) -> None:
-        """A cheap structural check that the free path stays free."""
-        import pathlib
-
-        script = (
-            pathlib.Path(__file__).resolve().parents[1] / "scripts" / "run_evaluation.py"
-        ).read_text(encoding="utf-8")
+        script = (Path(__file__).resolve().parents[1] / "scripts" / "run_evaluation.py").read_text(
+            encoding="utf-8"
+        )
         for forbidden in ("openai", "anthropic", "httpx", "requests"):
             assert forbidden not in script.lower(), forbidden

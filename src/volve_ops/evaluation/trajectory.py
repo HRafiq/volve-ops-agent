@@ -49,8 +49,12 @@ class TrajectoryReport(BaseModel):
     tokens: int
     cost_usd: float
     repeated_calls: tuple[RepeatedCall, ...] = ()
-    verdicts_stable: bool = True
     model_called: bool = False
+
+    @property
+    def retrieval_passes_total(self) -> tuple[int, ...]:
+        """Every run's retrieval-pass count, so a total can be printed without recomputing it."""
+        return tuple(int(k) * v for k, v in self.retrieval_passes.items())
 
     @property
     def steps_mean(self) -> float:
@@ -63,10 +67,13 @@ class TrajectoryReport(BaseModel):
 
     @property
     def stability_is_determinism(self) -> bool:
-        """Whether the stability figure is a property of the system rather than a result.
+        """Whether a stability figure would be a property of the system rather than a result.
 
-        True while no model is called. Section 19.7 asks for this to be said out loud rather than
-        letting a reader read 1.0 as reliability.
+        True while no model is called. A `verdicts_stable` field used to sit here defaulted to True
+        and set by nobody, which review correctly called a constant reported as a measurement. The
+        measurement that exists is section 18.7's replay mark in `run_investigations.py`, which
+        recomputes each finding from its trace; this flag only says whether that mark means anything
+        beyond determinism.
         """
         return not self.model_called
 
@@ -76,7 +83,6 @@ def assess(
     findings: Sequence[Finding],
     *,
     model_called: bool = False,
-    verdicts_stable: bool = True,
 ) -> TrajectoryReport:
     """Summarise a set of runs.
 
@@ -118,6 +124,5 @@ def assess(
         tokens=sum(trace.tokens for trace in traces),
         cost_usd=sum(trace.cost_usd for trace in traces),
         repeated_calls=tuple(repeated),
-        verdicts_stable=verdicts_stable,
         model_called=model_called,
     )

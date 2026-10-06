@@ -41,12 +41,17 @@ jobs:
     timeout-minutes: 2
     steps:
       - name: The run was confirmed by a person
+        # Through env, not interpolated into the shell. `confirm_spend` is a free-form string, and
+        # `${{ inputs.confirm_spend }}` inside a run block executes whatever it contains.
+        env:
+          CONFIRM: ${{ inputs.confirm_spend }}
+          WHAT: ${{ inputs.what }}
         run: |
-          if [ "${{ inputs.confirm_spend }}" != "SPEND" ]; then
+          if [ "${CONFIRM}" != "SPEND" ]; then
             echo "Not confirmed. This workflow may call a paid model, so it asks." >&2
             exit 1
           fi
-          echo "Confirmed: ${{ inputs.what }}"
+          echo "Confirmed: ${WHAT}"
 
   evaluate:
     needs: guard

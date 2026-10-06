@@ -95,10 +95,14 @@ def main(argv: list[str] | None = None) -> int:
     producers = sorted(
         {d.day.well for d in history.days if d.day_class is DayClass.VALID_PRODUCING}
     )
+    # Wells that actually produce. `if days` kept any well with a development row, which put
+    # 15/9-F-5 into the population: a water injector with 2,429 development rows and zero valid
+    # producing days. Independent review found its rows reaching the offset comparison of all
+    # fourteen findings, where they contributed nothing and were invisible to the leakage audit.
     usable = {
         well: days
         for well, days in ((w, development_only(history.for_well(w), split)) for w in producers)
-        if days
+        if any(d.day_class is DayClass.VALID_PRODUCING for d in days)
     }
     activity = activity_dates_by_well(args.report_dir)
     windows = {
@@ -266,6 +270,13 @@ def main(argv: list[str] | None = None) -> int:
         "protocol_version": "v4",
         "episodes": len(rows),
         "development_wells": sorted(usable),
+        # As above: the dates this run actually built bundles over. The offset comparison in
+        # diagnostics reads every well in this population, so a hold-out well present here reaches
+        # every finding even when it produces no episode of its own.
+        "bundle_day_dates": {
+            well: sorted(d.day.production_date.isoformat() for d in days)
+            for well, days in sorted(usable.items())
+        },
         "evidence_window_days": EVIDENCE_WINDOW_DAYS,
         "indexed_chunks": len(index),
         "verdicts": dict(verdicts),

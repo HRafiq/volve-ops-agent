@@ -8,10 +8,19 @@ well because it never appears in the output.
 Five checks, all gating. A failure is an incident rather than a score: the affected result is
 withdrawn, not reported with a caveat.
 
-One shape is worth naming because it is the realistic one. Check 3 asks whether a day set came from
-the split filter or was filtered afterwards. Those produce the same days today and will not when
-someone adds a code path fitting on `history.for_well(...)` directly, which is one autocomplete
-away from `development_only(history.for_well(...), split)`.
+**The defect independent review found here, recorded because it is the whole lesson.** Check 3 tests
+whether a fitted day falls outside the development window. Its first version was handed a day set
+the
+harness had computed itself with `development_only`, so the check tested the negation of the
+comprehension that had produced its own input. It could not fail, and the reviewer demonstrated it
+by
+changing the expectation study to fit on the whole record, including 3,201 hold-out producing days:
+the audit reported clean and every pass mark passed.
+
+A check cannot audit another script's filtering by re-deriving it. So the scripts now record the
+dates
+they actually fitted and swept on, in their own run manifests, and this module tests those. That is
+the difference between auditing a run and re-performing it.
 """
 
 from __future__ import annotations
@@ -23,7 +32,6 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict
 
-from volve_ops.domain.day_class import ClassifiedDay
 from volve_ops.domain.splits import TemporalSplit
 from volve_ops.domain.well_naming import UnresolvedWellName, well_of
 from volve_ops.extraction.sampling import HOLD_OUT_WELLS, PRODUCTION_BOUNDARY_ISO
@@ -66,15 +74,19 @@ class LeakageAudit(BaseModel):
 def _hold_out_wells_in(wells: Iterable[str]) -> list[str]:
     """Hold-out wells among these, matched on the well rather than the whole string.
 
-    `15/9-F-5 AY1H` is a wellbore of the hold-out well `15/9-F-5`, and a check comparing whole
+    `15/9-F-5 C` would be a wellbore of the hold-out well `15/9-F-5`, and a check comparing whole
     strings would miss it.
 
-    Three ways of matching, in order, because this is a gate and a gate must not be defeatable by
-    an input it does not recognise. `well_of` is tried first and raises on a name outside the
-    project's naming convention, so the fallback is a prefix test: an unfamiliar wellbore of a
-    hold-out well still matches. Failing closed matters more here than being precise, because the
-    cost of a false positive is a sentence of explanation and the cost of a false negative is a
-    published result scored on held-out data.
+    `well_of` decides it where it can. Where it raises, on a name outside the project's naming
+    convention, a prefix test stands in: a wellbore of a hold-out well is `"15/9-F-5" + " " +
+    suffix`,
+    so the space is required and `15/9-F-50` does not match.
+
+    The prefix test runs **only** in that fallback. An earlier version ran it unconditionally and so
+    overrode a successful resolution, which review showed made `15/9-F-50`, `15/9-F-5X` and
+    `15/9-F-9B` false positives. Harmless against today's hold-out set, and not harmless if a
+    single-digit well ever entered it: `15/9-F-1` would then capture F-11, F-12, F-14 and F-15 and
+    the audit would call four development producers held out.
     """
     found: set[str] = set()
     for well in wells:
@@ -82,18 +94,18 @@ def _hold_out_wells_in(wells: Iterable[str]) -> list[str]:
             found.add(well)
             continue
         try:
-            resolved = well_of(well)
+            if well_of(well) in HOLD_OUT_WELLS:
+                found.add(well)
         except UnresolvedWellName:
-            resolved = None
-        if resolved in HOLD_OUT_WELLS or any(well.startswith(h) for h in HOLD_OUT_WELLS):
-            found.add(well)
+            if any(well.startswith(h + " ") for h in HOLD_OUT_WELLS):
+                found.add(well)
     return sorted(found)
 
 
 def audit(
     *,
     fitted_wells: Iterable[str],
-    fitted_days: Mapping[str, Sequence[ClassifiedDay]],
+    fitted_days: Mapping[str, Sequence[str]],
     split: TemporalSplit,
     labelled_report_dates: Mapping[str, dt.date],
     labelled_wells: Iterable[str],
@@ -103,9 +115,11 @@ def audit(
 ) -> LeakageAudit:
     """Run all five checks of section 19.2.
 
-    `fitted_days` is the day set every expectation fit and threshold choice actually ran on, keyed
-    by well. It is passed in rather than recomputed so the audit examines what the run used,
-    not what it should have used, which is the only version worth auditing.
+    `fitted_days` maps a well to the ISO dates a script recorded having fitted or swept on, read
+    from
+    that script's run manifest. It must not be recomputed by the caller: see the module docstring
+    for
+    what happened when it was.
     """
     findings: list[LeakageFinding] = []
     examined: dict[str, int] = {}
@@ -117,9 +131,9 @@ def audit(
     #    fitting production on a well whose drilling reports are held out: the layers share no data.
     #    Check 3 audits production fitting.
     #
-    #    `fitted_wells` is still counted, because a well that was fitted and also carries a label is
-    #    worth seeing in the examined counts, but it no longer generates a finding on its own.
-    examined["wells_fitted"] = len(list(fitted_wells))
+    #    `fitted_wells` is context rather than a check, and is reported as such: it generates no
+    #    finding, so counting it under `examined` would claim an audit that is not happening.
+    examined["context_wells_fitted_not_a_check"] = len(list(fitted_wells))
     labelled = list(labelled_wells)
     examined["hold_out_well_in_a_label"] = len(labelled)
     for well in _hold_out_wells_in(labelled):
@@ -145,18 +159,25 @@ def audit(
             )
         )
 
-    # 3. Every fitted day passes the split's own test. This is the check that catches a filter
-    #    applied one call too late rather than at the source.
+    # 3. Every date a script recorded fitting on passes the split's own test.
     total_days = sum(len(days) for days in fitted_days.values())
     examined["fitted_day_outside_development"] = total_days
-    for well, days in sorted(fitted_days.items()):
-        outside = [d for d in days if not split.is_development(d.day.production_date)]
+    if total_days == 0:
+        findings.append(
+            LeakageFinding(
+                check="fitted_day_outside_development",
+                detail="no script recorded the dates it fitted on, so this check has nothing to "
+                "audit; a run that cannot be audited is not a clean run",
+            )
+        )
+    for well, dates in sorted(fitted_days.items()):
+        outside = sorted(d for d in dates if not split.is_development(dt.date.fromisoformat(d)))
         if outside:
             findings.append(
                 LeakageFinding(
                     check="fitted_day_outside_development",
-                    detail=f"{well}: {len(outside)} fitted days are not development days, "
-                    f"first {outside[0].day.production_date}",
+                    detail=f"{well}: {len(outside)} recorded fitted dates are outside the "
+                    f"development window, first {outside[0]}",
                 )
             )
 
@@ -173,19 +194,27 @@ def audit(
                 )
             )
 
-    # 5. No hold-out episode investigated, and no hold-out label file on disk.
-    investigated = list(investigated_wells)
-    examined["hold_out_episode_investigated"] = len(investigated)
+    # 5. No hold-out well reaches an investigation at all, as a subject or as context.
+    #
+    #    `investigated_wells` must be every well in the bundle population, not only the wells that
+    #    produced a finding. Review found 15/9-F-5 in the population of all fourteen findings, where
+    #    the offset comparison reads it, while producing no finding of its own and so being
+    #    invisible
+    #    to a check that looked at findings.
+    investigated = sorted(set(investigated_wells))
+    examined["hold_out_well_reaches_an_investigation"] = len(investigated)
     for well in _hold_out_wells_in(investigated):
         findings.append(
             LeakageFinding(
-                check="hold_out_episode_investigated",
-                detail=f"{well} is a hold-out well and has been investigated",
+                check="hold_out_well_reaches_an_investigation",
+                detail=f"{well} is a hold-out well and is in the population an investigation reads",
             )
         )
-    present = sorted(label_dir.glob("hold-out*")) if label_dir is not None else []
-    examined["hold_out_label_file_exists"] = 1 if label_dir is not None else 0
-    for path in present:
+    candidates = sorted(label_dir.glob("*hold*out*")) if label_dir is not None else []
+    examined["hold_out_label_file_exists"] = (
+        len(list(label_dir.iterdir())) if label_dir is not None else 0
+    )
+    for path in candidates:
         findings.append(
             LeakageFinding(
                 check="hold_out_label_file_exists",

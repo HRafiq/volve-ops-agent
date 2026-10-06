@@ -185,37 +185,45 @@ This is the third pre-registered capability the dataset has constrained, after b
 criteria, and all three are constrained the same way: Volve is generous about measurements and thin
 about the operational record that explains them.
 
-### The evaluation harness, and what it found in itself
+### The evaluation harness, and the three gates in it that could not fail
 
-Six gates pass: every version field present, the manifest hash reproducing across runs, the leakage
-audit clean, every figure in every run manifest covered by a table row, no mechanical false root-cause
-claim, and no repeated identical tool call. Each has a test that makes it fail, and each reports how
-much it examined, so a gate that passed over nothing is visible rather than flattering.
+Six gates pass. Three of them could not fail when first written, and independent review found all
+three. That is the third phase in which it has happened here, and the pattern is specific enough to
+name: **a check written in the same breath as the thing it checks tends to test that thing against
+itself.**
 
-**The leakage audit's first run failed, and the failure was the audit's.** It named `15/9-F-5` as a
-hold-out well that had been fitted on. Section 16's hold-out is by well and governs the drilling-report
-layer; production is split temporally, and the two layers share no data. The check had applied the
-wrong hold-out to the wrong layer, and separately the harness had counted every well with a development
-row as a well that was fitted on, when `15/9-F-5` has 2,429 development rows and no valid producing
-day. A check that could not fail would have reported this project clean on its first run.
+The worst was the leakage audit, whose central check tested whether a fitted day fell outside the
+development window — over a day set the harness had built with the same filter. It was the negation of
+its own comprehension. Review proved it by making the expectation study fit on the whole record, 3,201
+hold-out producing days included: the audit reported **clean** and all six marks passed. The scripts
+now record the dates they actually fitted on, the audit reads those, and the same leak produces 5,108
+out-of-window dates and a non-zero exit. A run that records nothing is a finding rather than a pass.
+
+Review also found a §16 hold-out well, `15/9-F-5`, inside the population every investigation's offset
+comparison reads — in all fourteen findings, while producing no finding of its own and so invisible to a
+check that looked at findings. It is a water injector with 2,429 development rows and zero valid
+producing days, and `15/9-F-4` is identical. Removing both changed no figure, which confirms they
+contributed nothing, and corrects a "six producing wells" denominator: the development number is five.
 
 Calibration is reported as evidence bands rather than probabilities, because fourteen episodes give a
-per-bin interval about 25 points wide. Every abstention falls in the `moderate` band and none in
-`high`, which is the relationship one would want and is also partly circular: two of the six features
-feed the stop conditions that cause an abstention, so the table is a consistency check, not evidence
-that the score is informative.
+per-bin interval about 25 points wide. A sixth feature turned out to be **inert** — it read a field
+nothing in the codebase ever writes, so it sat at 1.0 on every finding and the previously published
+distribution had no `low` band at all. With it gone the bands are 7 high, 5 moderate, 2 low. And the
+circularity is worse than first disclosed: **four of the five** remaining features are derived from
+inputs to the verdict, so the band-versus-verdict relationship is arithmetic, not a finding. One thing
+not to read into the word "high": 6 of the 7 high-band findings cite no document at all.
 
 Nine metrics the plan asked for are **deferred, each with the obstacle named**: the hold-out stays
 unscored until Phase 8, episode precision needs a curated set this dataset cannot honestly support,
-end-to-end correctness needs the domain reader §18.8 records as absent, and the prose judge needs an
-API key. [`docs/results_table.md`](docs/results_table.md) has all of them beside the figures that do
-exist, because a reader should be able to see the shape of what is missing in the same place as what
-is not.
+end-to-end correctness needs the domain reader §18.8 records as absent, and the prose judge needs an API
+key. [`docs/results_table.md`](docs/results_table.md) carries all of them beside the 119 figures that do
+exist, each with its denominator and the caveat that belongs with it.
 
-CI is split so that money cannot be spent by accident. The free workflow references no secret at all,
-checked by a test, and now runs the harness so a leakage finding fails the build. The paid workflow has
-no push, pull-request or schedule trigger; their absence is the control rather than a condition inside
-a job.
+CI is split so money cannot be spent by accident, and the guarantee is structural: no workflow an event
+can start may read a secret, checked by parsing every workflow file rather than by anyone reading one.
+The harness itself **does not run on GitHub** — it needs the cached dataset and `/data/` is gitignored,
+so the step reports a skip. What protects the gates on every push is their unit tests, each of which
+exercises a failing case.
 
 Results, limitations and reproduction instructions grow as the work produces them. A figure
 appears here only when a run has produced it.

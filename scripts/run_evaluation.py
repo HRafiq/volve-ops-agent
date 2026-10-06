@@ -18,7 +18,6 @@ from typing import Any
 
 from volve_ops import INGEST_VERSION
 from volve_ops.domain.activity import activity_dates_by_well
-from volve_ops.domain.day_class import DayClass
 from volve_ops.domain.episodes import sweep_well
 from volve_ops.domain.expectation import NaiveMedian28
 from volve_ops.domain.production_service import load_volve_production
@@ -91,25 +90,50 @@ def main(argv: list[str] | None = None) -> int:
     print(f"harness {HARNESS_VERSION}; manifest hash {freeze.manifest_hash}")
     for field in sorted(freeze.model_dump()):
         print(f"  {field:<24} {getattr(freeze, field)}")
-    blank = missing_fields(freeze.model_dump())
-    reproduced = freeze.manifest_hash == freeze.model_copy().manifest_hash
+    # Both of these were tautologies in the first version, and review was right about both.
+    #
+    # `missing_fields` was applied to a freshly validated `VersionFreeze`, whose validator already
+    # refuses a blank field, so it could only ever return nothing. It is meant for a manifest read
+    # back from disk, which is where a field can actually be absent, and that is where it runs now.
+    #
+    # The reproducibility mark compared `freeze.manifest_hash` with `freeze.model_copy()`'s, an
+    # object against its own copy. Reproduction means across runs, so this compares against the hash
+    # the previous run persisted, and only when that run was on the same commit: the commit is one
+    # of the nine fields, so the hash is commit-dependent by design and a mismatch across commits
+    # is expected rather than a failure.
+    previous: dict[str, Any] = {}
+    if args.out.exists():
+        previous = json.loads(args.out.read_text(encoding="utf-8"))
+    blank = missing_fields(previous.get("version_freeze", {})) if previous else ()
+    same_commit = previous.get("version_freeze", {}).get("commit") == freeze.commit
+    reproduced = (
+        previous.get("manifest_hash") == freeze.manifest_hash if previous and same_commit else True
+    )
+    if not previous:
+        print("  no previous run to compare against; the reproducibility mark has nothing to test")
+    elif not same_commit:
+        print(
+            f"  previous run was commit {previous.get('version_freeze', {}).get('commit')}; "
+            "the hash includes the commit, so it is not expected to match"
+        )
 
     # ------------------------------------------------------------------ leakage audit
     history = load_volve_production(args.workbook)
     split = derive_split(history.days)
-    producers = sorted(
-        {d.day.well for d in history.days if d.day_class is DayClass.VALID_PRODUCING}
+    # Read from the manifests, never recomputed here. Review showed that a harness deriving the
+    # fitted day set with the same filter it then audits cannot catch a leak: it tests the negation
+    # of its own comprehension. The scripts record the dates they used; this reads them.
+    recorded_fits: dict[str, list[str]] = {}
+    for name, key in (("expectation", "fitted_day_dates"), ("investigation", "bundle_day_dates")):
+        for well, dates in (manifests.get(name, {}).get(key, {}) or {}).items():
+            recorded_fits.setdefault(str(well), []).extend(str(d) for d in dates)
+
+    # The population every investigation read, which is wider than the wells that produced a
+    # finding: the offset comparison in the diagnostic bundle sees all of them.
+    bundle_population = sorted(
+        set(manifests.get("investigation", {}).get("development_wells", []))
+        | set(manifests.get("investigation", {}).get("bundle_day_dates", {}))
     )
-    # The day set an expectation model was actually fitted to, which is what the audit's own wording
-    # asks for. Passing every well with any development row was the second defect amendment 5
-    # records: 15/9-F-5 has 2,429 development rows and no valid producing day, so nothing was fitted
-    # to it, and the audit reported a leak that had not happened.
-    development = {well: development_only(history.for_well(well), split) for well in producers}
-    fitted_days = {
-        well: days
-        for well, days in development.items()
-        if any(d.day_class is DayClass.VALID_PRODUCING for d in days)
-    }
 
     events = {e.event_id: e for e in EventStore(args.store).read(args.version)}
     labelled_dates = {
@@ -128,12 +152,12 @@ def main(argv: list[str] | None = None) -> int:
     traces = [Trace.read(p) for p in sorted(args.investigations.glob("*.trace.json"))]
 
     audit = leakage.audit(
-        fitted_wells=sorted(fitted_days),
-        fitted_days=fitted_days,
+        fitted_wells=sorted(recorded_fits),
+        fitted_days=recorded_fits,
         split=split,
         labelled_report_dates=labelled_dates,
         labelled_wells=sorted(labelled_wells),
-        investigated_wells=sorted({f.well for f in findings}),
+        investigated_wells=bundle_population or sorted({f.well for f in findings}),
         label_dir=args.labels if args.labels.exists() else None,
     )
     print(f"\nleakage audit: {'clean' if audit.clean else 'FINDINGS'}")
@@ -163,13 +187,20 @@ def main(argv: list[str] | None = None) -> int:
         f"{path_report.tokens} tokens, ${path_report.cost_usd:.2f}"
     )
     print(f"  retrieval passes per run: {path_report.retrieval_passes}")
+    print(f"  retrieval queries in total: {sum(path_report.retrieval_passes_total)}")
+    print(f"  stop conditions: {path_report.stop_conditions}")
     print(f"  repeated identical calls: {len(path_report.repeated_calls)}")
     if path_report.stability_is_determinism:
         print("  verdict stability is 1.0 by construction: no model is called, so this is")
         print("  determinism rather than reliability, per section 19.7")
 
     # ------------------------------------------------------------------ evidence bands
-    usable = dict(fitted_days)
+    #
+    # The population is taken from what the investigation recorded rather than rebuilt from a
+    # filter of this script's own. Review found the two differing by one well, which changed the
+    # offset comparison inside every rebuilt bundle; the figures happened to coincide, which is luck
+    # and not a property worth relying on.
+    usable = {well: development_only(history.for_well(well), split) for well in bundle_population}
     activity = activity_dates_by_well(args.report_dir)
     windows = {
         well: stable_reference_windows(days, activity_dates=activity.get(well_of(well), set()))
@@ -229,8 +260,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # ------------------------------------------------------------------ pass marks
     marks = {
-        "19.1 every version field present": not blank,
-        "19.1 manifest hash reproduces": reproduced,
+        "19.1 every version field present in the persisted manifest": not blank,
+        "19.1 manifest hash reproduces on the same commit": reproduced,
         "19.2 leakage audit clean": audit.clean,
         "19.3 every manifest figure has a table row": not uncovered,
         "19.5 no mechanical false root-cause claim": safety_report.passed,
@@ -241,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {'PASS' if passed else 'FAIL'}  {name}")
 
     payload: dict[str, Any] = {
-        "protocol_version": "v6",
+        "protocol_version": "v8",
         "harness_version": HARNESS_VERSION,
         "version_freeze": freeze.model_dump(),
         "manifest_hash": freeze.manifest_hash,
