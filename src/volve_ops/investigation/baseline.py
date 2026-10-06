@@ -40,6 +40,28 @@ _DRIVERS: Final[dict[Channel, tuple[int, str]]] = {
 }
 
 
+#: Channels grouped by the physical event they are evidence of, so that this baseline and the
+#: controller can be compared on what they claim rather than on which column they read. Closing a
+#: choke is what raises the differential pressure across it, so naming either is naming the same
+#: event; counting them as a disagreement understated agreement at 2 of 7 instead of 5 of 7.
+DRIVER_FAMILY: Final[dict[Channel, str]] = {
+    Channel.CHOKE_SIZE: "choke",
+    Channel.CHOKE_DP: "choke",
+    Channel.ON_STREAM_HOURS: "uptime",
+    Channel.DOWNHOLE_PRESSURE: "pressure",
+    Channel.WELLHEAD_PRESSURE: "pressure",
+}
+
+#: The family each hypothesis is a claim about. Hypotheses outside this map, such as water cut and a
+#: field-wide constraint, are claims the baseline cannot make at all: it reads only the channels
+#: above, and a comparison has to say so rather than score them as disagreement.
+HYPOTHESIS_FAMILY: Final[dict[str, str]] = {
+    "H-choke": "choke",
+    "H-uptime": "uptime",
+    "H-pressure": "pressure",
+}
+
+
 class BaselineCall(BaseModel):
     """What the baseline says about one episode."""
 
@@ -58,6 +80,11 @@ class BaselineCall(BaseModel):
     @property
     def abstained(self) -> bool:
         return self.proximate_driver is None
+
+    @property
+    def family(self) -> str | None:
+        """The physical event named, rather than the column it was read from."""
+        return None if self.channel is None else DRIVER_FAMILY[self.channel]
 
 
 def call(bundle: DiagnosticBundle) -> BaselineCall:

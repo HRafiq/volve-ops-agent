@@ -1,0 +1,254 @@
+"""Run the investigation layer over the development episodes and check protocol section 18.7.
+
+The committed entry point behind docs/investigation_results.md.
+
+    python scripts/run_investigations.py "data/cache/Volve production data.xlsx" \
+        data/cache/ddr_xml --store data/cache/npt_store
+
+Everything runs on development data. The split is applied at the source, so the hold-out cannot be
+reached by forgetting to filter, and section 18.9 keeps it out of this phase entirely.
+
+No model is called. The judgement role is the deterministic one fixed in the controller, which is
+also the floor a model-backed role has to beat: an investigation whose correctness depended on a
+model would be one nobody could test, and section 18.6 needs an opponent that existed first.
+"""
+
+from __future__ import annotations
+
+import argparse
+import collections
+import json
+from pathlib import Path
+from typing import Any
+
+from volve_ops.domain.activity import activity_dates_by_well
+from volve_ops.domain.day_class import DayClass
+from volve_ops.domain.episodes import sweep_well
+from volve_ops.domain.expectation import NaiveMedian28
+from volve_ops.domain.production_service import load_volve_production
+from volve_ops.domain.regimes import stable_reference_windows
+from volve_ops.domain.splits import derive_split, development_only
+from volve_ops.domain.well_naming import well_of
+from volve_ops.extraction.store import EventStore
+from volve_ops.investigation import baseline
+from volve_ops.investigation.controller import (
+    EVIDENCE_WINDOW_DAYS,
+    ReplayJudgement,
+    investigate,
+)
+from volve_ops.investigation.diagnostics import build_bundle
+from volve_ops.investigation.schemas import (
+    CausalLevel,
+    HypothesisStatus,
+    Verdict,
+    forbidden_root_cause_wording,
+)
+from volve_ops.investigation.validator import check
+from volve_ops.provenance.facts import FactLedger
+from volve_ops.retrieval.index import BM25Index, chunks_from_events
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("workbook", type=Path)
+    parser.add_argument("report_dir", type=Path)
+    parser.add_argument("--store", type=Path, default=Path("data/cache/npt_store"))
+    parser.add_argument("--version", default="extractor-v0")
+    parser.add_argument("--traces", type=Path, default=Path("data/cache/investigations"))
+    parser.add_argument("--manifest", type=Path, default=Path("data/cache/investigation_run.json"))
+    parser.add_argument(
+        "--oil-price-usd-per-sm3",
+        type=float,
+        default=None,
+        help="a stated assumption; omitted means no value shortfall is computed at all",
+    )
+    args = parser.parse_args(argv)
+
+    history = load_volve_production(args.workbook)
+    split = derive_split(history.days)
+    producers = sorted(
+        {d.day.well for d in history.days if d.day_class is DayClass.VALID_PRODUCING}
+    )
+    usable = {
+        well: days
+        for well, days in ((w, development_only(history.for_well(w), split)) for w in producers)
+        if days
+    }
+    activity = activity_dates_by_well(args.report_dir)
+    windows = {
+        well: stable_reference_windows(days, activity_dates=activity.get(well_of(well), set()))
+        for well, days in usable.items()
+    }
+
+    episodes = []
+    for well in sorted(usable):
+        episodes.extend(sweep_well(well, usable[well], windows[well], NaiveMedian28()))
+
+    events = list(EventStore(args.store).read(args.version))
+    index = BM25Index(chunks_from_events(events))
+    documents = {event.event_id: event.comment for event in events}
+
+    print(f"development wells {len(usable)}; episodes {len(episodes)}")
+    print(f"narrative index   {len(index)} chunks over {len({e.well for e in events})} wells")
+    print(f"evidence window   +/-{EVIDENCE_WINDOW_DAYS} days either side of an episode\n")
+
+    rows: list[dict[str, Any]] = []
+    gate_failures = 0
+    replay_failures = 0
+    wording_failures = 0
+    args.traces.mkdir(parents=True, exist_ok=True)
+
+    for episode in episodes:
+        bundle = build_bundle(episode.well, episode.onset, episode.offset, usable)
+        ledger = FactLedger()
+        result = investigate(
+            episode,
+            bundle,
+            index,
+            documents,
+            ledger,
+            oil_price_usd_per_sm3=args.oil_price_usd_per_sm3,
+        )
+        finding = result.finding
+        assert finding is not None
+
+        gate = check(finding, ledger, documents)
+        wording = forbidden_root_cause_wording(finding.narrative, finding.highest_level)
+        replayed = investigate(
+            episode,
+            bundle,
+            index,
+            documents,
+            FactLedger(),
+            judgement=ReplayJudgement(result.trace),
+            oil_price_usd_per_sm3=args.oil_price_usd_per_sm3,
+        )
+        replays = replayed.finding == finding
+        call = baseline.call(bundle)
+
+        gate_failures += 0 if gate.passed else 1
+        replay_failures += 0 if replays else 1
+        wording_failures += 1 if wording else 0
+
+        slug = f"{episode.well.replace('/', '_').replace(' ', '_')}_{episode.onset}"
+        result.trace.write(args.traces / f"{slug}.trace.json")
+        (args.traces / f"{slug}.finding.json").write_text(
+            finding.model_dump_json(indent=2) + "\n", encoding="utf-8"
+        )
+
+        supported = [
+            h.hypothesis_id for h in finding.hypotheses if h.status is HypothesisStatus.SUPPORTED
+        ]
+        families = {
+            baseline.HYPOTHESIS_FAMILY[h]
+            for h in supported
+            if h in baseline.HYPOTHESIS_FAMILY
+        }
+        citations = sum(len(h.supporting) for h in finding.hypotheses)
+        print(
+            f"  {episode.well} {episode.onset}  {finding.verdict.value:<32} "
+            f"{finding.stop_reason.value:<31} gate {'pass' if gate.passed else 'BLOCK'}  "
+            f"replay {'ok' if replays else 'DIFFERS'}  citations {citations}"
+        )
+        print(
+            f"      supported {supported or 'none'}; unavailable "
+            f"{[c.value for c in finding.unavailable_mandatory] or 'none'}; "
+            f"baseline {call.proximate_driver or 'abstains'}"
+        )
+        for violation in gate.violations[:3]:
+            print(f"      ! {violation.rule}: {violation.detail[:100]}")
+
+        rows.append(
+            {
+                "well": episode.well,
+                "onset": episode.onset.isoformat(),
+                "offset": episode.offset.isoformat(),
+                "verdict": finding.verdict.value,
+                "stop_reason": finding.stop_reason.value,
+                "curtailed": finding.curtailed,
+                "highest_level": finding.highest_level.value if finding.highest_level else None,
+                "supported": supported,
+                "citations": citations,
+                "unavailable_mandatory": [c.value for c in finding.unavailable_mandatory],
+                "gate_passed": gate.passed,
+                "gate_violations": [v.model_dump(mode="json") for v in gate.violations],
+                "replays_exactly": replays,
+                "baseline_driver": call.proximate_driver,
+                "baseline_abstained": call.abstained,
+                # Compared at the level of the physical event, not the column. See
+                # baseline.DRIVER_FAMILY. None where either side made no comparable claim.
+                "agrees_with_baseline": (
+                    None
+                    if call.family is None or not families
+                    else call.family in families
+                ),
+                "supported_families": sorted(families),
+            }
+        )
+
+    verdicts = collections.Counter(r["verdict"] for r in rows)
+    stops = collections.Counter(r["stop_reason"] for r in rows)
+    levels = collections.Counter(str(r["highest_level"]) for r in rows)
+    citations = sum(int(r["citations"]) for r in rows)
+    comparable = [r for r in rows if r["agrees_with_baseline"] is not None]
+    agree = sum(1 for r in comparable if r["agrees_with_baseline"])
+
+    print("\nverdicts:")
+    for name, count in verdicts.most_common():
+        print(f"  {count:>4}  {name}")
+    print("stop conditions:")
+    for name, count in stops.most_common():
+        print(f"  {count:>4}  {name}")
+    print("highest causal level reached:")
+    for name, count in levels.most_common():
+        print(f"  {count:>4}  {name}")
+    print(f"\ndocument citations across all {len(rows)} findings: {citations}")
+    print(
+        f"agreement with {baseline.BASELINE_NAME} on the driver family: "
+        f"{agree}/{len(comparable)} of the episodes where both named one"
+    )
+
+    print("\nsection 18.7 pass marks:")
+    marks = {
+        "provenance validity is 100 percent": gate_failures == 0,
+        "stop-condition honesty is 100 percent": all(
+            r["curtailed"]
+            == (
+                r["stop_reason"]
+                in {"mandatory_evidence_unavailable", "step_budget_reached", "cost_budget_reached"}
+            )
+            for r in rows
+        ),
+        "trace replay is exact": replay_failures == 0,
+        "abstention is reachable and used": verdicts[Verdict.INSUFFICIENT_EVIDENCE.value] > 0,
+        "no forbidden root-cause wording": wording_failures == 0,
+    }
+    for name, passed in marks.items():
+        print(f"  {'PASS' if passed else 'FAIL'}  {name}")
+
+    payload: dict[str, Any] = {
+        "protocol_version": "v4",
+        "episodes": len(rows),
+        "development_wells": sorted(usable),
+        "evidence_window_days": EVIDENCE_WINDOW_DAYS,
+        "indexed_chunks": len(index),
+        "verdicts": dict(verdicts),
+        "stop_conditions": dict(stops),
+        "highest_levels": dict(levels),
+        "document_citations": citations,
+        "documented_root_cause_reached": levels.get(CausalLevel.DOCUMENTED_ROOT_CAUSE.value, 0),
+        "baseline": baseline.BASELINE_NAME,
+        "baseline_agreement": {"agree": agree, "comparable": len(comparable)},
+        "pass_marks": marks,
+        "all_pass": all(marks.values()),
+        "findings": rows,
+    }
+    args.manifest.parent.mkdir(parents=True, exist_ok=True)
+    args.manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"\ntraces and findings in {args.traces}")
+    print(f"run manifest written to {args.manifest}")
+    return 0 if all(marks.values()) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import datetime as dt
 import statistics
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Final
 
 from pydantic import BaseModel, ConfigDict
@@ -206,7 +206,7 @@ def _offsets(
     well: str,
     onset: dt.date,
     offset: dt.date,
-    by_well: dict[str, Sequence[ClassifiedDay]],
+    by_well: Mapping[str, Sequence[ClassifiedDay]],
 ) -> OffsetComparison:
     others = sorted(w for w in by_well if w != well)
     also_down: list[str] = []
@@ -237,7 +237,7 @@ def build_bundle(
     well: str,
     onset: dt.date,
     offset: dt.date,
-    by_well: dict[str, Sequence[ClassifiedDay]],
+    by_well: Mapping[str, Sequence[ClassifiedDay]],
     *,
     baseline_days: int = 60,
 ) -> DiagnosticBundle:
