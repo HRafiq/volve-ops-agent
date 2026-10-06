@@ -15,49 +15,21 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from openpyxl import Workbook
 
 pytest.importorskip("mcp", reason="the MCP adapter is an optional extra")
 
-HEADER = [
-    "DATEPRD",
-    "NPD_WELL_BORE_NAME",
-    "ON_STREAM_HRS",
-    "BORE_OIL_VOL",
-    "BORE_GAS_VOL",
-    "BORE_WAT_VOL",
-    "AVG_CHOKE_SIZE_P",
-    "AVG_CHOKE_UOM",
-    "FLOW_KIND",
-    "WELL_TYPE",
-]
+from source_schema import book, row  # noqa: E402
 
 
 @pytest.fixture
 def workbook(tmp_path: Path) -> Path:
-    wb = Workbook()
-    ws = wb.active
-    assert ws is not None
-    ws.title = "Daily Production Data"
-    ws.append(HEADER)
-    for i in range(30):
-        ws.append(
-            [
-                dt.datetime(2010, 1, 1) + dt.timedelta(days=i),
-                "15/9-F-12",
-                24.0,
-                2400.0,
-                1000.0,
-                10.0,
-                50.0,
-                "%",
-                "production",
-                "OP",
-            ]
-        )
-    path = tmp_path / "wb.xlsx"
-    wb.save(path)
-    return path
+    return book(
+        tmp_path,
+        [
+            row(DATEPRD=dt.datetime(2010, 1, 1) + dt.timedelta(days=i), BORE_OIL_VOL=2400.0)
+            for i in range(30)
+        ],
+    )
 
 
 def call(name: str, **kwargs: str) -> dict[str, Any]:

@@ -84,6 +84,52 @@ as zero in 1,952.
 Choke is recorded as percent open; the unit column carries a single value and is itself absent
 in 6,473 rows.
 
+### Two channels use zero to mean "no measurement", which a presence check misses
+
+Counting non-empty cells overstates how much pressure data exists, by a lot. `AVG_DOWNHOLE_PRESSURE`
+and `AVG_DOWNHOLE_TEMPERATURE` are recorded as `0.00` on 2,312 rows, all of them producer rows, and
+1,924 of those record positive on-stream hours. A gauge three kilometres down cannot read 0 bar or 0
+degrees Celsius, and a well cannot flow for hours at zero downhole pressure. The two channels are
+zero on exactly the same rows, which is a paired gauge outage rather than two coincidences.
+
+Usable coverage over the 9,161 producing well-days, where "usable" treats those zeros as absences
+and takes every other channel at face value:
+
+| channel | present | usable | sentinel zeros | usable share |
+|---|---:|---:|---:|---:|
+| on-stream hours | 9,161 | 9,161 | 0 | 100.0% |
+| wellhead pressure | 9,155 | 9,155 | 0 | 99.9% |
+| choke differential pressure | 9,155 | 9,155 | 0 | 99.9% |
+| wellhead temperature | 9,146 | 9,146 | 0 | 99.8% |
+| tubing differential pressure | 8,980 | 8,980 | 0 | 98.0% |
+| choke size | 8,919 | 8,919 | 0 | 97.4% |
+| annulus pressure | 7,890 | 7,890 | 0 | 86.1% |
+| **downhole pressure** | 8,980 | **6,668** | 2,312 | **72.8%** |
+| **downhole temperature** | 8,980 | **6,668** | 2,312 | **72.8%** |
+
+Per well it is far more uneven than the total suggests, and it falls hardest on the well the
+production results depend on most:
+
+| wellbore | producing days | usable downhole pressure | sentinel zeros |
+|---|---:|---:|---:|
+| 15/9-F-15 D | 978 | 100.0% | 0 |
+| 15/9-F-1 C | 746 | 99.3% | 2 |
+| 15/9-F-11 | 1,165 | 98.2% | 15 |
+| 15/9-F-14 | 3,056 | 93.3% | 200 |
+| **15/9-F-12** | 3,056 | **31.2%** | 2,095 |
+| **15/9-F-5** | 160 | **0.0%** | 0, the column is simply empty |
+
+`15/9-F-12` is one of only two wells that reach the 150-day calibration gate and it carries most of
+the detected episodes, so the well that matters most for production investigations has downhole
+pressure on under a third of its producing days. A presence check would have reported 99.8% for it.
+`15/9-F-5` has no downhole pressure at all.
+
+This is why a pressure diagnostic cannot be a required input to an investigation. Protocol section
+18 makes unavailable mandatory evidence an explicit stop condition and a published field of the
+finding, rather than something an investigation works around silently. The judgement about which
+zeros are absences lives in `src/volve_ops/domain/sensors.py`, in one place, with the five channels
+it deliberately leaves alone.
+
 ### What the pre-registered physical checks found
 
 Each of these rules was fixed before any file was opened. On producer rows:

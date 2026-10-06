@@ -36,6 +36,13 @@ COLUMNS: Final[dict[str, str]] = {
     "BORE_WAT_VOL": "water_volume_sm3",
     "AVG_CHOKE_SIZE_P": "choke_size",
     "AVG_CHOKE_UOM": "choke_unit",
+    "AVG_DOWNHOLE_PRESSURE": "downhole_pressure_bar",
+    "AVG_DOWNHOLE_TEMPERATURE": "downhole_temperature_c",
+    "AVG_DP_TUBING": "tubing_dp_bar",
+    "AVG_ANNULUS_PRESS": "annulus_pressure_bar",
+    "AVG_WHP_P": "wellhead_pressure_bar",
+    "AVG_WHT_P": "wellhead_temperature_c",
+    "DP_CHOKE_SIZE": "choke_dp_bar",
 }
 
 # The workbook carries both FLOW_KIND and WELL_TYPE. They disagree on a handful of rows, where
@@ -125,6 +132,19 @@ def read_daily_production(path: Path, *, source: str | None = None) -> Iterator[
                 well_status=status,
                 choke_size=_as_float(row[index["AVG_CHOKE_SIZE_P"]], "AVG_CHOKE_SIZE_P", number),
                 choke_unit=str(choke_unit).strip() if choke_unit is not None else None,
+                downhole_pressure_bar=_as_float(
+                    row[index["AVG_DOWNHOLE_PRESSURE"]], "AVG_DOWNHOLE_PRESSURE", number
+                ),
+                downhole_temperature_c=_as_float(
+                    row[index["AVG_DOWNHOLE_TEMPERATURE"]], "AVG_DOWNHOLE_TEMPERATURE", number
+                ),
+                tubing_dp_bar=_as_float(row[index["AVG_DP_TUBING"]], "AVG_DP_TUBING", number),
+                annulus_pressure_bar=_as_float(
+                    row[index["AVG_ANNULUS_PRESS"]], "AVG_ANNULUS_PRESS", number
+                ),
+                wellhead_pressure_bar=_as_float(row[index["AVG_WHP_P"]], "AVG_WHP_P", number),
+                wellhead_temperature_c=_as_float(row[index["AVG_WHT_P"]], "AVG_WHT_P", number),
+                choke_dp_bar=_as_float(row[index["DP_CHOKE_SIZE"]], "DP_CHOKE_SIZE", number),
                 source=label,
                 parser_version=INGEST_VERSION,
             )

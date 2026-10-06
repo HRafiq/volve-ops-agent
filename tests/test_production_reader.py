@@ -8,55 +8,13 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
+from source_schema import HEADER, book, row
 from volve_ops.ingest.production import WellStatus
 from volve_ops.ingest.production_reader import (
     DAILY_SHEET,
     SourceSchemaError,
     read_daily_production,
 )
-
-HEADER = [
-    "DATEPRD",
-    "NPD_WELL_BORE_NAME",
-    "ON_STREAM_HRS",
-    "BORE_OIL_VOL",
-    "BORE_GAS_VOL",
-    "BORE_WAT_VOL",
-    "AVG_CHOKE_SIZE_P",
-    "AVG_CHOKE_UOM",
-    "FLOW_KIND",
-    "WELL_TYPE",
-]
-
-
-def book(tmp_path: Path, rows: list[list[object]], sheet: str = DAILY_SHEET) -> Path:
-    wb = Workbook()
-    ws = wb.active
-    assert ws is not None
-    ws.title = sheet
-    ws.append(HEADER)
-    for r in rows:
-        ws.append(r)
-    path = tmp_path / "wb.xlsx"
-    wb.save(path)
-    return path
-
-
-def row(**over: object) -> list[object]:
-    base: dict[str, object] = {
-        "DATEPRD": dt.datetime(2010, 6, 1),
-        "NPD_WELL_BORE_NAME": "15/9-F-12",
-        "ON_STREAM_HRS": 24.0,
-        "BORE_OIL_VOL": 900.0,
-        "BORE_GAS_VOL": 1000.0,
-        "BORE_WAT_VOL": 10.0,
-        "AVG_CHOKE_SIZE_P": 50.0,
-        "AVG_CHOKE_UOM": "%",
-        "FLOW_KIND": "production",
-        "WELL_TYPE": "OP",
-    }
-    base.update(over)
-    return [base[c] for c in HEADER]
 
 
 def test_reads_a_row_into_canonical_form(tmp_path: Path) -> None:
@@ -65,6 +23,29 @@ def test_reads_a_row_into_canonical_form(tmp_path: Path) -> None:
     assert day.production_date == dt.date(2010, 6, 1)
     assert day.on_stream_hours == 24.0
     assert day.well_status is WellStatus.PRODUCING
+
+
+def test_the_sensor_channels_are_carried_in_the_workbook_units(tmp_path: Path) -> None:
+    """Pressures in bar and temperatures in Celsius, which is what the workbook holds."""
+    (day,) = read_daily_production(book(tmp_path, [row()]))
+    assert day.downhole_pressure_bar == 230.0
+    assert day.downhole_temperature_c == 103.0
+    assert day.tubing_dp_bar == 175.0
+    assert day.annulus_pressure_bar == 16.0
+    assert day.wellhead_pressure_bar == 38.0
+    assert day.wellhead_temperature_c == 80.0
+    assert day.choke_dp_bar == 2.4
+
+
+def test_a_sentinel_zero_is_carried_raw_rather_than_cleaned_at_the_parser(
+    tmp_path: Path,
+) -> None:
+    """The parser reports what the file says; volve_ops.domain.sensors decides what it means."""
+    (day,) = read_daily_production(
+        book(tmp_path, [row(AVG_DOWNHOLE_PRESSURE=0.0, AVG_DOWNHOLE_TEMPERATURE=0.0)])
+    )
+    assert day.downhole_pressure_bar == 0.0
+    assert day.downhole_temperature_c == 0.0
 
 
 def test_an_empty_numeric_cell_becomes_none_and_never_a_zero_or_a_nan(tmp_path: Path) -> None:
