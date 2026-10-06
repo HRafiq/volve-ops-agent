@@ -1,11 +1,12 @@
 # Evaluation protocol
 
-Version: v2
+Version: v3
 Date: 2026-10-06
 Status: pre-registered. Pushed before the work it judges.
-Amendments since v0: one, in section 6, recorded in section 13 and labelled post-inspection.
-New in v2: sections 14 to 16 fix the drilling-report extraction and retrieval layers, which v0
-deferred. No v0 or v1 number changes.
+Amendments since v0: three, in sections 6 and 14.5 and in the labelling guide, all recorded in
+section 13 and all labelled post-inspection.
+New in v3: section 17 fixes where the cause labels come from, and suspends the section 14.5
+selection gate because they are not expert labels. No threshold is lowered and no baseline moves.
 
 This file states how the project will be judged, and it is pushed to the public remote
 before the runs it judges happen. The published history is the evidence. Pass marks,
@@ -696,6 +697,63 @@ defined relative to a baseline means nothing if the baseline can move.
 Tightening a pass mark after seeing a result that failed it is not an amendment. It is the
 failure mode this document exists to prevent.
 
+### Amendment 3, v2 to v3: a section added to the labelling guide after labelling
+
+Date: 2026-10-06. Made **after** the development sample was labelled, and labelled as such wherever
+a dependent result is reported.
+
+`docs/labelling_guide.md` gained a section, "Conventions the first pass had to settle", recording
+seven recurring shapes the guide's rules did not settle on their own. The guide is load-bearing for
+sections 14.3 and 14.5, so a section added to it after labelling is an amendment to a pre-registered
+document and is recorded here rather than as a footnote.
+
+Five of the seven name a rule already in the guide and changed no label. Two did more:
+
+- Convention 4 moved **3 events** from `not_stated` into `equipment_failure`, by reading a failed
+  test with a quantified fault symptom, or negatives isolated to one named component, as plainly
+  implying a leak. The narrowest reading of the guide would have left them `not_stated`.
+- Convention 7 moved **10 events** into `equipment_maintenance` and `rig_service`, and has been
+  **withdrawn**. It read precedence rule 3 as licensing those classes for a comment that only
+  describes work on named equipment. Precedence rule 1 says an activity description is not a cause
+  and "outranks every one below it", and its own examples are those shapes. All 10 are now
+  `not_stated`.
+
+The withdrawal was prompted by independent review, before any approach was scored, and it changed
+published figures: both baselines' macro-F1, both exact-agreement rates, the number of classes in
+the macro average, and which baseline is the better one. The earlier figures are not preserved as an
+alternative reading, because they rested on a resolution the guide's top-ranked rule forbids.
+
+What the withdrawal exposed, and what section 14.4's exemption does not permit fixing here: rule 1
+makes `equipment_maintenance` and `rig_service` **unreachable**, since any comment that would earn
+either is an activity description. Both are absent from the labelled sample as a result. That is a
+defect in the guide. Fixing it needs a new guide version in its own pushed commit, and is not done
+mid-labelling.
+
+### Amendment 2, v2 to v3
+
+Date: 2026-10-06. Made **after** the drilling reports were inspected and after the development
+sample was labelled, and labelled as such wherever a dependent result is reported.
+
+Section 14.5, conditions 1 and 2. Previously an approach was selected only if its macro-F1 beat
+the better baseline by at least 20 percent relatively and the margin's bootstrap interval
+excluded zero. Both now stand as reported diagnostics and neither selects anything. Section 17
+is the new section that records why and what would reverse it.
+
+Reason: the labels are produced by a language model applying `docs/labelling_guide.md`, not by a
+reader with drilling-operations experience. Scoring a model's cause attribution against labels
+made by a model measures agreement on a shared convention. A margin over the two fixed baselines
+earned that way is not evidence about causes in the well.
+
+This is not a pass mark being tightened or loosened after a result. Nothing had been scored
+against these labels when the amendment was written, and the amendment removes a claim the
+project could have made rather than preserving one. The direction is the test: a protocol edited
+to flatter a result moves a threshold toward the result, and this one withdraws the threshold
+that a passing result would have been reported against.
+
+What does not change: both baselines and both mapping tables, which section 14.4 exempts from
+amendment; the macro-averaging rule and its five-instance floor; conditions 3 and 4; every
+section 14.3 pass mark; and the section 16 split.
+
 ### Amendment 1, v0 to v1
 
 Date: 2026-10-04. Made **after** the production data was inspected, and labelled as such
@@ -769,19 +827,30 @@ code, the state and detail state, and the timestamps. Pinning this matters becau
 three baselines below are built from those same structured fields, and a model with access to
 material the labeller lacked would be scored against labels made in ignorance of it.
 
-This also fixes what the metrics mean. Category accuracy against hand labels would measure the
+This also fixes what the metrics mean. Category accuracy against the labelled sample would measure the
 operator's coding from 2008, not this system's extraction, and reporting it as an extraction
 score would be a borrowed number. It is reported as a data-quality statistic instead.
 
 ### 14.3 Deterministic layer: pass marks
 
-Measured against the hand-labelled sample described in `docs/labelling_guide.md`.
+Measured against the labelled sample described in `docs/labelling_guide.md`. These two pass
+marks are unaffected by section 17: both are checks of the parser against the source XML, and
+who assigned the cause does not enter either one.
 
 1. **Event detection is exact.** Every block meeting the 14.1 rule in the labelled sample
    becomes exactly one event, and no block failing it does. The pass mark is 100 percent
    agreement, because disagreement is a parser defect rather than a difficulty.
 2. **Duration is exact.** Computed duration equals the labeller's reading of the block's own
    timestamps to within one minute. The same reasoning: this is arithmetic.
+
+**What passing these does not establish**, because the pass marks are narrow by design and a reader
+could take them for a general parser-correctness claim. They cover which blocks became events and
+how long each lasted. They do not check any other extracted field. `qualifying_blocks ==
+events_checked` can hold while `state_detail`, `subcategory`, `comment`, `well`, `wellbore` or
+`report_date` is wrong, and `state_detail` and `comment` are what the `echo-statedetail` baseline and
+the whole cause layer are built from. In particular a comment correctly extracted but associated with
+the wrong block would satisfy both marks and would also satisfy condition 3's span check, which
+compares a cited span against the extractor's own comment field rather than against the XML.
 
 A failure of either is reported as a parser incident and blocks the layer, rather than being
 absorbed into an aggregate score that a strong model could hide.
@@ -821,6 +890,15 @@ mapping supplied after seeing results is a baseline chosen after seeing results.
 
 ### 14.5 Cause attribution: pass marks
 
+**Conditions 1 and 2 are suspended as selection gates by section 17**, which records that the
+labels are model-produced rather than expert-assigned. They are computed and reported as
+diagnostics. Conditions 3 and 4 still gate, because neither depends on the cause labels being
+right: condition 3 checks a span against the text it cites, and condition 4 checks an approach
+against itself. Section 17 states what would restore conditions 1 and 2.
+
+The wording below is the wording fixed in v2 and is left intact, so that the diff showing what
+was suspended is readable against it.
+
 An approach is selected only if all four hold.
 
 1. **Macro-F1 at least 20 percent higher, relatively, than the better of the two baselines**,
@@ -858,9 +936,20 @@ is an honest product rather than a degraded one.
 ### 14.6 Reported without a pass mark
 
 Needs-review precision and recall, the labelled sample's own category distribution, the fraction
-of comments too short to support any attribution, inter-pass label agreement on the re-labelled
-subsample, the distribution of extraction confidence against correctness, and the rate at which
-the source's own coding disagrees with the comment.
+of comments too short to support any attribution, the distribution of extraction confidence
+against correctness, and the rate at which the source's own coding disagrees with the comment.
+
+That last one is a judgement: the labelling guide states the criterion, and applying it needs a
+reading of the comment. It is therefore reported beside a **mechanical companion that needs none**:
+the fraction of labelled events on which `echo-subcategory` names a cause that is not the label. The
+companion is not a better measure of the source's coding, since it is confounded with the labels
+being wrong, but it cannot be applied inconsistently, and the first pass applied the judgement
+version inconsistently.
+
+Inter-pass label agreement was in this list in v2 and is withdrawn by section 17. It was there to
+estimate how consistent one person is with themselves, which is the ceiling on what agreement
+with a system can mean. Re-running a model over the same comments does not estimate that, and
+reporting the number it produces under the old heading would be a borrowed figure.
 
 ## 15. Retrieval
 
@@ -945,3 +1034,134 @@ The hold-out label budget is fixed here, not later: 60 events, drawn by the same
 as the development sample. Leaving it open would make the final scoring's sample size a free
 parameter chosen once the development results were known.
 
+## 17. Where the cause labels come from
+
+The labels this protocol scores against are **produced by a language model**, specifically
+`claude-opus-5`, applying `docs/labelling_guide.md` to each comment. They are recorded as
+`label_source: machine_assisted` on every row of `labels/development_pass1.jsonl`, and that file
+is published in full.
+
+### 17.1 Why, stated plainly
+
+Sections 14.3 to 14.6 were written on the assumption of a human labeller, and the guide still
+describes one. The project's author does not have drilling-operations experience and cannot
+assign a cause to a 1997 activity comment. Three routes were available.
+
+The author could have labelled anyway. That produces a label set with a human's name on it and a
+non-expert's judgement inside it, which is worse than the present arrangement rather than better,
+because the provenance would invite exactly the confidence the labels cannot support.
+
+A domain reviewer could have been engaged. That remains the right answer and is what section 17.4
+specifies; it was not available for this phase.
+
+The model could label, with the provenance stated and the pass marks that depend on it withdrawn.
+That is what happened.
+
+### 17.2 What it costs
+
+The cost is the cause-attribution selection gate, and it is a real cost rather than a formality.
+
+An extraction approach scored against these labels is being compared with a labeller of its own
+kind. Where it agrees, the agreement may be about what the comment says or it may be about a
+convention the two share, and the score cannot separate those. A 20 percent macro-F1 margin over
+`echo-subcategory` earned on these labels is therefore not evidence that an approach reads
+drilling narrative well. It is evidence that it reproduces this guide's application of this
+taxonomy more closely than a lookup table does, which is a narrower claim and is the only one
+that will be made.
+
+The two baselines are not contaminated by this. Both are deterministic tables fixed in section
+14.4 before any label existed, and both are exempt from amendment. So the comparison is between a
+reading approach and a fixed opponent, and the opponent is honest. What is contaminated is the
+target.
+
+### 17.3 What still gates, and why each one survives
+
+1. **Section 14.3, event detection and duration.** Checked against the source XML. The cause
+   label does not enter either.
+2. **Section 14.5 condition 3, span validity at 100 percent.** A span either is a substring of
+   the comment it cites or it is not. Mechanical, and a fabricated citation is as serious whoever
+   assigned the cause beside it.
+3. **Section 14.5 condition 4, abstention.** The approach is compared with itself, run with and
+   without `not_stated` permitted. The labels set which events count toward the coverage floor,
+   so the condition is not wholly independent of them, and it is reported with that noted.
+
+**What this leaves, said plainly rather than left for a reader to notice.** Both surviving gates are
+conditions an approach controls unilaterally: condition 3 is satisfied by copying a substring, and
+condition 4 compares the approach with itself. So while the suspension holds, the cause-attribution
+layer has **no gate that can fail for being wrong about a cause**. That is the cost restated in its
+sharpest form, and it is why `approach_is_selected` in `src/volve_ops/extraction/scoring.py` returns
+false whenever any condition is suspended, rather than taking the conjunction over the survivors. A
+two-condition bar made of self-checks is not a weaker version of the four-condition bar. It is not a
+bar.
+
+### 17.4 What would restore conditions 1 and 2
+
+Named now, so that it cannot be defined later to fit whatever is available.
+
+A reader with drilling-operations experience adjudicates a stratified subsample of **40 events**,
+drawn by the same rule the guide fixes for its re-label subsample: half from events whose machine
+label is `equipment_failure`, `equipment_maintenance` or `rig_service`, where the guide predicts
+disagreement, and half at random from the rest. The adjudicator works from the comment, the
+activity code, the state, the detail state and the timestamps, which is section 14.2's permitted set,
+and sees neither the machine label nor the baselines' predictions.
+
+The size, the strata and the seed, **20261006**, are fixed here, and `scripts/draw_adjudication.py`
+performs the draw now rather than when an adjudicator is available. A subsample whose size or seed
+is chosen once someone is ready to label it is a subsample chosen after seeing what it produces. The
+worksheet it writes carries exactly section 14.2's permitted set and no machine label, so field-level
+blinding is a property of the artifact rather than an instruction.
+
+**Which guide the adjudicator is given, because the current one contains the answers.** The
+labelling guide now carries a "Conventions the first pass had to settle" section, written after
+labelling, which describes how several of the drawn events were resolved and quotes their comments.
+Handing that to an adjudicator would measure whether they read it. The adjudicator is therefore given
+the guide **as it stood at the `prereg-v2` tag**, `git show prereg-v2:docs/labelling_guide.md`, which
+is the version that predates every label. If a later version fixes the rule 1 defect that amendment
+3 records, the adjudicator is given that fix as a stated rule and still not the conventions section.
+
+**The statistic, and the interval, because a bare point estimate at n=40 would contradict section
+14.5 condition 2.** Raw agreement is the headline, and Cohen's kappa is reported beside it, because
+`not_stated` runs above half the sample and raw agreement on the random half is partly free. A 95
+percent Clopper-Pearson interval is reported with both. The decision rule is **both** of: raw
+agreement at least 0.80, and the interval's lower bound at least 0.70. One number at n=40 moves about
+12 points either way, and a protocol that demands a bootstrap interval of the condition it suspends
+while accepting a point estimate from the condition that restores it is inconsistent with itself.
+
+Two limits of this design, named rather than discovered. The subsample is 40 because it is a budget
+on an unpaid domain reader's attention, not because 40 is sufficient. And one adjudicator yields no
+estimate of their own reliability, which is the quantity amendment 2 withdrew inter-pass agreement
+for failing to supply; a second adjudicator on an overlapping subset would supply it and is not
+promised here.
+
+Two numbers come out, and both are published whatever they say: the adjudicator's agreement with
+the machine labels on those 40 events, and a per-class breakdown over the classes the subsample
+reaches. Conditions 1 and 2 are restored as gates only if agreement is at least **80 percent**
+overall. That figure is fixed here, before any adjudication, and it is not the pass mark for the
+extraction system. It is the threshold at which the label set is worth scoring one against.
+
+Below 80 percent the labels are republished as a convention-conformance set and the cause
+attribution layer ships without a selected approach, exactly as section 14.5's closing paragraph
+already provides for. Per-well NPT totals by category and duration do not depend on any of this
+and remain reportable.
+
+### 17.5 What is recorded, so that a reader can check rather than trust
+
+Every label row carries the applied precedence rule from the guide alongside the cause and the
+span, and a free-text note wherever the choice was close. Of the 135 published rows, 55 carry such a
+note and 14 of those name a taxonomy label other than the one assigned, which is the computable
+proxy for "considered and rejected" and is reported as that rather than as a judgement about intent.
+This does not make a model-produced label an expert one.
+
+**One deviation from section 14.2 in the labelling pass, disclosed because section 14.2 exists to
+make exactly this checkable.** The pass saw the wellbore identifier alongside the permitted set. A
+wellbore name carries the era: the `15/9-19` wellbores are 1990s exploration and the `F-` wellbores
+are 2000s development, and era plausibly moves a cause label. It is not known whether it did. The
+adjudication worksheet withholds it, so an adjudication is scored against labels made with slightly
+more context than the adjudicator had, in the direction that disfavours agreement. It makes each label falsifiable by a reader who has the
+knowledge the labeller lacked, which is the most this arrangement can offer.
+
+Two things that will not be reported, because they cannot be measured here. **Inter-pass
+agreement**, withdrawn by amendment 2 above. And the **anchoring rate**: an earlier plan had the
+model recommend a label and the author accept or override it, so that the override rate would
+measure how much the recommendation moved the human. With no human in the loop there is no
+override rate, and a figure computed from a second model pass would not be one.
