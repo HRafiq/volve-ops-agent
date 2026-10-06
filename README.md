@@ -6,7 +6,14 @@ human review.
 
 ## Status
 
-Data profiled, both feasibility criteria executed, deterministic expectation and episode layer built and measured. No agent exists yet.
+Data profiled, both feasibility criteria executed, the deterministic expectation and episode
+layer built and measured, drilling-report extraction running, and the development cause-label set
+produced and scored against both fixed baselines. No agent exists yet, and no cause-attribution
+model has been run.
+
+The cause labels are **machine-assisted**: produced by a language model applying a labelling guide
+written and pushed beforehand, not by a domain expert. That is a real limitation rather than a
+caveat, and it cost the project a pass mark. Details below.
 
 The evaluation protocol was pushed before any dataset file was retrieved. That ordering is the
 point: every threshold the project will be judged against was fixed while its author had not
@@ -24,6 +31,17 @@ seen the data, so those criteria could fail honestly. Two of them did.
 - [`docs/expectation_results.md`](docs/expectation_results.md) is the measured performance of
   the expectation engine on development data, the model comparison with the pre-registered
   selection rule applied, and the failure modes that showed up while building it.
+- [`docs/extraction_results.md`](docs/extraction_results.md) is the drilling-report extraction:
+  3,673 non-productive events over 11 wells, what the two fixed baselines predict, and why both
+  are named.
+- [`docs/labelling_guide.md`](docs/labelling_guide.md) is the labelling specification, written
+  before any label was made, plus a section marked as written after it: the seven conventions the
+  first pass had to derive, one of which was withdrawn on review.
+- [`docs/labelling_results.md`](docs/labelling_results.md) is the label set measured: the
+  distribution, both baselines per class, and the two directions in which the only available
+  external check on the labels fails.
+- [`labels/development_pass1.jsonl`](labels/development_pass1.jsonl) is the label set itself, all
+  135 rows, each carrying its provenance, its verbatim span and the rule that settled it.
 - [`docs/architecture_decisions/`](docs/architecture_decisions/) holds the decisions and the
   reasoning, including both feasibility results.
 
@@ -32,6 +50,14 @@ holds the engine; `src/volve_ops/tools/` wraps it in typed, bounded tools that r
 over-large request rather than truncating it; and `src/volve_ops/mcp_server/` exposes those
 tools over MCP as an optional extra. The adapter decides nothing, which is the point: a rule
 about what a caller may ask for lives in the tool layer, once.
+
+Alongside it, `src/volve_ops/extraction/` turns the drilling reports into typed non-productive
+events in a versioned store, `src/volve_ops/retrieval/` indexes their narrative lexically, and
+`src/volve_ops/provenance/` holds the fact ledger that refuses a derived value whose inputs it
+does not have. Three committed scripts regenerate the published figures:
+`scripts/run_expectation_study.py`, `scripts/run_extraction.py` and
+`scripts/run_label_scoring.py`, each writing a run manifest. A fourth,
+`scripts/draw_adjudication.py`, draws the expert adjudication subsample described below.
 
 ### Feasibility results
 
@@ -57,6 +83,52 @@ applies and `naive-median28` becomes the expectation model, deliberately not the
 better-scoring persistence baseline, which cannot detect sustained underperformance by
 construction. Calibration fails on both qualifying wells and the interval construction is the
 cause. Details and the full comparison are in the results document.
+
+### Cause labels, and the pass mark they cost
+
+The labelled sample is 135 drilling-report events. The labels are produced by `claude-opus-5`
+applying the labelling guide, because this project's author has no drilling-operations experience
+and cannot say whether "ATTEMPTED TO ENGAGE SEAL ASSY, NO GO" names an equipment failure, a hole
+condition, or neither. Labelling anyway would have put a human's provenance on a non-expert's
+judgement, which invites exactly the confidence the labels cannot support.
+
+So the provenance is recorded on every row and the pass marks that need expert labels are
+withdrawn. Protocol section 17 sets this out and amendment 2 suspends them: an extraction model
+scored against model labels is compared with a labeller of its own kind, and agreement cannot be
+separated from shared convention. A labelled event cannot be constructed in code without declaring
+its provenance, and `approach_is_selected` returns false whenever any condition is suspended rather
+than taking the conjunction over the survivors, because both survivors are conditions an approach
+controls unilaterally. While the suspension holds, the cause layer has no gate that can fail for
+being wrong about a cause, which is the cost in its sharpest form.
+
+Section 17.4 fixes what would restore the marks, before any of it is available: a domain reviewer
+adjudicates 40 events, and raw agreement of 80 percent with a Clopper-Pearson lower bound above 70
+restores them. The draw is done rather than promised, at a pre-registered seed, with a worksheet
+carrying exactly the evidence the protocol permits a labeller. It also fixes which version of the
+guide an adjudicator is given, because the current one describes how several of the drawn events
+were resolved.
+
+What still holds, because none of it depends on a cause being right. Both section 14.3 pass marks
+pass on an independent walk of the source XML: 617 qualifying blocks in the sample's 99 documents,
+617 events, every duration matching its own timestamps. All 60 attributed labels carry a verbatim
+span, machine-checked on every read. The scope is narrow on purpose: both marks can pass while other
+extracted fields are wrong, including the two the cause layer is built from.
+
+What the measurement found. `not_stated` is 55.6 percent of the sample, so a system that cannot be
+scored on abstention would be rewarded for guessing on more than half of it. `echo-statedetail` is
+the better baseline on both metrics, at macro-F1 0.3329 against 0.2992, because the free
+`stateDetailActivity` flag reaches F1 0.633 on equipment failure with no reading at all. And roughly
+half the sample carries a source subcategory that points at a cause the comment does not support,
+which is why the subcategory baseline manages 0.057 on equipment failure despite having a table
+aimed at it.
+
+Two findings worth more than the scores. **Two of the twelve taxonomy classes turned out to be
+unreachable**: the guide's top-ranked precedence rule sends any comment that would earn
+`equipment_maintenance` or `rig_service` to `not_stated` instead. The first labelling pass carved an
+exception, independent review rejected it, and the correction changed both baselines' scores and
+which one leads. And where both baselines name an actual cause and agree, **the labels match on one
+event in sixteen**. Either the structured fields are badly wrong about those events or the labels
+are, and the project cannot currently say which.
 
 Results, limitations and reproduction instructions grow as the work produces them. A figure
 appears here only when a run has produced it.
