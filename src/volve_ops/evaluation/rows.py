@@ -617,4 +617,190 @@ ROWS: Final[tuple[MetricRow, ...]] = (
             "no forbidden root-cause wording",
         )
     ),
+    # ------------------------------------------------------------------ post-mortem and register
+    MetricRow(
+        layer="Post-mortem",
+        metric="Activity blocks walked",
+        manifest="postmortem",
+        key="activity_blocks",
+        denominator="every block in 1,759 drilling reports",
+        status=Status.REPORTED,
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Reports walked",
+        manifest="postmortem",
+        key="reports",
+        denominator="WITSML drill reports in the corpus",
+        status=Status.REPORTED,
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Untimed blocks",
+        manifest="postmortem",
+        key="untimed_blocks",
+        denominator="23,447 activity blocks",
+        status=Status.REPORTED,
+        note="zero; a qualifying block that cannot be timed is a parser defect under section 14.3",
+    ),
+    *(
+        MetricRow(
+            layer="Post-mortem",
+            metric=f"Corpus {label}",
+            manifest="postmortem",
+            key=f"corpus_{key}",
+            denominator="all 11 wells, hours",
+            status=Status.REPORTED,
+            note=note,
+        )
+        for key, label, note in (
+            ("npt_hours", "non-productive time", None),
+            ("non_npt_recorded_hours", "non-NPT recorded time", "ADR 0002: not called productive"),
+            (
+                "unclassified_gap_hours",
+                "other unclassified time",
+                "gaps between blocks inside a report; the third ADR 0002 category",
+            ),
+            (
+                "concurrent_overlap_hours",
+                "concurrent block overlap",
+                "reported separately, never folded into the reconciliation tolerance",
+            ),
+        )
+    ),
+    *(
+        MetricRow(
+            layer="Post-mortem",
+            metric=f"Development {label}",
+            manifest="postmortem",
+            key=f"development_{key}",
+            denominator="7 development wells, hours",
+            status=Status.REPORTED,
+        )
+        for key, label in (
+            ("npt_hours", "non-productive time"),
+            ("non_npt_recorded_hours", "non-NPT recorded time"),
+        )
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Share of corpus NPT hours held out and not reported",
+        manifest="postmortem",
+        key="held_out_npt_share",
+        denominator="corpus non-productive hours",
+        status=Status.REPORTED,
+        note="section 20.1 confines the post-mortem to development wells",
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Recurring patterns in the register",
+        manifest="postmortem",
+        key="recurring_patterns",
+        denominator="patterns clearing 3 wells and 24 hours",
+        status=Status.REPORTED,
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Patterns below the section 20.4 thresholds",
+        manifest="postmortem",
+        key="excluded_patterns",
+        denominator="distinct subcategory and detail-state pairs",
+        status=Status.REPORTED,
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Hours in patterns below the thresholds",
+        manifest="postmortem",
+        key="excluded_hours",
+        denominator="development non-productive hours",
+        status=Status.REPORTED,
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Hours in recurring patterns",
+        manifest="postmortem",
+        key="register_hours",
+        denominator="development non-productive hours",
+        status=Status.REPORTED,
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Register coverage of development NPT hours",
+        manifest="postmortem",
+        key="register_coverage",
+        denominator="development non-productive hours",
+        status=Status.REPORTED,
+        note="reported, never gated: how concentrated a corpus is, is a property of the data",
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Corrections in the store",
+        manifest="postmortem",
+        key="corrections",
+        denominator="across every store version",
+        status=Status.REPORTED,
+        note="zero; a correction needs a person, so section 19.2's fourth check is still vacuous",
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Write-time refusal of a hold-out correction demonstrated",
+        manifest="postmortem",
+        key="hold_out_refusal_demonstrated",
+        denominator="probed on a hold-out event every run",
+        status=Status.GATED,
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="All five section 20.6 gates pass",
+        manifest="postmortem",
+        key="all_pass",
+        denominator="the post-mortem and the register",
+        status=Status.GATED,
+    ),
+    *(
+        MetricRow(
+            layer="Post-mortem",
+            metric=f"Section 20.6 gate: {mark}",
+            manifest="postmortem",
+            key=f"pass_marks.{mark}",
+            denominator="the post-mortem run",
+            status=Status.GATED,
+        )
+        for mark in (
+            "20.2 categories reconcile and the store agrees",
+            "20.6 every citation resolves",
+            "20.6 no hold-out well in the post-mortem or the store",
+            "20.3 no currency figure without its assumption",
+            "20.5 a hold-out correction is refused at write time",
+        )
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Planned versus actual drilling time",
+        manifest=None,
+        key=None,
+        denominator="would need drilling programmes covering 3 wells",
+        status=Status.DEFERRED,
+        settled_by="programmes this dataset does not contain; ADR 0003 records the failure and "
+        "section 20.2's three categories are the substitute",
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Whether a recurring pattern is a correct lesson",
+        manifest=None,
+        key=None,
+        denominator="would need correctness",
+        status=Status.DEFERRED,
+        settled_by=_NEEDS_A_DOMAIN_READER + ", extended to the register's entries",
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Effect of the correction loop on extraction quality",
+        manifest=None,
+        key=None,
+        denominator="would need corrections and a second extraction version",
+        status=Status.DEFERRED,
+        settled_by="corrections from a person, then a second extraction version scored against the "
+        "first with section 20.5's leakage rule observed",
+    ),
 )

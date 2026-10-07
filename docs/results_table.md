@@ -166,3 +166,34 @@
 | Section 18.7 gate: trace replay is exact | pass | 14 findings | `gated` | — | — |
 | Section 18.7 gate: abstention is reachable and used | pass | 14 findings | `gated` | — | — |
 | Section 18.7 gate: no forbidden root-cause wording | pass | 14 findings | `gated` | — | — |
+
+### Post-mortem
+
+| metric | value | denominator | status | what would settle it | note |
+|---|---|---|---|---|---|
+| Activity blocks walked | 23447 | every block in 1,759 drilling reports | `reported` | — | — |
+| Reports walked | 1759 | WITSML drill reports in the corpus | `reported` | — | — |
+| Untimed blocks | 0 | 23,447 activity blocks | `reported` | — | zero; a qualifying block that cannot be timed is a parser defect under section 14.3 |
+| Corpus non-productive time | 8563.25 | all 11 wells, hours | `reported` | — | — |
+| Corpus non-NPT recorded time | 30834.73 | all 11 wells, hours | `reported` | — | ADR 0002: not called productive |
+| Corpus other unclassified time | 97.5 | all 11 wells, hours | `reported` | — | gaps between blocks inside a report; the third ADR 0002 category |
+| Corpus concurrent block overlap | 1.75 | all 11 wells, hours | `reported` | — | reported separately, never folded into the reconciliation tolerance |
+| Development non-productive time | 7430.25 | 7 development wells, hours | `reported` | — | — |
+| Development non-NPT recorded time | 24894.23 | 7 development wells, hours | `reported` | — | — |
+| Share of corpus NPT hours held out and not reported | 0.1323 | corpus non-productive hours | `reported` | — | section 20.1 confines the post-mortem to development wells |
+| Recurring patterns in the register | 13 | patterns clearing 3 wells and 24 hours | `reported` | — | — |
+| Patterns below the section 20.4 thresholds | 38 | distinct subcategory and detail-state pairs | `reported` | — | — |
+| Hours in patterns below the thresholds | 1199.75 | development non-productive hours | `reported` | — | — |
+| Hours in recurring patterns | 6230.5 | development non-productive hours | `reported` | — | — |
+| Register coverage of development NPT hours | 0.8385 | development non-productive hours | `reported` | — | reported, never gated: how concentrated a corpus is, is a property of the data |
+| Corrections in the store | 0 | across every store version | `reported` | — | zero; a correction needs a person, so section 19.2's fourth check is still vacuous |
+| Write-time refusal of a hold-out correction demonstrated | pass | probed on a hold-out event every run | `gated` | — | — |
+| All five section 20.6 gates pass | pass | the post-mortem and the register | `gated` | — | — |
+| Section 20.6 gate: 20.2 categories reconcile and the store agrees | not produced | the post-mortem run | `gated` | — | — |
+| Section 20.6 gate: 20.6 every citation resolves | not produced | the post-mortem run | `gated` | — | — |
+| Section 20.6 gate: 20.6 no hold-out well in the post-mortem or the store | not produced | the post-mortem run | `gated` | — | — |
+| Section 20.6 gate: 20.3 no currency figure without its assumption | not produced | the post-mortem run | `gated` | — | — |
+| Section 20.6 gate: 20.5 a hold-out correction is refused at write time | not produced | the post-mortem run | `gated` | — | — |
+| Planned versus actual drilling time | deferred | would need drilling programmes covering 3 wells | `deferred` | programmes this dataset does not contain; ADR 0003 records the failure and section 20.2's three categories are the substitute | — |
+| Whether a recurring pattern is a correct lesson | deferred | would need correctness | `deferred` | an adjudication by a reader with drilling-operations experience, per protocol section 17.4, extended to the register's entries | — |
+| Effect of the correction loop on extraction quality | deferred | would need corrections and a second extraction version | `deferred` | corrections from a person, then a second extraction version scored against the first with section 20.5's leakage rule observed | — |

@@ -67,6 +67,7 @@ MANIFESTS: Final[dict[str, str]] = {
     "extraction": "extraction_run.json",
     "labels": "label_scoring_run.json",
     "investigation": "investigation_run.json",
+    "postmortem": "postmortem_run.json",
 }
 
 #: Manifest paths excused from needing a table row. Independent review found the first version
@@ -117,6 +118,14 @@ EXCLUDED_PREFIXES: Final[tuple[str, ...]] = (
     "investigation.bundle_day_dates",
     "investigation.baseline",
     "investigation.findings",
+    "postmortem.protocol_version",
+    "postmortem.postmortem_version",
+    "postmortem.development_wells",
+    "postmortem.hold_out_wells_excluded",
+    "postmortem.correction_store_versions",
+    "postmortem.per_well",
+    "postmortem.patterns",
+    "postmortem.cost_assumption",
 )
 
 

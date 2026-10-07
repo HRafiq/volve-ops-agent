@@ -16,15 +16,15 @@ honestly. Several did, and this README says which.
 | 2 | Drilling-report extraction, lexical retrieval, cause labels | **complete** |
 | 3 | Agent A: bounded investigation controller with a provenance gate | **complete** |
 | 4 | Evaluation harness: version freeze, leakage audit, results table | **complete** |
-| 5 | Agent B: NPT post-mortem and the corrections register | **next** |
-| 6 | Operator console | not started |
+| 5 | Agent B: NPT post-mortem, lessons register, correction store | **complete** |
+| 6 | Operator console | **next** |
 | 7 | Failure, health and security experiments | not started |
 | 8 | Frozen hold-out scored once, public write-up | not started |
 
 The hold-out has never been scored and never been looked at. Phase 4's leakage audit exists to prove
 that mechanically rather than assert it, and it gates the build.
 
-118 tracked files, 511 tests, ruff and mypy strict clean. No model is called by any layer yet: every
+125 tracked files, 540 tests, ruff and mypy strict clean. No model is called by any layer yet: every
 component runs deterministically, which is what makes it testable.
 
 ## What the data refused to support
@@ -81,6 +81,23 @@ for handover." Three episodes stop on missing evidence rather than guessing, bec
 usable downhole pressure on 31.2 percent of its producer rows where counting non-empty cells reports
 99.8. [Details](docs/investigation_results.md)
 
+**Post-mortem and lessons register.** Non-productive time is 8,563 hours of 39,398 recorded, 21.7
+percent. The register is built from the source's own fields rather than from the machine-assisted
+labels, and 13 recurring patterns account for 6,230 of 7,430 development hours, 83.9 percent.
+
+| Figure | Value |
+|---|---|
+| Largest recurring pattern | waiting on weather, 1,595 hours over 7 wells and 372 events |
+| NPT share, worst well to best | 36.3 percent on `15/9-19` against 7.8 percent on `15/9-F-10` |
+| Corpus hours held out and not reported | 13.2 percent, because 4 of 11 wells are hold-out |
+| Events in recurring patterns carrying a cause label | **65 of 2,600, 2.5 percent** |
+
+That last row is the finding that bears on the rest of the project. The labelled sample is stratified
+by subcategory so rare ones appear at all, which buys per-class scorability and pays for it in hours
+covered: the 1,595-hour weather pattern has 9 labels in 372 events. The sample is right for scoring a
+classifier per class and close to wrong for explaining where the time went, and this project had only
+been making the first claim. [Details](docs/postmortem_results.md)
+
 ## The three things I learned
 
 **A check written in the same breath as the thing it checks tends to test that thing against itself.**
@@ -127,8 +144,9 @@ which is the point: a rule about what a caller may ask for lives in the tool lay
 
 `extraction/` turns drilling reports into typed events in a versioned store, `retrieval/` indexes
 their narrative lexically, `provenance/` holds a fact ledger that refuses a derived value whose inputs
-it does not have, `investigation/` is the bounded controller, and `evaluation/` is the harness that
-judges the project's own account of itself.
+it does not have, `investigation/` is the bounded controller, `postmortem/` aggregates recorded time and
+holds the append-only correction store, and `evaluation/` is the harness that judges the project's own
+account of itself.
 
 ## Reproduce
 
@@ -139,6 +157,7 @@ python scripts/run_expectation_study.py "data/cache/Volve production data.xlsx" 
 python scripts/run_extraction.py data/cache/ddr_xml
 python scripts/run_label_scoring.py labels/development_pass1.jsonl
 python scripts/run_investigations.py "data/cache/Volve production data.xlsx" data/cache/ddr_xml
+python scripts/run_postmortem.py data/cache/ddr_xml
 python scripts/run_evaluation.py "data/cache/Volve production data.xlsx" data/cache/ddr_xml
 ```
 
@@ -158,6 +177,7 @@ checked by parsing every workflow file. Anything that would call a model is manu
 | [`docs/results_table.md`](docs/results_table.md) | Every figure in the project, with its denominator and whether it is gated, reported or deferred |
 | [`docs/architecture_decisions/`](docs/architecture_decisions/) | Eight decisions, including all three feasibility outcomes |
 | [`labels/development_pass1.jsonl`](labels/development_pass1.jsonl) | The label set itself, each row with its provenance, span and the rule that settled it |
+| [`docs/postmortem_results.md`](docs/postmortem_results.md) | Where the non-productive time went, and how little of it any label characterises |
 
 ## Scope and boundaries
 
