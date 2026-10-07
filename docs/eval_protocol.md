@@ -1,7 +1,7 @@
 # Evaluation protocol
 
-Version: v8
-Date: 2026-10-06
+Version: v9
+Date: 2026-10-07
 Status: pre-registered. Pushed before the work it judges.
 Amendments since v0: three, in sections 6 and 14.5 and in the labelling guide, all recorded in
 section 13 and all labelled post-inspection.
@@ -1679,3 +1679,132 @@ appears.
 
 It does not report an end-to-end correctness figure, for the reason given three times now in three
 sections, which is the honest number of times to give it.
+
+## 20. The post-mortem, the lessons register and the correction store
+
+Fixed before any of it is built. Every threshold this section needs is stated here, because sections
+18 and 19 each had to record afterwards that they had pre-registered their gates and none of their
+numbers.
+
+### 20.1 What the post-mortem is, and the scope it is confined to
+
+A descriptive product over the drilling reports: per-well non-productive time, broken down by the
+source's own activity subcategory, with the largest contributors cited back to the events they come
+from. It involves no model and no cause attribution. The cause labels of section 17 are
+machine-assisted and the post-mortem does not rest on them; where it mentions a cause it is labelled
+as an illustration over the 135 labelled events and not as a figure over the corpus.
+
+**Development wells only, and that is a real cost.** The drilling-report corpus covers eleven wells, of
+which section 16 holds out four: `15/9-F-4`, `15/9-F-5`, `15/9-F-7` and `15/9-F-9`. A per-well
+post-mortem over all eleven would mean reading hold-out wells' records, and section 4.3 says plainly not
+to look at the hold-out before Phase 8. So the post-mortem covers the seven development wells, their
+hold-out counterparts are not computed, and the report says how much of the corpus that leaves out
+rather than quietly reporting a partial total as a total.
+
+### 20.2 The three recorded-time categories, and the reconciliation that gates
+
+ADR 0002 fixed the naming after B1 failed: the categories are **non-NPT recorded time**, **NPT**, and
+**other unclassified time**. The word "productive" is not used, because nothing in this source positively
+identifies productive work.
+
+Measured over the whole corpus before this section was written, and recorded here so the implementation
+has a figure to reconcile against: 23,447 activity blocks, none untimed, summing to 39,398 hours of block
+duration against 39,396 hours of wall clock. The 2-hour difference is five reports with concurrent
+blocks, not unclassified time. Gaps between blocks inside a report total 98 hours, and **that** is the
+third category.
+
+**Pass mark, gating: the categories reconcile exactly.** For every well, NPT hours plus non-NPT recorded
+hours equals the sum of that well's block durations, to within **0.01 hours**. This is arithmetic over one
+set of blocks, so the tolerance is floating point and nothing else. Concurrent overlap and inter-block
+gaps are reported as their own figures and never folded into a tolerance, because a tolerance wide enough
+to absorb them would be wide enough to hide an error.
+
+### 20.3 The cost equivalent, and what may not be said about it
+
+Non-productive **hours** are the result. A currency figure is an illustration.
+
+**No cost figure is computed unless a day rate is supplied**, and no day rate is built in. Where one is
+supplied the figure is reported as an *estimated rig-time cost equivalent at a stated assumption*, the
+assumption is printed beside the number every time it appears, and the words "cost", "loss" and "saving"
+are not used unqualified. **Pass mark, gating: zero currency figures published without their assumption
+recorded in the same artifact, at 100 percent.**
+
+This is the same discipline section 5 applies to the mockup's figures and section 9 to deferred volume. A
+rig day rate is a commercial negotiation this project has no access to, and a number invented for
+illustration that then circulates as a finding is the failure mode.
+
+### 20.4 The lessons register, and what counts as recurring
+
+A cross-well register of patterns in non-productive time, built from the **source's own fields** so that
+it carries no dependency on the machine-assisted labels: a pattern is a distinct `(activity subcategory,
+detail state)` pair.
+
+**A pattern is recurring when both hold:**
+
+1. it appears on at least **3** development wells, and
+2. it accounts for at least **24 hours** of non-productive time in total.
+
+Three wells rather than two, because two wells is a coincidence and the register exists to find things
+worth generalising. Twenty-four hours because that is one rig-day: below it, a "lesson" is indistinguishable
+from the noise of how a particular morning was written up. Both numbers are fixed here and neither moves.
+
+Each entry records the pattern, the affected wells, total hours, event count, first and last occurrence, a
+representative verbatim span with its event id, and the fraction of the pattern's events that fall in the
+labelled sample, which is the only honest statement of how well understood it is.
+
+**Coverage is reported and not gated.** What fraction of development non-productive hours the recurring
+patterns account for depends on how concentrated the corpus happens to be, which is a property of the data
+rather than of this code, and a bar fixed against it would be a bar on the dataset.
+
+### 20.5 The correction store
+
+A versioned, append-only store of human corrections to extracted events: the field corrected, the old
+value, the new value, who made it, when, and the store version it enters.
+
+Three rules, all gating at 100 percent:
+
+1. **A correction naming a hold-out event is refused at write time**, not flagged at audit time. Section
+   19.2's fourth leakage check audits the store, and until this section it examined nothing because no
+   store existed; it stops being vacuous here. But an audit that runs after the fact is the weaker
+   guarantee, so the store refuses first and the audit confirms.
+2. **A version is never rewritten.** A store version whose contents can change describes something other
+   than the run that cited it, which is the same reasoning as the event store in section 14.
+3. **A correction may become a few-shot example only in an extraction version later than the one that
+   produced the event it corrects.** Enforced where it can be: the store records which extractor version
+   each correction was made against, and a loader asked for examples refuses any correction made against
+   the version doing the asking. The part that cannot be enforced without a model is stated as such.
+
+Every scored run already records `correction_store_version` under section 19.1, and `none` is a legitimate
+value recorded rather than omitted.
+
+### 20.6 Pass marks that gate
+
+1. **Category reconciliation**, section 20.2, to 0.01 hours per well.
+2. **Every citation resolves.** Every event id cited by the post-mortem or the register exists in the
+   event store, and every quoted span is a verbatim substring of that event's comment. 100 percent, a
+   gate and not a score, for the same reason as section 14.5's condition 3.
+3. **No hold-out well appears** in the post-mortem, the register, or the correction store. 100 percent.
+4. **Currency figures carry their assumption**, section 20.3.
+5. **The register is reproducible.** The same corpus produces the same patterns in the same order.
+6. **The correction store refuses a hold-out correction at write time**, section 20.5.
+
+### 20.7 Deferred, with what would settle each
+
+**Planned versus actual time** stays unavailable. ADR 0003 records that B1 failed on coverage, and
+section 20.2's three categories are the substitute rather than a degraded version of it. What would settle
+it: drilling programmes covering three wells' histories, which this dataset does not contain.
+
+**Whether a lesson is a correct lesson** is not scored, for the reason sections 17, 18 and 19 each give.
+The register reports what recurs in the record; whether a recurring pattern reflects a real operational
+cause is a judgement needing drilling-operations experience. What would settle it: the section 17.4
+adjudication, extended to the register's entries.
+
+**The correction loop's effect on extraction quality** cannot be measured until corrections exist and a
+later extraction version is run. What would settle it: a second extraction version and a scored
+comparison, with the leakage rule of 20.5 rule 3 observed.
+
+### 20.8 The Phase 5 gate
+
+Per-well non-productive totals spot-verified against the source by a path independent of the extractor,
+as section 14.3 did for detection and duration. Every evidence link correct. A correction demonstrated to
+be refused when it names a hold-out event. The hold-out otherwise untouched, which section 19.2 checks.
