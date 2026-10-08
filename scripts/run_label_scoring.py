@@ -71,11 +71,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  ! {finding.kind}: {finding.source_document}: {finding.detail}")
 
     # Section 14.5, reported.
+    #
+    # Every class in the taxonomy appears, zeros included. A `Counter` omits what it never saw, so
+    # the three classes with no label were absent from the manifest and their table rows rendered as
+    # "not produced" when the honest value is 0. A zero here is a result and not a gap: two of the
+    # three are unreachable under the labelling guide's first precedence rule, which is why section
+    # 14.5's selection gate is suspended, and that argument needs the zero to be published.
     gold = [e.cause for e in labelled]
-    distribution = collections.Counter(c.value for c in gold)
+    counted = collections.Counter(c.value for c in gold)
+    distribution = {label.value: counted.get(label.value, 0) for label in CauseLabel}
     stated = sum(1 for c in gold if c is not CauseLabel.NOT_STATED)
     print(f"\nlabel distribution over {len(gold)} events, {stated} with a stated cause:")
-    for name, count in distribution.most_common():
+    for name, count in sorted(distribution.items(), key=lambda kv: (-kv[1], kv[0])):
         print(f"  {count:>4}  {name}")
 
     scores: dict[str, Any] = {}
@@ -190,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
             "duration_exact": integrity.duration_exact,
             "findings": [f.model_dump(mode="json") for f in integrity.findings],
         },
-        "label_distribution": dict(distribution),
+        "label_distribution": distribution,
         "stated_cause_events": stated,
         "baselines": scores,
         "baseline_mutual_agreement": len(consensus) / len(gold),

@@ -10,17 +10,14 @@ withdrawn, not reported with a caveat.
 
 **The defect independent review found here, recorded because it is the whole lesson.** Check 3 tests
 whether a fitted day falls outside the development window. Its first version was handed a day set
-the
-harness had computed itself with `development_only`, so the check tested the negation of the
+the harness had computed itself with `development_only`, so the check tested the negation of the
 comprehension that had produced its own input. It could not fail, and the reviewer demonstrated it
-by
-changing the expectation study to fit on the whole record, including 3,201 hold-out producing days:
-the audit reported clean and every pass mark passed.
+by changing the expectation study to fit on the whole record, including 3,201 hold-out producing
+days: the audit reported clean and every pass mark passed.
 
 A check cannot audit another script's filtering by re-deriving it. So the scripts now record the
-dates
-they actually fitted and swept on, in their own run manifests, and this module tests those. That is
-the difference between auditing a run and re-performing it.
+dates they actually fitted and swept on, in their own run manifests, and this module tests those.
+That is the difference between auditing a run and re-performing it.
 """
 
 from __future__ import annotations
@@ -79,8 +76,7 @@ def _hold_out_wells_in(wells: Iterable[str]) -> list[str]:
 
     `well_of` decides it where it can. Where it raises, on a name outside the project's naming
     convention, a prefix test stands in: a wellbore of a hold-out well is `"15/9-F-5" + " " +
-    suffix`,
-    so the space is required and `15/9-F-50` does not match.
+    suffix`, so the space is required and `15/9-F-50` does not match.
 
     The prefix test runs **only** in that fallback. An earlier version ran it unconditionally and so
     overrode a successful resolution, which review showed made `15/9-F-50`, `15/9-F-5X` and
@@ -116,10 +112,8 @@ def audit(
     """Run all five checks of section 19.2.
 
     `fitted_days` maps a well to the ISO dates a script recorded having fitted or swept on, read
-    from
-    that script's run manifest. It must not be recomputed by the caller: see the module docstring
-    for
-    what happened when it was.
+    from that script's run manifest. It must not be recomputed by the caller: see the module
+    docstring for what happened when it was.
     """
     findings: list[LeakageFinding] = []
     examined: dict[str, int] = {}

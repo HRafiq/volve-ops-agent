@@ -8,12 +8,21 @@ Protocol section 19 fixed the gates before the harness existed and was pushed as
 Amendment 6 then corrected three of those gates after independent review showed they could not fail,
 and every figure below is the corrected one.
 
-The consolidated table is [`results_table.md`](results_table.md): 119 rows, each carrying its
+The consolidated table is [`results_table.md`](results_table.md): 150 rows, each carrying its
 denominator, its status, what would settle it if deferred, and the caveat that belongs with it.
 
 ## Three of the six pass marks could not fail, and review found all three
 
-This is the third phase in which that has happened here, and the pattern is specific enough to name:
+Section 19 now has seven marks. The seventh is amendment 8's: every table row must name a figure that
+exists, which is the converse of the coverage gate below. What it was added for: 12 of the 145 rows in
+the table as last committed read "not produced", the five section 20.6 gate rows among them, while the
+manifest recorded every gate as true. The other seven were three label classes with no labels, two
+applied rules nothing applied and two stop conditions nothing reached, each a counter that omits what it
+never saw. The coverage half could see none of it, because it compared path strings without asking
+whether they resolved.
+
+This was the third phase in which that had happened here, and by the end of Phase 5 it was the fifth.
+The pattern is specific enough to name:
 **a check written in the same breath as the thing it checks tends to test that thing against itself.**
 
 | gate | the defect | what it does now |
@@ -36,19 +45,22 @@ leakage audit: FINDINGS
 5,108 out-of-window dates across six wells, and a non-zero exit. A run that records no fitted dates at
 all is also a finding now rather than a pass, because a check with nothing to audit is not a clean check.
 
-## The six gates, as they stand
+## The seven gates, as they stand
 
 | section 19 pass mark | result | what it examined |
 |---|---|---|
 | 19.1 every field present in the persisted manifest | **pass** | 9 fields of the previous run's manifest |
 | 19.1 manifest hash reproduces on the same commit | **pass** | this run against the last run at the same commit |
 | 19.2 leakage audit clean | **pass** | 9,540 recorded fitted dates, 135 labels, 7 labelled wells, 5 wells in the investigation population |
-| 19.3 every manifest figure has a table row | **pass** | 0 uncovered across four run manifests |
+| 19.3 every manifest figure has a table row | **pass** | 0 uncovered across five run manifests |
+| 19.3 every table row names a figure that exists | **pass** | 0 unresolved of 150 rows |
 | 19.5 no mechanical false root-cause claim | **pass** | 1 documented claim |
 | 19.7 no repeated identical tool call | **pass** | 14 traces, 23 retrieval queries |
 
-One check examines nothing: `correction_from_the_hold_out`, because no correction store exists yet. The
-harness prints it under "checks that examined nothing" rather than letting it count as clean.
+One check examines nothing: `correction_from_the_hold_out`. The store exists and is empty, because a
+correction is a person changing a value and no person has changed one. The harness prints it under
+"checks that examined nothing" rather than letting it count as clean, and protocol amendment 8 withdraws
+section 20.5's promise that Phase 5 would end the vacuity.
 
 **§19.5 is a consistency check, not a safety measurement**, and that is now said in the protocol and in
 the code. The causal level is assigned by exactly the condition this gate tests, through the same
@@ -131,7 +143,7 @@ extraction, investigation, judging and embedding all run deterministically.
 
 The manifest hash is **not quoted here**, deliberately. The commit is one of the nine hashed fields, so
 the hash changes with every commit, and an earlier version of this document published a hash taken from
-an uncommitted tree whose `commit` field pointed at a tree containing no harness — five lines below a
+an uncommitted tree whose `commit` field pointed at a tree containing no harness, five lines below a
 pass mark claiming reproducibility. The live value is in `data/cache/evaluation_run.json`.
 
 ## CI, and what can spend money
@@ -158,12 +170,19 @@ version was written and is a textbook Actions injection.
 | Retrieval recall at k | needs a gold evidence set, which needs the curated episodes | both, in that order |
 | End-to-end correctness | needs a reader with drilling-operations experience | the section 17.4 adjudication |
 | Hypothesis-set precision and recall | the same | the same |
-| Risk–coverage curve | needs correctness; three bands give three points | correctness, and more episodes |
+| Risk and coverage curve | needs correctness; three bands give three points | correctness, and more episodes |
 | Calibrated confidence | 14 episodes | more episodes and an outcome definition |
 | Prose-judge scores | no model provider key | a key; the rubric is already fixed in section 19.8 |
 | Interval coverage | the current construction fails by 2 to 4 times | an interval construction that calibrates |
 
-Nine deferred rows, and listing them is the point rather than an apology. Every obstacle is one of three
-things: the dataset does not contain what the metric needs, the sample is too small for the number to
-mean anything, or the project has no domain reader. The third appears four times, which is why sections
-17, 18 and 19 each say it.
+Nine deferred rows at the end of this phase, and listing them is the point rather than an apology. Every
+obstacle is one of three things: the dataset does not contain what the metric needs, the sample is too
+small for the number to mean anything, or the project has no domain reader. The third is named in three of
+these nine and a fourth depends on one of them, which is why sections 17, 18 and 19 each say it.
+
+Phase 5 added three more, so `results_table.md` now carries thirteen deferred rows: planned versus actual
+drilling time, whether a recurring pattern is a correct lesson, and the correction loop's effect on
+extraction quality, all three in [`postmortem_results.md`](postmortem_results.md) with what would settle
+each. The thirteenth is the inter-pass label agreement that protocol amendment 2 withdrew, which was
+already deferred before this phase and is not in the nine above because that table lists this phase's
+own.

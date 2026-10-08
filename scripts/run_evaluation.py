@@ -40,6 +40,7 @@ from volve_ops.investigation import INVESTIGATOR_VERSION
 from volve_ops.investigation.diagnostics import build_bundle
 from volve_ops.investigation.schemas import Finding
 from volve_ops.investigation.trace import Trace
+from volve_ops.postmortem import corrections as correction_store
 
 #: Semantic roles from plan section 9.3. None is bound to a model in this project.
 MODEL_ROLES: dict[str, str | None] = {
@@ -60,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runs", type=Path, default=Path("data/cache"))
     parser.add_argument("--investigations", type=Path, default=Path("data/cache/investigations"))
     parser.add_argument("--out", type=Path, default=Path("data/cache/evaluation_run.json"))
+    parser.add_argument("--corrections", type=Path, default=Path("data/cache/corrections"))
     parser.add_argument(
         "--table", type=Path, default=None, help="write the rendered table to this file"
     )
@@ -99,8 +101,8 @@ def main(argv: list[str] | None = None) -> int:
     # The reproducibility mark compared `freeze.manifest_hash` with `freeze.model_copy()`'s, an
     # object against its own copy. Reproduction means across runs, so this compares against the hash
     # the previous run persisted, and only when that run was on the same commit: the commit is one
-    # of the nine fields, so the hash is commit-dependent by design and a mismatch across commits
-    # is expected rather than a failure.
+    # of the nine fields, so the hash is commit-dependent by design and a mismatch across commits is
+    # expected rather than a failure.
     previous: dict[str, Any] = {}
     if args.out.exists():
         previous = json.loads(args.out.read_text(encoding="utf-8"))
@@ -151,12 +153,22 @@ def main(argv: list[str] | None = None) -> int:
     ]
     traces = [Trace.read(p) for p in sorted(args.investigations.glob("*.trace.json"))]
 
+    # Section 19.2's fourth check. The protocol said it stopped being vacuous in Phase 5 and it was
+    # never wired: `as_audit_rows` was written for it and had no call site at all. It is wired now
+    # and it still examines nothing, because a correction needs a person. Those are different
+    # claims, and the output says which one is true.
+    store = correction_store.CorrectionStore(args.corrections)
+    stored_corrections = correction_store.as_audit_rows(
+        c for version in store.versions() for c in store.read(version)
+    )
+
     audit = leakage.audit(
         fitted_wells=sorted(recorded_fits),
         fitted_days=recorded_fits,
         split=split,
         labelled_report_dates=labelled_dates,
         labelled_wells=sorted(labelled_wells),
+        corrections=stored_corrections,
         investigated_wells=bundle_population or sorted({f.well for f in findings}),
         label_dir=args.labels if args.labels.exists() else None,
     )
@@ -249,10 +261,20 @@ def main(argv: list[str] | None = None) -> int:
     }
     filled = table.fill(ROWS, manifests, computed)
     uncovered = table.uncovered(ROWS, manifests)
+    # Rows naming a manifest path that does not exist. The other direction of section 19.3, and the
+    # one that was missing: 12 of the 145 rows in the last committed table read "not produced",
+    # the five section 20.6 gate rows among them, while the manifest held every value. The
+    # dotted-path resolver split on a dot that is part of the key, and `uncovered` compared path
+    # strings without ever asking whether they resolved. Rows the harness computes itself have no
+    # manifest key and are excused by construction.
+    unresolved = [k for k in table.unresolved(ROWS, manifests) if k not in computed]
     rendered = table.as_markdown(filled)
     print(f"\nresults table: {len(filled)} rows; uncovered manifest figures: {len(uncovered)}")
     for key in uncovered:
         print(f"  ! no row covers {key}")
+    print(f"  rows naming a manifest figure that does not exist: {len(unresolved)}")
+    for key in unresolved:
+        print(f"  ! row addresses a missing figure: {key}")
     if args.table is not None:
         args.table.parent.mkdir(parents=True, exist_ok=True)
         args.table.write_text(rendered, encoding="utf-8")
@@ -264,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
         "19.1 manifest hash reproduces on the same commit": reproduced,
         "19.2 leakage audit clean": audit.clean,
         "19.3 every manifest figure has a table row": not uncovered,
+        "19.3 every table row names a figure that exists": not unresolved,
         "19.5 no mechanical false root-cause claim": safety_report.passed,
         "19.7 no repeated identical tool call": path_report.passed,
     }
@@ -272,7 +295,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {'PASS' if passed else 'FAIL'}  {name}")
 
     payload: dict[str, Any] = {
-        "protocol_version": "v8",
+        # v11, not v8: amendment 8 added section 19.3's second gate, so this harness's mark set is
+        # no longer the one section 19 fixed at v8. The stamp names the version whose marks the run
+        # implements, which is the only reading under which it is checkable.
+        "protocol_version": "v11",
         "harness_version": HARNESS_VERSION,
         "version_freeze": freeze.model_dump(),
         "manifest_hash": freeze.manifest_hash,
@@ -283,6 +309,7 @@ def main(argv: list[str] | None = None) -> int:
         "evidence_scores": scored,
         "table_rows": len(filled),
         "uncovered_figures": uncovered,
+        "unresolved_rows": unresolved,
         "pass_marks": marks,
         "all_pass": all(marks.values()),
     }

@@ -37,6 +37,7 @@ from volve_ops.investigation.schemas import (
     Verdict,
 )
 from volve_ops.investigation.trace import Stage, Step, Trace
+from volve_ops.postmortem import gates
 
 WELL = "15/9-F-12"
 SPLIT = TemporalSplit(
@@ -499,6 +500,135 @@ class TestTheResultsTable:
             )
         ]
         assert table.fill(rows, {})[0].rendered == "not produced"
+
+    def test_a_key_containing_dots_resolves(self) -> None:
+        """The root cause of the worst defect this project has published.
+
+        `locate` split on every dot, and every section 20.6 mark's name contains dots, so
+        `pass_marks.20.6 the corpus is not empty` resolved to nothing. Every gate row in the
+        published table read "not produced" while the manifest held every value.
+        """
+        manifest = {"pass_marks": {"20.6 the corpus is not empty": True, "20.2 a.b.c": False}}
+        assert table.locate(manifest, "pass_marks.20.6 the corpus is not empty") == (True, True)
+        assert table.locate(manifest, "pass_marks.20.2 a.b.c") == (False, True)
+
+    def test_locate_distinguishes_a_null_from_an_absence(self) -> None:
+        """A manifest may hold a null, so returning None for both cannot drive a coverage gate."""
+        assert table.locate({"day_rate_usd": None}, "day_rate_usd") == (None, True)
+        assert table.locate({"day_rate_usd": None}, "nothing_here") == (None, False)
+
+    def test_locate_backtracks_when_the_longest_match_dead_ends(self) -> None:
+        """Longest-first alone is not enough: the long key may exist and not contain the rest."""
+        manifest = {"a": {"b": {"c": 1}}, "a.b": {"d": 2}}
+        assert table.locate(manifest, "a.b.c") == (1, True)
+        assert table.locate(manifest, "a.b.d") == (2, True)
+        assert table.locate(manifest, "a.b.e") == (None, False)
+
+    def test_locate_walks_list_indices(self) -> None:
+        manifest = {"patterns": [{"hours": 5.0}, {"hours": 6.0}]}
+        assert table.locate(manifest, "patterns.1.hours") == (6.0, True)
+        assert table.locate(manifest, "patterns.9.hours") == (None, False)
+
+    def test_a_row_naming_a_figure_that_does_not_exist_fails_the_resolution_check(self) -> None:
+        """Section 19.3's second half, which the coverage half could not see.
+
+        `uncovered` compared path strings, so a row naming a key the manifest had never held still
+        counted as covering the figure it named, and the gate certified the table as complete.
+        """
+        rows = [
+            MetricRow(
+                layer="L",
+                metric="M",
+                manifest="labels",
+                key="a_figure_nobody_writes",
+                denominator="d",
+                status=Status.GATED,
+            )
+        ]
+        assert table.unresolved(rows, {"labels": {"something_else": 1}}) == [
+            "labels.a_figure_nobody_writes"
+        ]
+        assert table.unresolved(rows, {"labels": {"a_figure_nobody_writes": 1}}) == []
+
+    def test_a_row_naming_a_manifest_that_does_not_exist_fails_too(self) -> None:
+        rows = [
+            MetricRow(
+                layer="L",
+                metric="M",
+                manifest="nosuch",
+                key="a",
+                denominator="d",
+                status=Status.REPORTED,
+            )
+        ]
+        assert table.unresolved(rows, {}) == ["nosuch.a (no such manifest)"]
+
+    def test_an_unresolvable_row_no_longer_silences_the_coverage_check(self) -> None:
+        """The two halves together. The row names `x.y`, the manifest holds `x`, so the row covers
+        nothing and `x` is still reported as uncovered.
+        """
+        rows = [
+            MetricRow(
+                layer="L",
+                metric="M",
+                manifest="labels",
+                key="gate.that.moved",
+                denominator="d",
+                status=Status.GATED,
+            )
+        ]
+        manifests = {"labels": {"gate": 1}}
+        assert table.unresolved(rows, manifests) == ["labels.gate.that.moved"]
+        assert table.uncovered(rows, manifests) == ["labels.gate"]
+
+    def test_every_section_20_6_gate_has_a_row_naming_its_real_name(self) -> None:
+        """The gate names are imported from one tuple rather than retyped in two places."""
+        named = {
+            r.key.removeprefix("pass_marks.")
+            for r in ROWS
+            if r.manifest == "postmortem" and r.key and r.key.startswith("pass_marks.")
+        }
+        assert named == set(gates.GATE_NAMES)
+
+    def test_an_optional_figure_reads_as_not_requested_rather_than_not_produced(self) -> None:
+        """The currency figure is absent by design, and that must not borrow the defect's words.
+
+        Every "not produced" in the published table so far has been a row whose run failed to write
+        the figure. A figure absent because nobody asked for it is a different statement.
+        """
+        rows = [
+            MetricRow(
+                layer="Post-mortem",
+                metric="Rig day rate assumed",
+                manifest="postmortem",
+                key="day_rate_usd",
+                denominator="d",
+                status=Status.REPORTED,
+                optional=True,
+            )
+        ]
+        absent = table.fill(rows, {"postmortem": {"day_rate_usd": None}})
+        assert absent[0].rendered == "not requested"
+        supplied = table.fill(rows, {"postmortem": {"day_rate_usd": 500000.0}})
+        assert supplied[0].rendered == "500000"
+
+    def test_supplying_a_day_rate_does_not_break_the_coverage_gate(self) -> None:
+        """The documented option the harness had never run through the table.
+
+        With a rate, `day_rate_usd` and `cost_equivalent_usd` become numeric leaves. A fourth review
+        supplied one and found both uncovered, so section 19.3 failed on the one path section 20.3
+        advertises.
+        """
+        postmortem_rows = [r for r in ROWS if r.manifest == "postmortem"]
+        with_rate = {"postmortem": {"day_rate_usd": 500000.0, "cost_equivalent_usd": 1234.5}}
+        # Coverage only: a manifest holding two keys leaves every other row unresolved by
+        # construction, which is a property of this fixture rather than of the rows.
+        assert table.uncovered(postmortem_rows, with_rate) == []
+        rows_for_the_two = [
+            r for r in postmortem_rows if r.key in {"day_rate_usd", "cost_equivalent_usd"}
+        ]
+        assert len(rows_for_the_two) == 2
+        assert table.unresolved(rows_for_the_two, with_rate) == []
 
     def test_the_rendered_table_groups_by_layer(self) -> None:
         rendered = table.as_markdown(table.fill(ROWS, {}))
