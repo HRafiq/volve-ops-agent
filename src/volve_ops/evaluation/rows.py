@@ -8,9 +8,9 @@ differs by two points depending on the population it is taken over, and a reader
 denominator cannot reconcile a table against a document.
 
 `deferred` rows carry no value and name what would settle them. There are more of them than a reader
-might expect, and they are not placeholders: each is a metric the plan asked for that this
-dataset or this project's circumstances do not support, recorded so the absence is a decision
-rather than an omission.
+might expect, and they are not placeholders: each is a metric the plan asked for that this dataset
+or this project's circumstances do not support, recorded so the absence is a decision rather than an
+omission.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ from __future__ import annotations
 from typing import Final
 
 from volve_ops.evaluation.table import MetricRow, Status
+from volve_ops.investigation.schemas import CausalLevel, StopReason, Verdict
+from volve_ops.postmortem import gates
 
 #: What would settle the metrics needing a reader with drilling-operations experience. Written once
 #: because it is the same obstacle in four places, and section 18.8 already says it twice.
@@ -142,7 +144,7 @@ ROWS: Final[tuple[MetricRow, ...]] = (
     ),
     MetricRow(
         layer="Drilling-report extraction",
-        metric="Documents walked independently of the extractor",
+        metric="Documents walked by the section 14.3 second path",
         manifest="labels",
         key="section_14_3.documents",
         denominator="source documents of the labelled sample",
@@ -532,6 +534,12 @@ ROWS: Final[tuple[MetricRow, ...]] = (
             "cementing_problem",
         )
     ),
+    # The rule vocabulary is free text in the label file rather than an enum, so these rows are
+    # maintained in both directions by the two halves of section 19.3: a rule that appears in the
+    # manifest with no row fails the coverage gate, and a row naming a rule no label used fails the
+    # resolution gate. `P3` and `guide-rig_service` were in this list until the second gate existed.
+    # Both became `P1-unreachable` when the ten precedence-rule-1 relabellings were made, and the
+    # rows survived the change, publishing "not produced" for rules nothing had applied.
     *(
         MetricRow(
             layer="Cause labels",
@@ -553,8 +561,6 @@ ROWS: Final[tuple[MetricRow, ...]] = (
             "P2-test",
             "L2-ambiguous",
             "L4",
-            "P3",
-            "guide-rig_service",
         )
     ),
     *(
@@ -566,11 +572,7 @@ ROWS: Final[tuple[MetricRow, ...]] = (
             denominator="14 episodes",
             status=Status.REPORTED,
         )
-        for verdict in (
-            "supported_explanation",
-            "multiple_plausible_explanations",
-            "insufficient_evidence",
-        )
+        for verdict in (v.value for v in Verdict)
     ),
     *(
         MetricRow(
@@ -581,13 +583,7 @@ ROWS: Final[tuple[MetricRow, ...]] = (
             denominator="14 episodes",
             status=Status.REPORTED,
         )
-        for stop in (
-            "evidence_threshold_met",
-            "evidence_exhausted",
-            "mandatory_evidence_unavailable",
-            "step_budget_reached",
-            "cost_budget_reached",
-        )
+        for stop in (s.value for s in StopReason)
     ),
     *(
         MetricRow(
@@ -598,7 +594,7 @@ ROWS: Final[tuple[MetricRow, ...]] = (
             denominator="14 episodes",
             status=Status.REPORTED,
         )
-        for level in ("proximate_driver", "supported_mechanism", "documented_root_cause", "None")
+        for level in [c.value for c in CausalLevel] + ["None"]
     ),
     *(
         MetricRow(
@@ -732,6 +728,30 @@ ROWS: Final[tuple[MetricRow, ...]] = (
         status=Status.REPORTED,
         note="reported, never gated: how concentrated a corpus is, is a property of the data",
     ),
+    # Null unless `--day-rate-usd` is supplied, and a null is not a numeric leaf, so the coverage
+    # gate skips both rows on every run this project has made. They exist because a fourth review
+    # ran the documented option and found that supplying a rate made two figures appear with no row,
+    # failing section 19.3 on the one path the harness advertises and has never exercised.
+    MetricRow(
+        layer="Post-mortem",
+        metric="Rig day rate assumed",
+        manifest="postmortem",
+        key="day_rate_usd",
+        denominator="USD per day, supplied on the command line or absent",
+        status=Status.REPORTED,
+        optional=True,
+        note="absent on every run so far; section 20.3 refuses a figure without its assumption",
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Estimated rig-time cost equivalent",
+        manifest="postmortem",
+        key="cost_equivalent_usd",
+        denominator="development non-productive hours at the assumed rate",
+        status=Status.REPORTED,
+        optional=True,
+        note="an illustration, never a finding; the assumption travels with the number",
+    ),
     MetricRow(
         layer="Post-mortem",
         metric="Corrections in the store",
@@ -741,20 +761,17 @@ ROWS: Final[tuple[MetricRow, ...]] = (
         status=Status.REPORTED,
         note="zero; a correction needs a person, so section 19.2's fourth check is still vacuous",
     ),
+    # One row per gate, named from `gates.GATE_NAMES` rather than retyped. The names were typed out
+    # here once and then typed out again when the marks were renamed, so the table carried both sets
+    # and the stale set named marks that no longer existed. None of it showed: every gate row
+    # rendered as "not produced" because the resolver split the mark's name on its own dots, and the
+    # section 19.3 coverage gate certified the table as complete because it compared path strings.
     MetricRow(
         layer="Post-mortem",
-        metric="Write-time refusal of a hold-out correction demonstrated",
-        manifest="postmortem",
-        key="hold_out_refusal_demonstrated",
-        denominator="probed on a hold-out event every run",
-        status=Status.GATED,
-    ),
-    MetricRow(
-        layer="Post-mortem",
-        metric="All five section 20.6 gates pass",
+        metric=f"All {len(gates.GATE_NAMES)} section 20.6 gates pass",
         manifest="postmortem",
         key="all_pass",
-        denominator="the post-mortem and the register",
+        denominator="the post-mortem, the register and the correction store",
         status=Status.GATED,
     ),
     *(
@@ -766,13 +783,7 @@ ROWS: Final[tuple[MetricRow, ...]] = (
             denominator="the post-mortem run",
             status=Status.GATED,
         )
-        for mark in (
-            "20.2 categories reconcile and the store agrees",
-            "20.6 every citation resolves",
-            "20.6 no hold-out well in the post-mortem or the store",
-            "20.3 no currency figure without its assumption",
-            "20.5 a hold-out correction is refused at write time",
-        )
+        for mark in gates.GATE_NAMES
     ),
     MetricRow(
         layer="Post-mortem",
@@ -802,5 +813,41 @@ ROWS: Final[tuple[MetricRow, ...]] = (
         status=Status.DEFERRED,
         settled_by="corrections from a person, then a second extraction version scored against the "
         "first with section 20.5's leakage rule observed",
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Events in recurring patterns",
+        manifest="postmortem",
+        key="events_in_recurring_patterns",
+        denominator="non-productive events on development wells",
+        status=Status.REPORTED,
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Of those, events carrying a cause label",
+        manifest="postmortem",
+        key="labelled_events_in_recurring_patterns",
+        denominator="events in recurring patterns",
+        status=Status.REPORTED,
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Labelled fraction of recurring patterns",
+        manifest="postmortem",
+        key="labelled_fraction_of_recurring_patterns",
+        denominator="events in recurring patterns",
+        status=Status.REPORTED,
+        note="the phase's headline figure; review found it quoted in bold and computable from "
+        "neither the manifest nor the harness output",
+    ),
+    MetricRow(
+        layer="Post-mortem",
+        metric="Largest pattern the thresholds exclude",
+        manifest="postmortem",
+        key="largest_excluded_pattern_hours",
+        denominator="hours, on a single well",
+        status=Status.REPORTED,
+        note="a single-well event cannot enter the register however expensive; the register "
+        "publishes what it excludes",
     ),
 )

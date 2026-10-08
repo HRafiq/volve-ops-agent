@@ -59,8 +59,9 @@ has no gate that can fail for being wrong about a cause.
 What is unaffected, and why:
 
 - **Section 14.3**, event detection and duration exactness. Both are checks of the parser against
-  the source XML, and `src/volve_ops/extraction/integrity.py` runs them on a walk independent of
-  the extractor. 617 qualifying blocks across the labelled sample's 99 documents, both marks
+  the source XML, and `src/volve_ops/extraction/integrity.py` runs them on a **second** walk. Second
+  and not independent: it shares three names with the extractor, which its own docstring counts, and
+  protocol amendment 8 records the same overclaim being made about the section 20.2 walk. 617 qualifying blocks across the labelled sample's 99 documents, both marks
   passed. The scope is narrow on purpose and should not be read as general parser correctness: both
   marks can pass while `state_detail`, `subcategory` or `comment` is wrong, and those are what the
   `echo-statedetail` baseline and the cause layer are built from.

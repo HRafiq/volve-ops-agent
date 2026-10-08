@@ -24,7 +24,7 @@ honestly. Several did, and this README says which.
 The hold-out has never been scored and never been looked at. Phase 4's leakage audit exists to prove
 that mechanically rather than assert it, and it gates the build.
 
-125 tracked files, 540 tests, ruff and mypy strict clean. No model is called by any layer yet: every
+126 tracked files, 615 tests, ruff and mypy strict clean. No model is called by any layer yet: every
 component runs deterministically, which is what makes it testable.
 
 ## What the data refused to support
@@ -61,7 +61,7 @@ a hole condition. That cost a pass mark, which is the honest outcome rather than
 | `not_stated`, the load-bearing label | 75 of 135, 55.6 percent |
 | `echo-statedetail` baseline macro-F1 | 0.3329 |
 | `echo-subcategory` baseline macro-F1 | 0.2992 |
-| Source subcategory contradicting its own comment | 12 of 135, 8.9 percent |
+| Source subcategory contradicting its own comment | 21 of 135, 15.6 percent |
 
 Protocol section 17 suspends the cause-attribution selection gate: an extraction model scored against
 model labels is compared with a labeller of its own kind. The code enforces that, not just the prose.
@@ -81,32 +81,50 @@ for handover." Three episodes stop on missing evidence rather than guessing, bec
 usable downhole pressure on 31.2 percent of its producer rows where counting non-empty cells reports
 99.8. [Details](docs/investigation_results.md)
 
-**Post-mortem and lessons register.** Non-productive time is 8,563 hours of 39,398 recorded, 21.7
+**Post-mortem and lessons register.** Non-productive time is 8,563 hours of 39,495 recorded, 21.7
 percent. The register is built from the source's own fields rather than from the machine-assisted
-labels, and 13 recurring patterns account for 6,230 of 7,430 development hours, 83.9 percent.
+labels, and 13 recurring patterns account for 6,230 of 7,430 development hours, 83.9 percent. All
+seven of section 20.6's gates pass. **Five of the seven could not fail when first written**, and one of
+those five was wrong three times running, so there are six defects across four rounds of independent
+review, each round checking the previous round's fixes. All seven are now functions with a test that makes
+each fail.
 
 | Figure | Value |
 |---|---|
 | Largest recurring pattern | waiting on weather, 1,595 hours over 7 wells and 372 events |
 | NPT share, worst well to best | 36.3 percent on `15/9-19` against 7.8 percent on `15/9-F-10` |
-| Corpus hours held out and not reported | 13.2 percent, because 4 of 11 wells are hold-out |
+| Corpus non-productive hours held out and not reported | 13.2 percent, because 4 of 11 wells are hold-out |
 | Events in recurring patterns carrying a cause label | **65 of 2,600, 2.5 percent** |
 
 That last row is the finding that bears on the rest of the project. The labelled sample is stratified
 by subcategory so rare ones appear at all, which buys per-class scorability and pays for it in hours
 covered: the 1,595-hour weather pattern has 9 labels in 372 events. The sample is right for scoring a
 classifier per class and close to wrong for explaining where the time went, and this project had only
-been making the first claim. [Details](docs/postmortem_results.md)
+been making the first claim.
+
+The register's own limitation is published beside it. Its bar is three wells, so the 38 patterns it
+excludes include sidetracks, lost circulation, well control and casing, which are the first names an
+operations reader would look for. The largest single exclusion is 562 hours of sidetrack time on one
+well, 7.6 percent of development non-productive hours, kept out by the three-well bar and not by its
+size. [Details](docs/postmortem_results.md)
 
 ## The three things I learned
 
 **A check written in the same breath as the thing it checks tends to test that thing against itself.**
-This happened in four consecutive phases. The worst case was a leakage audit whose central check
-tested whether a fitted day fell outside the development window, over a day set it had built with the
-same filter. An independent review made the expectation study fit on the whole record and the audit
-reported clean. The fix was structural: the scripts record the dates they actually fitted on, and the
-audit reads those. Reproducing the same leak now yields 5,108 out-of-window dates across six wells and
-a failed build. A check cannot audit another script's filtering by re-deriving it.
+This happened in five consecutive phases, and in Phase 5 it happened again inside the fix for it. The
+worst case was a leakage audit whose central check tested whether a fitted day fell outside the
+development window, over a day set it had built with the same filter. An independent review made the
+expectation study fit on the whole record and the audit reported clean. The fix was structural: the
+scripts record the dates they actually fitted on, and the audit reads those. Reproducing the same leak
+now yields 5,108 out-of-window dates across six wells and a failed build. A check cannot audit another
+script's filtering by re-deriving it.
+
+The Phase 5 version is the one I would show a reviewer. Three gates could not fail, I fixed them and
+wrote the amendment recording the fix, and a second review found that two of the replacements also could
+not fail and that one correction the amendment claimed had not been made anywhere. The generalisation
+that came out of it: **ask the artifact, never the function that produced it.** All five instances
+interrogated the producer. And an amendment is a claim about a repository, as checkable as any figure in
+it, so writing one in the same session as its own fixes is the same mistake one level up.
 
 **A correct table can carry a wrong conclusion, and arithmetic review will pass it.** I published that
 the top causal level was unreachable "for want of documents rather than capability", backed by event
@@ -127,10 +145,11 @@ project. Scoring whether a choke reduction explains a shortfall on a specific No
 reader I do not have. Protocol sections 17, 18 and 19 each say so, and section 17.4 fixes the
 adjudication that would settle it: 40 events, blind, 80 percent agreement.
 
-Nine metrics the plan asked for are deferred, each with its obstacle named in
-[`docs/results_table.md`](docs/results_table.md) beside the 119 figures that do exist. Every obstacle
-is one of three things: the dataset lacks what the metric needs, the sample is too small for the
-number to mean anything, or there is no domain reader. The third appears four times.
+Thirteen metrics the plan asked for are deferred, each with its obstacle named in
+[`docs/results_table.md`](docs/results_table.md) beside the 137 rows that carry a figure. Every
+obstacle is one of three things: the dataset lacks what the metric needs, the sample is too small for
+the number to mean anything, or there is no domain reader. The third is named in four of the thirteen
+and a fifth depends on one of those.
 
 14 episodes from one detector on two wells is not a benchmark, and the protocol declines to
 manufacture precision from it.
@@ -172,7 +191,7 @@ checked by parsing every workflow file. Anything that would call a model is manu
 
 | Document | What it is |
 |---|---|
-| [`docs/eval_protocol.md`](docs/eval_protocol.md) | The pre-registration. Its commit history is the evidence, tagged `prereg-v0` through `prereg-v8` |
+| [`docs/eval_protocol.md`](docs/eval_protocol.md) | The pre-registration. Its commit history is the evidence, tagged `prereg-v0` through `prereg-v11`, with no `v10` and section 13 saying why |
 | [`docs/data_profile.md`](docs/data_profile.md) | What the data turned out to be, and the coverage gaps that limit what can be claimed |
 | [`docs/results_table.md`](docs/results_table.md) | Every figure in the project, with its denominator and whether it is gated, reported or deferred |
 | [`docs/architecture_decisions/`](docs/architecture_decisions/) | Eight decisions, including all three feasibility outcomes |

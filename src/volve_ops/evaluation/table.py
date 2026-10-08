@@ -46,12 +46,24 @@ class MetricRow(BaseModel):
     settled_by: str | None = None
     note: str | None = None
 
+    optional: bool = False
+    """Whether a null for this row is the expected state rather than a defect.
+
+    Exactly one thing is optional here: the currency figure and the day rate it rests on, which
+    section 20.3 requires a caller to supply deliberately. Any other row rendering as "not produced"
+    names a figure its run failed to write, and that reading is worth keeping unambiguous. Every
+    previous occurrence of "not produced" in the published table was a defect, so a figure absent on
+    purpose must not borrow the same words.
+    """
+
     value: Any = None
 
     @property
     def rendered(self) -> str:
         if self.status is Status.DEFERRED:
             return "deferred"
+        if self.value is None and self.optional:
+            return "not requested"
         if self.value is None:
             return "not produced"
         if isinstance(self.value, bool):
@@ -61,7 +73,7 @@ class MetricRow(BaseModel):
         return str(self.value)
 
 
-#: The four manifests the project's scripts write, by the name rows refer to them by.
+#: The five manifests the project's scripts write, by the name rows refer to them by.
 MANIFESTS: Final[dict[str, str]] = {
     "expectation": "run_manifest.json",
     "extraction": "extraction_run.json",
@@ -72,7 +84,7 @@ MANIFESTS: Final[dict[str, str]] = {
 
 #: Manifest paths excused from needing a table row. Independent review found the first version
 #: excusing 87 of 131 numeric leaves, including the project's headline WAPE table, the label
-#: distribution the README calls "the most important figure here", and `investigation.pass_marks` —
+#: distribution the README calls "the most important figure here", and `investigation.pass_marks`,
 #: so a reviewer injected a **failing** pass mark under that prefix and the gate certified full
 #: coverage. Section 19.3's claim was false, and false on the accuracy metric.
 #:
@@ -123,32 +135,82 @@ EXCLUDED_PREFIXES: Final[tuple[str, ...]] = (
     "postmortem.development_wells",
     "postmortem.hold_out_wells_excluded",
     "postmortem.correction_store_versions",
+    "postmortem.cost_assumption",
+    # The three published tables, excused as prefixes and justified rather than hidden. Every
+    # aggregate over them has its own row: pattern count, hours, coverage, events, labelled events,
+    # the single-well share of what the thresholds exclude, and the largest excluded pattern. What
+    # these prefixes excuse is the per-row breakdown, which the harness prints verbatim from the
+    # manifest and which a reader can regenerate from it. Review was right that the previous version
+    # excused them silently and that the list walk never looked inside them at all; both are fixed,
+    # and this exclusion is now a choice rather than an accident. It is also not a claim that each
+    # per-well total has its own row, which an earlier version of this comment made and which was
+    # false: the per-well table is excused here, not covered elsewhere.
     "postmortem.per_well",
     "postmortem.patterns",
-    "postmortem.cost_assumption",
+    "postmortem.excluded_pattern_detail",
 )
 
 
 def _leaves(obj: Any, prefix: str = "") -> list[tuple[str, Any]]:
+    """Every scalar in a manifest, by dotted path, recursing into lists as well as dicts.
+
+    Lists used to terminate the walk, so a figure inside one was neither covered nor excluded: it
+    was invisible. Review found `postmortem.per_well` and `postmortem.patterns` excused by a prefix,
+    and the deeper problem was that the prefix was never needed, because nothing looked inside them.
+    The published per-well table and the whole register live in those two lists.
+    """
     out: list[tuple[str, Any]] = []
     if isinstance(obj, dict):
         for key, value in obj.items():
             out.extend(_leaves(value, f"{prefix}{key}."))
     elif isinstance(obj, list):
-        out.append((prefix.rstrip("."), obj))
+        for index, value in enumerate(obj):
+            out.extend(_leaves(value, f"{prefix}{index}."))
     else:
         out.append((prefix.rstrip("."), obj))
     return out
 
 
+def locate(manifest: Mapping[str, Any], key: str) -> tuple[Any, bool]:
+    """Follow a dotted path, returning the value and whether the path existed.
+
+    The second element is not decoration. A manifest may legitimately hold a null, so a function
+    that signals absence by returning None cannot tell "not there" from "there and empty", and the
+    caller that needs to know is the section 19.3 coverage gate.
+
+    Keys are matched longest-first with backtracking, because a manifest key may itself contain
+    dots. Every section 20.6 pass mark does: `pass_marks.20.6 the corpus is not empty`. Splitting on
+    every dot resolved that to nothing, so **every** gate row in the published table rendered as
+    "not produced" while the manifest recorded every gate as true, and the coverage gate certified
+    the table as complete because it compared path *strings* and never asked whether they resolved.
+    """
+
+    def walk(node: Any, rest: str) -> tuple[Any, bool]:
+        if not rest:
+            return node, True
+        if isinstance(node, Mapping):
+            parts = rest.split(".")
+            for taken in range(len(parts), 0, -1):
+                head = ".".join(parts[:taken])
+                if head in node:
+                    value, found = walk(node[head], ".".join(parts[taken:]))
+                    if found:
+                        return value, True
+            return None, False
+        if isinstance(node, list):
+            head, _, tail = rest.partition(".")
+            if head.isdigit() and int(head) < len(node):
+                return walk(node[int(head)], tail)
+            return None, False
+        return None, False
+
+    return walk(manifest, key)
+
+
 def resolve(manifest: Mapping[str, Any], key: str) -> Any:
-    """Follow a dotted path, returning None where any step is absent."""
-    current: Any = manifest
-    for part in key.split("."):
-        if not isinstance(current, Mapping) or part not in current:
-            return None
-        current = current[part]
-    return current
+    """`locate`, with absence flattened to None. For callers that cannot act on the difference."""
+    value, _ = locate(manifest, key)
+    return value
 
 
 def fill(
@@ -177,12 +239,42 @@ def fill(
     return out
 
 
+def unresolved(rows: Iterable[MetricRow], manifests: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """Rows that name a manifest path which does not exist.
+
+    The other half of section 19.3, and the half that was missing. `uncovered` asks whether every
+    manifest figure has a row; this asks whether every row has a figure. Without it a row can name a
+    key the manifest has never held, render as "not produced", and still be counted as covering the
+    figure it claims to cover. That is how the gate rows came to be retyped in two places and drift
+    apart, and how a row kept naming `hold_out_refusal_demonstrated` after the harness stopped
+    writing it.
+    """
+    broken: list[str] = []
+    for row in rows:
+        if row.manifest is None or row.key is None:
+            continue
+        manifest = manifests.get(row.manifest)
+        if manifest is None:
+            broken.append(f"{row.manifest}.{row.key} (no such manifest)")
+            continue
+        if not locate(manifest, row.key)[1]:
+            broken.append(f"{row.manifest}.{row.key}")
+    return sorted(broken)
+
+
 def uncovered(rows: Iterable[MetricRow], manifests: Mapping[str, Mapping[str, Any]]) -> list[str]:
     """Numeric manifest figures that no row addresses and no declared prefix excuses.
 
     Section 19.3's gate. Booleans count as figures: a pass mark is a published result.
     """
-    addressed = {f"{r.manifest}.{r.key}" for r in rows if r.manifest and r.key}
+    # Only rows whose key actually resolves count as addressing anything. Membership of a set of
+    # path strings was the first version, and it let a row covering a nonexistent key silence the
+    # gate for the figure it named.
+    addressed = {
+        f"{r.manifest}.{r.key}"
+        for r in rows
+        if r.manifest and r.key and locate(manifests.get(r.manifest) or {}, r.key)[1]
+    }
     missing: list[str] = []
     for name, manifest in manifests.items():
         for key, value in _leaves(manifest):
@@ -223,6 +315,6 @@ def as_markdown(rows: Iterable[MetricRow]) -> str:
         # wells is not a benchmark.
         lines.append(
             f"| {row.metric} | {row.rendered} | {row.denominator} | `{row.status.value}` | "
-            f"{row.settled_by or '—'} | {row.note or '—'} |"
+            f"{row.settled_by or '-'} | {row.note or '-'} |"
         )
     return "\n".join(lines).strip() + "\n"

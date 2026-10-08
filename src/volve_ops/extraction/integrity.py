@@ -4,11 +4,18 @@ Both are checks of the parser against the source XML, which is why protocol sect
 them gating while it suspends the cause-attribution marks. Nothing here reads a cause.
 
 The walk below is deliberately not `extract_from_report`. Re-running the extractor and comparing
-its output with itself would pass by construction. What is shared with the extractor is exactly
-one thing, `is_non_productive`, because section 14.1's rule is the specification and a second
-copy of it would test the copy. Everything else, finding the blocks, counting them, reading the
-timestamps and pairing them with events, is independent here, so a dropped block, a duplicated
-one, an id collision or a duration taken from the wrong fields shows up as a mismatch.
+its output with itself would pass by construction.
+
+What it shares with the extractor, counted rather than asserted, because protocol amendment 8
+records the same sentence being wrong about the section 20.2 walk: three helpers, `WITSML_NS`,
+`is_non_productive` and `parse_xml_file`, plus `NPTEvent`, which is the model under comparison
+rather than a shared step. The rule is shared on purpose, because section 14.1 is
+the specification and a second copy of it would test the copy; the namespace is a constant and the
+reader is the hardening pass, and duplicating either would be worse than reusing it. So this is a
+**second** path rather than an independent one. What is written twice is finding the blocks,
+counting them, reading the timestamps and pairing them with events, which is enough for a dropped
+block, a duplicated one, an id collision or a duration taken from the wrong fields to show up as a
+mismatch, and not enough to catch a defect inside those three shared names.
 """
 
 from __future__ import annotations

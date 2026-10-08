@@ -68,7 +68,7 @@ Five reach `supported_mechanism`, three `proximate_driver`, and five reach no le
 ## Decision
 
 `documented_root_cause` stays defined, is implemented, and is reported as **rarely reachable on
-production episodes because the documents rarely exist for them** — one episode in fourteen, and both
+production episodes because the documents rarely exist for them**: one episode in fourteen, and both
 candidate episodes on one well.
 
 Three consequences are accepted rather than worked around.

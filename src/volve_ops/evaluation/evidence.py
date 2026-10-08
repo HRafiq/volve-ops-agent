@@ -12,25 +12,21 @@ invites it to be used as one.
 
 A sixth feature, `absence_of_contradiction`, was **inert**: nothing in the codebase ever writes
 `Hypothesis.contradicting`, so it read 1.0 on all fourteen findings and pulled every score upward by
-a
-constant. The published band distribution had no `low` band at all, which was an artifact of it. The
-feature is removed rather than left at 1.0, and will return when the controller can populate the
-field
-it reads.
+a constant. The published band distribution had no `low` band at all, which was an artifact of it.
+The feature is removed rather than left at 1.0, and will return when the controller can populate the
+field it reads.
 
 And the circularity is worse than first disclosed. Four of the five remaining features are derived
-from
-inputs to the verdict itself: the standardised shift sets every hypothesis status, channel
-availability
-triggers the unavailable-evidence stop, a documentary cause requires a supported hypothesis, and
-`ran_to_completion` *is* the stop condition. So a band-versus-verdict table is arithmetic, not a
-finding. The first version of the results document called the relationship "what one would want",
-which was the Phase 3 mistake again: a correct table read flatteringly.
+from inputs to the verdict itself: the standardised shift sets every hypothesis status, channel
+availability triggers the unavailable-evidence stop, a documentary cause requires a supported
+hypothesis, and `ran_to_completion` *is* the stop condition. So a band-versus-verdict table is
+arithmetic, not a finding. The first version of the results document called the relationship "what
+one would want", which was the Phase 3 mistake again: a correct table read flatteringly.
 
-**What is deliberately not here.** No outcome rates, and so no reliability diagram, no Brier
-score and no expected calibration error. Bands are calibrated against whether the conclusion was
-right, and section 18.8 records that nobody available to this project can say whether it was.
-Section 19.4 fixes what a later version must settle before any calibrated figure is reported.
+**What is deliberately not here.** No outcome rates, and so no reliability diagram, no Brier score
+and no expected calibration error. Bands are calibrated against whether the conclusion was right,
+and section 18.8 records that nobody available to this project can say whether it was. Section 19.4
+fixes what a later version must settle before any calibrated figure is reported.
 """
 
 from __future__ import annotations
@@ -51,9 +47,9 @@ from volve_ops.investigation.schemas import (
 HIGH_BAND: Final[float] = 0.70
 MODERATE_BAND: Final[float] = 0.40
 
-#: A channel movement this large counts as a full-strength signal. Beyond three standard
-#: deviations, strong versus very strong says more about how quiet the baseline window was than
-#: about the episode, which is the lesson `MIN_RELATIVE_SHIFT` recorded in amendment 4.
+#: A channel movement this large counts as a full-strength signal. Beyond three standard deviations,
+#: strong versus very strong says more about how quiet the baseline window was than about the
+#: episode, which is the lesson `MIN_RELATIVE_SHIFT` recorded in amendment 4.
 DEVIATION_CAP: Final[float] = 3.0
 
 #: Decimal places the score is rounded to before it is banded. See `EvidenceScore.score`.
@@ -69,9 +65,9 @@ class EvidenceBand(StrEnum):
 class EvidenceScore(BaseModel):
     """The five features, the mean, and the band. Every feature is reported, not only the total.
 
-    Reporting the components matters more than the total does: 0.5 reached with every channel and
-    no document is a different situation from 0.5 reached with a document and half the channels,
-    and a band alone cannot tell them apart.
+    Reporting the components matters more than the total does: 0.5 reached with every channel and no
+    document is a different situation from 0.5 reached with a document and half the channels, and a
+    band alone cannot tell them apart.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -97,8 +93,7 @@ class EvidenceScore(BaseModel):
         """The features derived from inputs to the verdict. Published beside any band figure.
 
         Four of five. `window_completeness` is the only one that is not, and it barely varies on
-        this
-        corpus, taking three values between 0.989 and 1.0.
+        this corpus, taking three values between 0.989 and 1.0.
         """
         return (
             "deviation_strength",

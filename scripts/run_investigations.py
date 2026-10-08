@@ -229,9 +229,18 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
 
+    # Counters over closed vocabularies, filled out to the whole enum so that a value nothing
+    # reached is published as 0 rather than omitted. A `Counter` omits what it never saw, and two
+    # stop conditions were therefore absent from the manifest while the results table carried a row
+    # for each, which rendered as "not produced". A stop condition nothing reached is a result: it
+    # says the budget was never the binding constraint, which is section 18.3's whole question.
     verdicts = collections.Counter(r["verdict"] for r in rows)
+    verdicts.update({v.value: 0 for v in Verdict})
     stops = collections.Counter(r["stop_reason"] for r in rows)
+    stops.update({s.value: 0 for s in StopReason})
     levels = collections.Counter(str(r["highest_level"]) for r in rows)
+    levels.update({c.value: 0 for c in CausalLevel})
+    levels.update({"None": 0})
     citations = sum(int(r["citations"]) for r in rows)
     comparable = [r for r in rows if r["agrees_with_baseline"] is not None]
     agree = sum(1 for r in comparable if r["agrees_with_baseline"])

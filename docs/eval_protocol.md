@@ -1,10 +1,18 @@
 # Evaluation protocol
 
-Version: v9
+Version: v11
 Date: 2026-10-07
 Status: pre-registered. Pushed before the work it judges.
-Amendments since v0: three, in sections 6 and 14.5 and in the labelling guide, all recorded in
-section 13 and all labelled post-inspection.
+Amendments since v0: eight, recorded in section 13 and every one labelled post-inspection. Five of
+them correct pass marks that could not fail, which is this project's recurring defect and is named as
+such in amendments 6, 7 and 8.
+New in v7 to v11: sections 19 and 20 and the amendments correcting them. Amendment 7 records three more
+marks that could not fail, a pre-registered gate dropped with the count rewritten around it, five holes
+in the correction store, and the thresholds section 20 promised to state and did not.
+New in v11: amendment 8, which is about amendment 7. A second independent review checked amendment 7's
+claims against the code and three of them did not hold. **There is no `prereg-v10` tag**: v10 was written
+and never pushed, because the review that produced v11 arrived first, so both amendments ship in the
+commit this tag marks. That is stated here rather than left as a gap in the tag sequence.
 New in v3: section 17 fixes where the cause labels come from, and suspends the section 14.5
 selection gate because they are not expert labels. No threshold is lowered and no baseline moves.
 New in v4: section 18 fixes the investigation layer, before any investigation has been run.
@@ -714,6 +722,185 @@ which has just failed must state what the check was examining when it failed, wh
 check's rather than the project's, and what still audits the thing the check was supposed to audit. If
 it cannot, the finding stands and the project is in breach, not the check.
 
+### Amendment 8, v10 to v11: what amendment 7 claimed and did not deliver
+
+Date: 2026-10-07. Made **after** the post-mortem was run and after amendment 7 was written, labelled as
+such, prompted entirely by a second independent review of the first review's resolution. It changes
+published figures and it withdraws two claims.
+
+**v10 was never pushed.** Amendment 7 and this amendment are in the same commit, so no tag marks a state
+of the repository in which amendment 7's claims stood uncorrected. Amendment 7 is kept verbatim anyway,
+with the sentences this amendment falsifies marked where they appear, because the record of what a fix
+claimed is more useful than a tidy document, and because the pattern it shows is the point: the first
+review found gates that could not fail, and the resolution of that review contained gates that could not
+fail.
+
+The reason this amendment exists is worth stating before its contents. Amendment 7 was written in the same
+session as the fixes it describes, by the person who made them, and three of its claims did not survive a
+reader who checked them against the code. **An amendment is a claim about a repository and is exactly as
+checkable as any other published figure.** Writing one is not the same as having done the thing it says.
+
+**Two marks still could not fail.**
+
+1. **Register reproducibility.** The implementation rebuilt the register over reversed input and compared
+   four fields of each recurring pattern. `register.build` sorts its groups, orders each group by
+   `(report_date, event_id)`, picks the representative by `(duration_hours, event_id)` and sorts patterns
+   by `(-hours, subcategory, detail_state)`, so every tie is broken by a unique id and no permutation of
+   the input can change the output. Review ran 4,000 adversarial inputs, duplicate ids and tied durations
+   included, and found no failing case. It also had no failing test: the suite asserted `.passed` and
+   nothing else. Item 5 now compares every field of every citation, over the excluded patterns as well,
+   against the register actually being published.
+2. **The write-time refusal.** Amendment 7 said `write` "now resolves the event and refuses a correction
+   whose well disagrees with its event's". It did, when given a mapping of event to well, and that
+   argument was optional and **no caller in the repository supplied it**, the gate included. So the only
+   path the gating run exercised was the forgeable fallback the mapping had been added to replace, and
+   review re-ran its original attack against the default call and it wrote cleanly. The argument is
+   required now, an event the store cannot place is refused rather than trusted, and item 6 probes four
+   directions instead of one.
+
+**Two claims withdrawn.**
+
+3. **"An independently accumulated block total"**, section 20.2 and 20.8's "a path independent of the
+   extractor". The walk shares six functions with the extractor and traverses identically, and the block
+   total was accumulated in the same loop iteration as the two categories it is compared against, which
+   makes the comparison an arithmetic identity up to float association: the worst error across eleven
+   wells was 4.09e-12 against a tolerance of 0.01, and is 3.64e-12 under the replacement, which is the
+   same statement about float association and not a figure that moved for any other reason. The comparison is kept, because it does establish that
+   the categories partition the blocks, and it is now described as that and nothing more. Amendment 7
+   listed this overclaim among the things it had corrected, and corrected nothing; that sentence was the
+   clearest case of an amendment asserting a fix which did not land.
+4. **"It stops being vacuous here"**, section 20.5 rule 1, about section 19.2's fourth leakage check. The
+   store is empty, the check examines nothing, and the harness says so on every run. Amendment 7 recorded
+   this correctly in its own text and left the opposite claim standing in section 20.5 and in the module
+   the amendment was about. The promise is withdrawn rather than restated, because a pre-registered
+   promise that a later phase will end a vacuity is a promise about work, not a pass mark, and section 20
+   should not have made it.
+
+**Section 20.1's exception was justified by a false sentence.** Amendment 7 relaxed "hold-out counterparts
+are not computed" to "reconciled and not reported", and section 13 requires such a relaxation to say what
+still audits the thing. What it offered was "Nothing about a hold-out well is published: not its hours, not
+its share": the same run publishes the corpus non-productive total and the held-out share of it, whose
+difference is the hold-out aggregate. The rule is narrowed to **per-well figures and citations**, which the
+implementation does honour, and the three things that are published are declared there as published on
+purpose. The first attempt at this narrowing said no hold-out well was "named in anything published",
+which section 16 of this document falsifies by naming all four; it took a third reader to see that, and it
+is recorded here rather than quietly fixed.
+
+**Two further corrections, neither of which changes a published figure.**
+
+- **The citation span floor.** Amendment 7 stated "at least 12 characters"; `MIN_SPAN` is a floor on where a
+  sentence terminator may be taken, not on the span's length, and nine development events have a comment
+  shorter than 12 characters in total. A span cannot be padded without ceasing to be verbatim, so section
+  20.4 now states the floor as yielding to the comment's own length, and a test asserts the property.
+- **The citation and containment gates read only the recurring patterns** while the harness publishes 38
+  excluded ones with their own citations. Both now read the excluded patterns too, and an empty span is
+  refused rather than accepted as a substring of everything.
+
+**A third review, of this amendment's own fixes, and what it found.** Recorded here rather than as a ninth
+amendment, because v11 has not been pushed either: rounds 2 and 3 are both drafts of the same unpublished
+version. Three more defects, and the first is the same shape as everything above.
+
+- **The write-time refusal gate's accepting probe never touched the store.** It built a development
+  correction and then asked `is_hold_out` about its well, which is a question about a string. So a store
+  whose `write` raised unconditionally satisfied all four refusing probes and passed, and review built
+  exactly that store and watched the mark approve it. The probe now writes, to a throwaway directory, and
+  the gate examines six things instead of five. Three rounds, and the gate that checks the refusal was
+  wrong in all three.
+- **The independence overclaim was corrected in two places and reintroduced in a third.** The sentence
+  this amendment retracted from `recorded_time.py` and section 20.8 was rewritten into the new
+  `gates.py` docstring and into section 20.2, which then contradicted section 20.8 on the same page. The
+  same overclaim also stood, uncounted, in `extraction/integrity.py`, which shares three names with the
+  extractor while claiming to share one, and in ADR 0007, which a fourth review found after the first four
+  were corrected. All five are corrected and the shared names are listed in each. A claim lives in every
+  file that repeats it, and the only way to retract one is to search for it.
+- **"It stops being vacuous here" was withdrawn from section 20.5 and left standing in
+  `postmortem/corrections.py`**, which is the file this amendment's own bracketed note said it would be
+  withdrawn from. An amendment that names two locations and fixes one is the defect it was written about.
+
+Also: this amendment's first narrowing of section 20.1 said no hold-out well is "named in anything
+published", which section 16 of this document falsifies by naming all four. Narrowed again, to figures and
+citations, with the three things that are published listed there.
+
+**One defect outside section 20, found by the same review and fixed here because it falsified a published
+table.** `docs/results_table.md` stated "All five section 20.6 gates pass" and 12 of its 145 rows read
+"not produced", the **five** section 20.6 gate rows among them, while the manifest recorded every gate as
+true. The other seven were three label classes with no labels, two applied rules nothing applied and two
+stop conditions nothing reached. The dotted-path resolver split keys on
+every dot, and a section 20.6 mark's name contains dots, so no gate row resolved; the section 19.3 coverage
+gate compared path *strings* without ever asking whether they resolved, so it certified the table as
+complete. Section 19.3 now gates in both directions: every manifest figure has a row, **and** every row
+names a figure that exists. The second half immediately found four more broken rows, in the label
+distribution, the applied-rule vocabulary and the investigation stop conditions, each a counter that had
+omitted a value nothing reached.
+
+### Amendment 7, v9 to v10: three more marks that could not fail, a dropped gate, and five holes
+
+Date: 2026-10-07. Made **after** the post-mortem was run, labelled as such, prompted entirely by
+independent review, and it changes published figures.
+
+**Three of this amendment's claims did not hold, and amendment 8 says which.** They are marked below
+rather than edited out. Neither amendment was pushed before the other, so this is a draft a second
+reader corrected and not a published record rewritten.
+
+**Three section 20.6 marks could not fail.** The pattern is now four phases old and the diagnosis is
+specific: each one was an expression in a script rather than a function with a test.
+
+1. **The reconciliation** compared the two categories against a property defined as their sum, so it
+   computed `abs(x - x)`. Its test was the same expression. Section 20.2 now requires the block total to
+   be accumulated separately, and the gate also compares block counts, which hours alone cannot do.
+   *[Amendment 8: "accumulated separately" was accumulated in the same loop iteration, which is an
+   identity up to float association. The comparison is kept and restated as a partition check.]*
+2. **The hold-out containment mark** read the development-well list that had just been passed into the
+   register, so it tested the negation of its own filter. Review removed the filter and all four
+   hold-out wells appeared in the published patterns while the mark still passed. It now reads the
+   register's output.
+3. **The currency mark** asked the producing function whether it had produced a string, which both its
+   branches do. Review fed it `nan`, zero and a negative day rate and it approved all three. It now
+   reads the artifact and rejects a non-finite figure or a non-positive rate.
+
+**A pre-registered gate was dropped and the count rewritten around it.** Section 20.6 listed six marks,
+the implementation carried five, and `docs/postmortem_results.md` was headed "The five gating pass
+marks". Register reproducibility was the missing one. It is implemented, and a seventh mark now refuses
+an empty corpus, because review ran the harness against an empty directory and all five passed with exit
+zero.
+
+**Five holes in the correction store**, each closed:
+
+- The refusal filtered on the well recorded on the correction rather than the well of the event it names.
+  A correction built by hand with a hold-out event id, a development well, and the hold-out event's
+  verbatim comment as its old value wrote cleanly. `write` now resolves the event and refuses a
+  correction whose well disagrees with its event's. *[Amendment 8: only when handed a mapping that was
+  optional and that no caller supplied, the gate included, so the attack still worked on every real
+  call. The argument is required now.]*
+- `is_hold_out` claimed to fail closed and failed open: `well_of` raises on `15/9-f-4`, on the NPD
+  spelling `NO 15/9-F-4` and on `15 / 9-F-4`, and the fallback answered False for all three. It now
+  normalises, retries, and refuses anything it still cannot place.
+- An empty version could be created and later filled, so a run could cite a version holding nothing. The
+  write is now `open(path, "x")` and the filesystem enforces it.
+- A version name could escape the store directory, where `versions()` could not glob it and the audit
+  could not read it. Names are now validated and the resolved path checked.
+- `examples_for` enforced "a different extractor version" where section 20.5 rule 3 says "later", so a
+  correction made against a later version was served to an earlier one. Ordinals are compared, and an
+  unparseable version is withheld rather than served.
+
+**Section 19.2's fourth leakage check was never wired.** Section 20.5 claimed it "stops being vacuous
+here"; the adapter written for it had no call site, and `docs/postmortem_results.md` separately admitted
+the check examined nothing. Two documents on one branch contradicted each other about a pre-registered
+promise. It is wired now, and it still examines nothing, because a correction needs a person. Those are
+different claims and the output says which one is true. *[Amendment 8: this amendment recorded the
+contradiction and then left the "stops being vacuous here" sentence standing in section 20.5 and in
+`postmortem/corrections.py`. v11 withdraws the promise in both.]*
+
+**Also corrected**, each found by review: the coverage walk in `evaluation/table.py` terminated at a
+list, so every figure in the published per-well and register tables was invisible to the section 19.3
+gate rather than excluded by it; the phase's headline figure, 65 of 2,600 events labelled, was quoted in
+bold in two documents and derivable from neither the manifest nor the harness; the citation span could be
+taken from mid-comment, which on a `WOC\nMeanwhile: Maintenance` comment dropped the waiting-on-cement
+that is the non-productive reason and quoted the concurrent work instead; and the reconciliation's own
+claim to share "only section 14.1's rule" with the extractor understated six shared imports and an
+identical traversal. *[Amendment 8: this last one was listed as corrected and was not corrected
+anywhere. It is corrected in v11, in section 20.2, section 20.8 and the module's own docstring.]*
+
 ### Amendment 6, v7 to v8: three pass marks that could not fail, and amendment 5's overreach
 
 Date: 2026-10-06. Made **after** the harness was run, labelled as such, and prompted entirely by
@@ -724,7 +911,7 @@ the pattern is now explicit enough to name: a check written in the same breath a
 tends to test that thing against itself.
 
 1. **19.2's third leakage check** tested whether a fitted day fell outside the development window,
-   over a day set the harness had built with `development_only` — the negation of the comprehension
+   over a day set the harness had built with `development_only`, the negation of the comprehension
    that produced its own input. Review demonstrated it by making the expectation study fit on the whole
    record: 3,201 hold-out producing days, audit reported clean, all six marks passed. The scripts now
    record the dates they actually fitted on in their own manifests, and the audit reads those. A run
@@ -1541,10 +1728,21 @@ beyond its value: the **denominator**, because `docs/data_profile.md` has alread
 that differs by two points depending on which population it is taken over; the **status**, one of
 `gated`, `reported` or `deferred`; and for a deferred row, **what would settle it**.
 
-**Pass mark, gating: every numeric figure in the four run manifests, other than an enumerated
+**Pass mark, gating: every numeric figure in the five run manifests, other than an enumerated
 exclusion list, has a table row, at 100 percent.** Booleans count: a pass mark is a published result.
 
-That wording is amendment 6's, and it is narrower than the wording it replaces. The original claimed
+**And the converse, which amendment 8 adds: every table row names a figure that exists, at 100
+percent.** One direction alone is not coverage. The resolver that reads a row's dotted path split it on
+every dot, and a section 20.6 mark's name contains dots, so every gate row resolved to nothing: 12 of the
+145 rows in the last committed table read "not produced", five of them gate rows, while the manifest held
+every value. The coverage half compared path *strings* and never asked whether they resolved, so it counted
+those rows as covering the figures they named and certified the table as complete. The gate names had also
+been retyped in a second place and drifted, so some of those rows named marks that no longer existed. The
+converse half found four more broken rows the moment it ran, each a counter that had omitted a value
+nothing reached: three label classes with no labels, two applied rules nothing applied, and two stop
+conditions no investigation hit. A count that omits its zeros is not a count, and a zero is a result.
+
+The first wording is amendment 6's, and it is narrower than the wording it replaces. The original claimed
 "every published figure in the repository", which was false: the exclusion list excused 87 of 131
 numeric manifest leaves, including the WAPE table that section 4's selection rule is defined in, the
 label distribution, and `pass_marks` itself. Independent review injected a **failing** pass mark under
@@ -1610,7 +1808,7 @@ root-cause claim counts against the system more heavily than an abstention**, at
 
 ### 19.6 Risk and coverage, deferred for the same reason, with the shape fixed
 
-A risk–coverage curve plots error rate against the fraction of cases the system chose to answer, and
+A risk and coverage curve plots error rate against the fraction of cases the system chose to answer, and
 error rate needs correctness. Deferred. Fixed now so the axes cannot be chosen to flatter a result:
 coverage is the fraction of episodes with a verdict other than `insufficient_evidence`; risk is the
 fraction of those whose conclusion the adjudication of section 19.5 finds wrong; and the curve is
@@ -1697,9 +1895,42 @@ as an illustration over the 135 labelled events and not as a figure over the cor
 **Development wells only, and that is a real cost.** The drilling-report corpus covers eleven wells, of
 which section 16 holds out four: `15/9-F-4`, `15/9-F-5`, `15/9-F-7` and `15/9-F-9`. A per-well
 post-mortem over all eleven would mean reading hold-out wells' records, and section 4.3 says plainly not
-to look at the hold-out before Phase 8. So the post-mortem covers the seven development wells, their
-hold-out counterparts are not computed, and the report says how much of the corpus that leaves out
-rather than quietly reporting a partial total as a total.
+to look at the hold-out before Phase 8. So the post-mortem **reports** the seven development wells, and
+says how much of the corpus that leaves out rather than quietly presenting a partial total as a total.
+
+**One exception, which amendment 7 makes explicit rather than leaving as a contradiction.** The section
+20.2 reconciliation is computed over all eleven wells, because it is an integrity check between two code
+paths over the same files and restricting it would weaken the one gate that catches a parser defect. The
+original wording said hold-out counterparts "are not computed", which the implementation contradicted on
+its first run, and the honest rule is that they are reconciled and not reported.
+
+**What "not reported" means, stated exactly, because amendment 7 stated it too broadly and amendment 8's
+first attempt at narrowing it was also too broad.** The rule is about figures and evidence, not about
+names. **No figure attributable to an individual hold-out well is published**, and no citation from one of
+its reports: not its hours, not its share, not its block counts, not its patterns, not a quoted span.
+
+What **is** published, and this list is meant to be exhaustive rather than illustrative, because the
+previous two wordings were each short of their own standard:
+
+- **Which wells are held out.** Section 16 names all four and the post-mortem manifest repeats them in
+  `hold_out_wells_excluded`. A split nobody can see is not a split, and a reader has to be able to check
+  that the seven reported wells are the complement of the four.
+- **Every corpus-level total**, each of which includes hold-out time: non-productive hours, non-NPT
+  recorded hours, unclassified gap hours, concurrent overlap hours, report count and activity-block count.
+- **The share of corpus non-productive hours that is held out**, 13.2 percent, which is the disclosure
+  that makes the first of those figures honest.
+
+Each corpus total is published beside its development-only counterpart, so the hold-out aggregate is one
+subtraction away in every case: 1,133.00 non-productive hours, 5,940.50 non-NPT hours, 332 reports. **Those
+differences are published in effect and the list says so**, because the alternative is the word game of
+printing two numbers and claiming their difference is withheld. The first wording of this list named three
+things and stopped at the two that happened to be mentioned in the amendment; the rule it illustrates is
+unchanged, which is that no figure attributable to an **individual** hold-out well appears anywhere.
+
+Amendment 7 claimed hold-out hours were not published at all, and amendment 8's first wording said no
+hold-out well was "named in anything published" while section 16 of this very document names all four.
+Both are corrected here. An exception justified by a sentence that is false in the same run is not
+justified, and that applies to the correction as much as to the thing it corrects.
 
 ### 20.2 The three recorded-time categories, and the reconciliation that gates
 
@@ -1713,11 +1944,35 @@ duration against 39,396 hours of wall clock. The 2-hour difference is five repor
 blocks, not unclassified time. Gaps between blocks inside a report total 98 hours, and **that** is the
 third category.
 
+**Where those four figures came from**, since amendment 7 records that a reader could not check them.
+The 23,447 blocks are already in `docs/data_profile.md` and ADR 0005 and predate this section by weeks.
+The other three were measured by a throwaway script in the session that wrote this section, and the
+merge-interval computation they need did not exist in the repository until the implementation commit.
+They are stated to one significant figure, so they could not have falsified anything either way, and a
+reader who wants them checkable should take the implementation's own output rather than this paragraph.
+
 **Pass mark, gating: the categories reconcile exactly.** For every well, NPT hours plus non-NPT recorded
 hours equals the sum of that well's block durations, to within **0.01 hours**. This is arithmetic over one
 set of blocks, so the tolerance is floating point and nothing else. Concurrent overlap and inter-block
 gaps are reported as their own figures and never folded into a tolerance, because a tolerance wide enough
 to absorb them would be wide enough to hide an error.
+
+**The block total must be totalled from the block list**, which amendment 7 adds because the first
+implementation derived it as the sum of the two categories and so reconciled them against themselves.
+
+**What that comparison does and does not establish**, which amendment 8 states because amendment 7 called
+it "an independently accumulated block total" and that is more than it is. Both sides subtract the same
+two timestamps, so no input can make the comparison disagree about a duration. What it establishes is that
+the two categories **partition** the timed blocks: a block counted twice, or in neither category, moves
+one side and not the other. The second implementation also accumulated the total inside the same loop
+iteration as the categories, which made even the partition claim read as an independence claim; it is
+totalled from the span list after each report is walked instead.
+
+**The cross-boundary comparison is the walk against the extractor.** The same gate compares this walk's
+non-productive hours **and block count** against the event store's, two code paths over the same XML, and
+that is the comparison section 20.8 means. Second, not independent: section 20.8 lists the six functions
+the two paths share and what sharing them leaves the comparison able to establish. Hours alone are blind to a compensating swap, one event dropped
+and another of equal duration on the same well duplicated, which is why the count is compared too.
 
 ### 20.3 The cost equivalent, and what may not be said about it
 
@@ -1749,8 +2004,31 @@ worth generalising. Twenty-four hours because that is one rig-day: below it, a "
 from the noise of how a particular morning was written up. Both numbers are fixed here and neither moves.
 
 Each entry records the pattern, the affected wells, total hours, event count, first and last occurrence, a
-representative verbatim span with its event id, and the fraction of the pattern's events that fall in the
-labelled sample, which is the only honest statement of how well understood it is.
+representative verbatim span with its event id, the fraction of the pattern's events that fall in the
+labelled sample, and the fraction of those whose source coding the labeller flagged as contradicting its
+own comment. The last column is amendment 7's, and it matters: both halves of the grouping key are source
+fields this project has measured to be unreliable on 15.6 percent of what a human actually read.
+
+**What the thresholds exclude is published, not summarised.** Amendment 7 adds this because the first
+implementation reported only an aggregate, and a three-well bar removes precisely the shape of a serious
+event: one well, one expensive sequence. On this corpus it removes `sidetrack` at 562 hours on a single
+well, along with `lost circulation`, `well control` and `casing`. A register whose top entry is weather
+and which contains no entry for well control, without saying so, would mislead an operations reader.
+The thresholds do not move; the excluded table is published beside the register.
+
+**Three further thresholds the implementation needs**, stated here because section 20 opened by promising
+that every threshold it needs is stated and these were only in the source: a citation span is at most
+**160** characters, is at least **12** unless the whole comment is shorter, in which case it is the whole
+comment, and is anchored at the start of the comment; the representative occurrence is the pattern's
+**longest** event, so the quoted span is the one that cost the most time; and patterns sort by hours
+rounded to **6** decimal places before falling back to name order.
+
+The "unless the comment is shorter" clause is amendment 8's correction. Amendment 7 stated a flat floor of
+12 characters, and the implementation's `MIN_SPAN` is a floor on where a sentence terminator may be taken
+rather than on the span's length. The two coincide for every comment longer than 11 characters, and nine
+development events have a comment shorter than that: `POOH`, `Held TBT`, `CIRC. BU`. A span cannot be
+padded to reach a floor without ceasing to be verbatim, and verbatim is the property section 20.6 gates
+on, so the floor yields and is stated as yielding.
 
 **Coverage is reported and not gated.** What fraction of development non-productive hours the recurring
 patterns account for depends on how concentrated the corpus happens to be, which is a property of the data
@@ -1763,10 +2041,26 @@ value, the new value, who made it, when, and the store version it enters.
 
 Three rules, all gating at 100 percent:
 
-1. **A correction naming a hold-out event is refused at write time**, not flagged at audit time. Section
-   19.2's fourth leakage check audits the store, and until this section it examined nothing because no
-   store existed; it stops being vacuous here. But an audit that runs after the fact is the weaker
-   guarantee, so the store refuses first and the audit confirms.
+1. **A correction naming a hold-out event is refused at write time**, not flagged at audit time. An
+   audit that runs after the fact is the weaker guarantee, so the store refuses first and the audit
+   confirms. Section 19.2's fourth leakage check audits the store, and this section promised it would
+   "stop being vacuous here". **It did not, and amendment 8 withdraws the promise rather than restating
+   it.** The store exists and is empty, because a correction is a person changing a value and no person
+   has changed one. The check therefore still examines nothing and the harness still prints it as such.
+   What replaces the promise is a demonstrated refusal: every run proposes four synthetic corrections
+   that must be refused, one for each way review got past the first implementation, and **writes** one
+   that must be accepted so that a store refusing everything cannot pass. The accepting probe has to be
+   a write: the first version only asked whether its well was held out, which never touches the store,
+   and review built a store whose `write` raised unconditionally and the mark approved it. It writes to
+   a throwaway directory, because a version left behind by a gate is a version a later run could cite
+   and an append-only store could not remove.
+
+   **What the refusal reads**, stated because a guard whose scope is implied is a guard nobody can
+   check: the event id resolved against a caller-supplied mapping of event to well, the well recorded
+   on the correction, and the free text of `old_value`, `new_value`, `note` and `corrected_by`. A
+   hold-out well named in the text is refused in the canonical spelling and in the filename spelling. A
+   name written with no separators at all, paraphrased, or translated is not caught, and no textual
+   guard can be; this one exists for the realistic case, which is a span pasted out of a report.
 2. **A version is never rewritten.** A store version whose contents can change describes something other
    than the run that cited it, which is the same reasoning as the event store in section 14.
 3. **A correction may become a few-shot example only in an extraction version later than the one that
@@ -1779,14 +2073,55 @@ value recorded rather than omitted.
 
 ### 20.6 Pass marks that gate
 
-1. **Category reconciliation**, section 20.2, to 0.01 hours per well.
+**Seven, and amendment 7 records why the count moved.** Six were pre-registered here, the first
+implementation carried five, and the documents were written saying five: item 5, register
+reproducibility, was dropped and the count rewritten around the drop with no amendment. That is the one
+thing pre-registration exists to prevent. It is implemented now, and a seventh has been added because
+review ran the whole harness against an empty directory and every mark passed.
+
+0. **The corpus is not empty.** A precondition, because every mark below passes trivially over nothing.
+1. **Category reconciliation**, section 20.2, to 0.01 hours per well, against a block total totalled
+   from the block list rather than from the categories, and against the event store on non-productive
+   hours **and** block counts. Amendment 8 records which of those three comparisons is which: the first
+   establishes that the categories partition the blocks, the second and third are the ones that cross a
+   code boundary.
 2. **Every citation resolves.** Every event id cited by the post-mortem or the register exists in the
-   event store, and every quoted span is a verbatim substring of that event's comment. 100 percent, a
-   gate and not a score, for the same reason as section 14.5's condition 3.
-3. **No hold-out well appears** in the post-mortem, the register, or the correction store. 100 percent.
-4. **Currency figures carry their assumption**, section 20.3.
-5. **The register is reproducible.** The same corpus produces the same patterns in the same order.
-6. **The correction store refuses a hold-out correction at write time**, section 20.5.
+   event store, every quoted span is a non-empty verbatim substring of that event's comment, and the
+   cited well is one the pattern lists. **Over the excluded patterns as well as the recurring ones**,
+   which amendment 8 adds: the harness publishes all 38 excluded patterns with their own event id,
+   document and span, and the first implementation checked only the 13 recurring ones. Non-empty for the
+   same reason: `"" in comment` is true for every comment, so an empty span would satisfy the verbatim
+   test by quoting nothing. 100 percent, a gate and not a score, for the same reason as section 14.5's
+   condition 3.
+3. **No hold-out well appears** in anything published: the register's patterns and their citations, the
+   **excluded** patterns and theirs, the per-well table, or the correction store. 100 percent. Checked
+   on the register's **output**, not on the well list passed into it, which is what the first
+   implementation did and which made the mark the negation of its own filter. The excluded patterns are
+   amendment 8's addition, for the reason item 2 gives: review removed the register's filter and found
+   an excluded pattern naming only a hold-out well, published with its hold-out citation, while the mark
+   passed.
+4. **Currency figures carry a sound, disclosed assumption**, section 20.3, **read off the artifact**.
+   The first implementation asked the producing function whether it had produced a string, which both
+   its branches do, so it approved a non-finite figure and a negative day rate.
+5. **The register is reproducible.** The same corpus produces the same patterns, in the same order, with
+   the same citations: **every field** of every citation, and the excluded patterns too. Compared against
+   **the register being published**, built with the same label and miscoding sets. Amendment 8 records
+   why both clauses are needed. The first implementation compared four fields of each recurring pattern,
+   which could not see an altered span, and it was handed neither the labelled nor the miscoded ids, so
+   it certified the reproducibility of an artifact nobody was publishing.
+6. **The correction store refuses a hold-out correction at write time**, section 20.5, probed with
+   synthetic corrections in **four** refusing directions and one accepting one. The first implementation
+   probed with a real hold-out event from the store and therefore failed whenever the store correctly
+   held none. The second probed one direction, through a code path that nothing in the repository
+   reached, which amendment 8 records: the mapping of event to well that the refusal depends on was an
+   optional argument no caller supplied, so the only path exercised was the forgeable fallback it had
+   been added to replace. It is a required argument now, and the four probes are the four ways review got
+   past the first version.
+
+Every one of these is a function in `src/volve_ops/postmortem/gates.py` with a test that makes it fail,
+and each reports what it examined. Review's diagnosis across four phases is the reason: every gate that
+could not fail had been written as an expression in a script, in the same sitting as the thing it
+checked, with no failing case ever executed.
 
 ### 20.7 Deferred, with what would settle each
 
@@ -1805,6 +2140,15 @@ comparison, with the leakage rule of 20.5 rule 3 observed.
 
 ### 20.8 The Phase 5 gate
 
-Per-well non-productive totals spot-verified against the source by a path independent of the extractor,
-as section 14.3 did for detection and duration. Every evidence link correct. A correction demonstrated to
-be refused when it names a hold-out event. The hold-out otherwise untouched, which section 19.2 checks.
+Per-well non-productive totals spot-verified against the source by a **second** path, as section 14.3 did
+for detection and duration. Every evidence link correct. A correction demonstrated to be refused when it
+names a hold-out event. The hold-out otherwise untouched, which section 19.2 checks.
+
+**Second, not independent**, which amendment 8 corrects. The walk shares six names with the extractor:
+`WITSML_NS`, `is_non_productive`, `parse_report_filename`, `parse_xml_file`, `well_of` and
+`canonical_from_ddr_token`, and it traverses `drillReport` then `activity` the same way. `is_non_productive`
+is shared deliberately, because section 14.1's rule is the specification and a second copy of it would test
+the copy. What the comparison therefore establishes is that the per-block arithmetic, the category branch,
+the aggregation and the event-store write are written twice and agree; a defect inside any of the six
+shared functions would be invisible to it. Section 14.3 covers the shared traversal separately, against
+the source rather than against another copy of this code.

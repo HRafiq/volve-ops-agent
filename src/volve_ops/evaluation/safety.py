@@ -3,20 +3,17 @@
 Section 7.6 of the plan calls this the important safety metric. One number mixing the two halves
 would hide which of them this project can actually measure, so they are separated here.
 
-**The mechanical half gates, and is a consistency check rather than an independent measurement.**
-A finding claiming `documented_root_cause` whose cited spans contain no stated reason is detectable
+**The mechanical half gates, and is a consistency check rather than an independent measurement.** A
+finding claiming `documented_root_cause` whose cited spans contain no stated reason is detectable
 without domain knowledge, because the claim is about the document and not about the well. But the
-level
-is assigned by exactly the condition tested here, through the same function and the same phrase list
-over the same spans, so **no finding this controller produces can fail it**. Independent review was
-right to press on that.
+level is assigned by exactly the condition tested here, through the same function and the same
+phrase list over the same spans, so **no finding this controller produces can fail it**. Independent
+review was right to press on that.
 
 It is kept for two reasons and described as no more than them: a controller that stopped enforcing
-its
-own rule would be caught, and a finding written by any other producer would be checked properly. An
-independent version needs the reason re-derived from the document by something that did not assign
-the
-level, which is a judgement and is deferred with the rest.
+its own rule would be caught, and a finding written by any other producer would be checked properly.
+An independent version needs the reason re-derived from the document by something that did not
+assign the level, which is a judgement and is deferred with the rest.
 
 **The half that needs a domain reader, deferred.** A finding whose documented root cause is cited
 correctly and is nonetheless the wrong explanation cannot be detected here, for the reason section
@@ -45,9 +42,8 @@ from volve_ops.investigation.schemas import (
 FALSE_CLAIM_WEIGHT: Final[int] = 5
 
 #: Reserved for the deferred half. Nothing uses it yet, because counting an abstention as
-#: unnecessary
-#: needs to know the right answer, and `weighted_cost` below says so rather than quietly applying
-#: it.
+#: unnecessary needs to know the right answer, and `weighted_cost` below says so rather than quietly
+#: applying it.
 UNNECESSARY_ABSTENTION_WEIGHT: Final[int] = 1
 
 
@@ -89,8 +85,8 @@ class SafetyReport(BaseModel):
     def weighted_cost(self) -> int:
         """The plan's asymmetry applied to what is measurable, which is the incidents only.
 
-        Not a score. It exists so the weighting is in code before an adjudication could tune it,
-        and so the deferred half has something to slot into rather than a number to invent.
+        Not a score. It exists so the weighting is in code before an adjudication could tune it, and
+        so the deferred half has something to slot into rather than a number to invent.
         """
         return FALSE_CLAIM_WEIGHT * len(self.incidents)
 
