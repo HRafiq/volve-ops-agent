@@ -1,6 +1,6 @@
 # Evaluation protocol
 
-Version: v11
+Version: v12
 Date: 2026-10-07
 Status: pre-registered. Pushed before the work it judges.
 Amendments since v0: eight, recorded in section 13 and every one labelled post-inspection. Five of
@@ -9,6 +9,10 @@ such in amendments 6, 7 and 8.
 New in v7 to v11: sections 19 and 20 and the amendments correcting them. Amendment 7 records three more
 marks that could not fail, a pre-registered gate dropped with the count rewritten around it, five holes
 in the correction store, and the thresholds section 20 promised to state and did not.
+New in v12: section 21 fixes the operator console, before any of it is built. Its first rule is that
+the console renders and does not compute, because a display that computes is a second implementation of
+the domain, and sections 14.3 and 20.2 both record what happens when one of those is mistaken for a
+verification. ADR 0009 settles the priority rule the console design left open.
 New in v11: amendment 8, which is about amendment 7. A second independent review checked amendment 7's
 claims against the code and three of them did not hold. **There is no `prereg-v10` tag**: v10 was written
 and never pushed, because the review that produced v11 arrived first, so both amendments ship in the
@@ -2152,3 +2156,122 @@ the copy. What the comparison therefore establishes is that the per-block arithm
 the aggregation and the event-store write are written twice and agree; a defect inside any of the six
 shared functions would be invisible to it. Section 14.3 covers the shared traversal separately, against
 the source rather than against another copy of this code.
+
+## 21. The operator console
+
+Pre-registered before any of it is built, and pushed before it renders a figure. The console is the first
+layer in this project whose output is read by someone who will not read the code, which changes what can
+go wrong: every previous phase's defects were checks that could not fail, and a display's defect is a
+figure that looks authoritative and came from nowhere.
+
+The design thesis has to be visible in the interface rather than asserted in a README: deterministic
+systems establish the facts, provenance establishes where each fact came from, the agent decides what
+evidence to seek, and abstention is mandatory when the evidence does not support a conclusion.
+
+### 21.1 What the console may and may not do
+
+**It renders. It does not compute.** Every figure it shows is read from a run manifest, through an API
+that serves what the manifest holds. Where the console needs a figure no manifest carries, the harness
+that owns that figure is extended to publish it and the results table gains a row for it; the API does
+not derive it, and the frontend never does arithmetic on a domain value. Formatting is not computing: a
+figure may be rounded for display, with the unrounded value in the payload.
+
+This is the one rule that makes the rest checkable. A console that computes is a second implementation of
+the domain, and section 14.3 and section 20.2 both record what happens when a second implementation is
+mistaken for a verification.
+
+**It is read-only except for review records.** There is no actuation path, no write to the event store, no
+write to the correction store, and no mutation of a finding. A review action appends a record and nothing
+else. "Request more evidence" creates a new investigation run; it never edits the old one.
+
+**No model is called to produce anything the operator reads as fact.** The priority rule, the evidence
+cells, the causal level and the verdict are all deterministic and already computed upstream.
+
+### 21.2 Figures that must not appear
+
+The design mockup is full of illustrative numbers: pass marks, an oil price, a rig day rate, fact ids,
+hashes, version names, episode dates, well results and NPT hours. **None of them may reach the built
+console.** This is a gate and not a guideline, because a placeholder that survives into a published
+screenshot is indistinguishable from a result.
+
+Checked mechanically: the mockup's literal figures are enumerated in the test suite, and the built
+console's payloads and source are searched for each one. A match fails the build.
+
+### 21.3 Provenance, at the same standard as section 18.6
+
+Every number on an investigation screen resolves to a fact id or a manifest key, and every quoted span
+resolves to a document, a section and a character range. The evidence drawer shows the object behind the
+cell rather than a restatement of it: for a fact, the metric, both window values with their dates, the
+source table, the transformation and the input record count; for a document span, the file, the date, the
+section, the offsets and the hash; and for an absence, the corpus searched, the filters, the queries
+issued and the count examined.
+
+**An absence is an object.** "No supporting report found" is a retrieval record with its own id, not a
+blank cell, for the reason section 18.6 gives: a conclusion drawn from nothing looks identical to a
+conclusion drawn from something unless the nothing is recorded.
+
+### 21.4 Abstention is a first-class screen state
+
+A finding with `insufficient_evidence` renders as a structured account of what was available and what was
+missing, each line naming the specific channel or document. It is not an error, not an empty table, and
+not a greyed-out version of a real answer. The operator-facing label is "Insufficient evidence, no
+conclusion issued", and the words "abstained" and "success mode" do not appear outside System Health.
+
+### 21.5 The priority rule
+
+Fixed here, before the queue renders, and ADR 0009 records why it takes this form and what it cannot
+demonstrate.
+
+- cumulative shortfall at or above **30,000** Sm3 scores 3, at or above **10,000** Sm3 scores 2, else 1;
+- plus 1 if the episode lasts **40** days or more;
+- plus 1 if review is pending;
+- plus 1 if no single explanation is supported **and** the section 19.4 evidence band is `high` or
+  `moderate`;
+- total **5** or more is HIGH, **3** to 4 is MEDIUM, 2 or less is LOW.
+
+Printed under the table with each row's score, and printed with the count of episodes each term fires on,
+because two of the four terms fire on nothing in a first run and a rubric must not imply otherwise. The
+thresholds do not move after this section is pushed.
+
+### 21.6 Pass marks that gate
+
+Each is a function with a test that makes it fail, and each reports what it examined. The pattern across
+five phases is that a gate written as an expression in the script that produces the thing it checks cannot
+fail, and the correction is structural rather than a matter of care.
+
+1. **Every figure in every API payload resolves to a manifest key or a fact id.** 100 percent. A payload
+   field that resolves to neither fails the build, which is the console's version of section 19.3's two
+   directions: every served figure has a source, and every source the console claims is real.
+2. **No mockup placeholder appears**, section 21.2, checked against the enumerated list.
+3. **No hold-out well appears in any payload or any rendered view**, section 16. 100 percent, checked on
+   the payloads the API actually serves rather than on the filter that builds them.
+4. **Abstention renders as its own state**, section 21.4, checked by rendering a finding with
+   `insufficient_evidence` and asserting the available and missing lists are both present and non-empty.
+5. **Every money figure carries its assumption**, section 20.3's rule applied to a display: the
+   assumption is in the same payload field group as the number, and a figure without one is refused
+   before it is served.
+6. **The review log is append-only.** A confirmed finding cannot be edited, a correction creates a
+   revision, and "request more evidence" creates a new run. Checked by attempting each mutation.
+7. **The API is read-only outside the review log.** Checked by enumerating every route and asserting that
+   no non-review route accepts a method other than GET.
+8. **The priority rule computed in the backend equals the rule as printed**, section 21.5, checked by
+   recomputing every row from the printed rule and comparing.
+
+### 21.7 Deferred, with what would settle each
+
+**Whether the priority rule orders the queue well.** Fourteen episodes, one HIGH, and ADR 0009 shows the
+disputed term changes no band. What would settle it: a dataset with review history, and episodes whose
+missing evidence is obtainable.
+
+**Whether an operator can answer the eight questions the console is designed around** without leaving the
+page. That is a usability result and needs operators. What would settle it: a session with people who do
+this work, which this project has no access to.
+
+**Prose quality of the generated summary.** No model is called, so there is no generated prose to judge,
+and section 19.8's rubric stays unexercised.
+
+### 21.8 The Phase 6 gate
+
+All eight marks of 21.6 pass. The three curated cases render, including the abstention case. The hold-out
+is untouched, which section 19.2 checks. No figure on any screen is absent from a run manifest, and the
+results table covers every figure the API serves.

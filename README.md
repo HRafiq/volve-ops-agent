@@ -17,7 +17,7 @@ honestly. Several did, and this README says which.
 | 3 | Agent A: bounded investigation controller with a provenance gate | **complete** |
 | 4 | Evaluation harness: version freeze, leakage audit, results table | **complete** |
 | 5 | Agent B: NPT post-mortem, lessons register, correction store | **complete** |
-| 6 | Operator console | **next** |
+| 6 | Operator console | **in progress** |
 | 7 | Failure, health and security experiments | not started |
 | 8 | Frozen hold-out scored once, public write-up | not started |
 
@@ -191,10 +191,10 @@ checked by parsing every workflow file. Anything that would call a model is manu
 
 | Document | What it is |
 |---|---|
-| [`docs/eval_protocol.md`](docs/eval_protocol.md) | The pre-registration. Its commit history is the evidence, tagged `prereg-v0` through `prereg-v11`, with no `v10` and section 13 saying why |
+| [`docs/eval_protocol.md`](docs/eval_protocol.md) | The pre-registration. Its commit history is the evidence, tagged `prereg-v0` through `prereg-v12`, with no `v10` and section 13 saying why |
 | [`docs/data_profile.md`](docs/data_profile.md) | What the data turned out to be, and the coverage gaps that limit what can be claimed |
 | [`docs/results_table.md`](docs/results_table.md) | Every figure in the project, with its denominator and whether it is gated, reported or deferred |
-| [`docs/architecture_decisions/`](docs/architecture_decisions/) | Eight decisions, including all three feasibility outcomes |
+| [`docs/architecture_decisions/`](docs/architecture_decisions/) | Nine decisions, including all three feasibility outcomes |
 | [`labels/development_pass1.jsonl`](labels/development_pass1.jsonl) | The label set itself, each row with its provenance, span and the rule that settled it |
 | [`docs/postmortem_results.md`](docs/postmortem_results.md) | Where the non-productive time went, and how little of it any label characterises |
 
