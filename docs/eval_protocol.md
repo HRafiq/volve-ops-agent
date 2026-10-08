@@ -1,14 +1,16 @@
 # Evaluation protocol
 
-Version: v12
-Date: 2026-10-07
+Version: v13
+Date: 2026-10-08
 Status: pre-registered. Pushed before the work it judges.
-Amendments since v0: eight, recorded in section 13 and every one labelled post-inspection. Five of
+Amendments since v0: nine, recorded in section 13 and every one labelled post-inspection. Five of
 them correct pass marks that could not fail, which is this project's recurring defect and is named as
-such in amendments 6, 7 and 8.
+such in amendments 6, 7 and 8. Amendment 9 corrects a factual claim rather than a check.
 New in v7 to v11: sections 19 and 20 and the amendments correcting them. Amendment 7 records three more
 marks that could not fail, a pre-registered gate dropped with the count rewritten around it, five holes
 in the correction store, and the thresholds section 20 promised to state and did not.
+New in v13: amendment 9 corrects two statements about the priority rule that were wrong when v12 was
+pushed, caught by writing one of them as a test and watching it fail.
 New in v12: section 21 fixes the operator console, before any of it is built. Its first rule is that
 the console renders and does not compute, because a display that computes is a second implementation of
 the domain, and sections 14.3 and 20.2 both record what happens when one of those is mistaken for a
@@ -725,6 +727,29 @@ this document was silent on it until amendment 6. The rule now: an amendment tha
 which has just failed must state what the check was examining when it failed, why the failure was the
 check's rather than the project's, and what still audits the thing the check was supposed to audit. If
 it cannot, the finding stands and the project is in breach, not the check.
+
+### Amendment 9, v12 to v13: a factual claim in section 21.5 that was wrong when it was pushed
+
+Date: 2026-10-08. Made **after** the priority rule was computed over the development episodes, labelled
+as such. No threshold moves and no pass mark changes; what changes is a sentence about the rule.
+
+Section 21.5 as pushed said that **two** of the rule's four terms fire on nothing in a first run, and
+ADR 0009 as written concluded from that the rule "reduces to shortfall plus duration" on this dataset.
+One term does fire on nothing: no episode has a review state until an operator creates one. The other,
+an unresolved verdict in an attention band, fires on **5 of 14**, and removing it moves the single HIGH
+episode to MEDIUM and leaves the queue with no HIGH case at all.
+
+So the rule does not reduce to shortfall plus duration, and the term that distinguishes it is the only
+thing in the rule that earns a promotion on this data. Both corrected statements are now in 21.5 and in
+the ADR.
+
+**How it was caught, because that is the transferable part.** The claim was written into a test as an
+assertion, and the test failed. The first draft of ADR 0009 also carried two wrong term counts, 4 and 3
+where the manifests say 5 and 5, taken from a scratch script rather than from the published run. Phase
+5 ended with four rounds of review finding figures asserted rather than computed, and the first
+pre-registration written after it repeated the pattern inside a day. The rule that survives: **write the
+claim as an executable assertion in the same change that publishes it.** A sentence in a protocol has no
+test; the same sentence as a test does.
 
 ### Amendment 8, v10 to v11: what amendment 7 claimed and did not deliver
 
@@ -2229,9 +2254,16 @@ demonstrate.
   `moderate`;
 - total **5** or more is HIGH, **3** to 4 is MEDIUM, 2 or less is LOW.
 
-Printed under the table with each row's score, and printed with the count of episodes each term fires on,
-because two of the four terms fire on nothing in a first run and a rubric must not imply otherwise. The
-thresholds do not move after this section is pushed.
+Printed under the table with each row's score, and printed with the count of episodes each term fires
+on, because the review term fires on nothing until an operator uses the console and a rubric must not
+imply otherwise. The thresholds do not move after this section is pushed.
+
+Two measurements accompany the rule wherever it is printed, both in ADR 0009. The choice between the
+clause above and the blunter form, a point for any unresolved verdict, changes the band of **0 of 14**
+episodes, so this dataset cannot tell the two apart. Removing the term altogether moves the single HIGH
+episode to MEDIUM and leaves the queue with no HIGH case, so the term is the one thing in the rule that
+earns a promotion here. Both statements are published because the first alone would read as the term
+being inert, which it is not.
 
 ### 21.6 Pass marks that gate
 

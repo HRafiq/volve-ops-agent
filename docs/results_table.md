@@ -75,6 +75,12 @@
 | All five section 18.7 gates pass | pass | 14 findings | `gated` | - | two of the five have little on this corpus to examine; docs/investigation_results.md says which |
 | Document citations | 2 | across all 14 findings | `reported` | - | - |
 | Findings reaching `documented_root_cause` | 1 | 14 findings | `reported` | - | one; ADR 0008 records why it is rare rather than impossible |
+| Wells with an episode | 2 | 5 development producing wells swept | `reported` | - | two of five; section 19.11 declines to call 14 episodes on 2 wells a benchmark |
+| Cumulative rate shortfall across all episodes | 529000.91 | Sm3, summed over 14 development episodes | `reported` | - | rate shortfall against the fitted expectation, not a measured loss |
+| Deferred volume across all episodes | 103669.69 | Sm3, summed over 14 development episodes | `reported` | - | possibly deferred rather than lost; the console says so wherever it appears |
+| Episodes with no conclusion issued | 4 | 14 episodes | `reported` | - | `insufficient_evidence`; section 21.4 renders it as its own state, not as an error |
+| Episodes without a single supported explanation | 7 | 14 episodes | `reported` | - | half; ADR 0009 records why this does not raise queue priority on its own |
+| Poorly evidenced episodes | 0 | 14 episodes, over the section 9 gap fraction | `reported` | - | zero; the detector's own data-quality flag, shown in the queue |
 | Agreement with `strongest-deviation` on the driver family | 5 | the episodes where both named a driver | `reported` | - | the two share most of their implementation, so this largely measures shared code |
 | Episodes where both named a driver | 7 | 14 episodes; the baseline abstains on 7 | `reported` | - | - |
 | False root-cause claims, mechanical half | 0 | findings claiming a documented root cause; computed by the harness | `gated` | - | - |

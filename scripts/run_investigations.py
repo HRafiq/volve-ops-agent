@@ -202,6 +202,19 @@ def main(argv: list[str] | None = None) -> int:
                 "well": episode.well,
                 "onset": episode.onset.isoformat(),
                 "offset": episode.offset.isoformat(),
+                # The episode's own figures, published here because protocol section 21.1 confines
+                # the console to rendering: the queue needs a shortfall and a duration per episode,
+                # and the alternative is an API that recomputes them, which is the second
+                # implementation sections 14.3 and 20.2 both had to retract a claim about.
+                "episode_days": (episode.offset - episode.onset).days + 1,
+                "cumulative_rate_shortfall_sm3": round(episode.cumulative_rate_shortfall_sm3, 2),
+                "deferred_volume_sm3": round(episode.deferred_volume_sm3, 2),
+                "reference_rate_sm3_per_day": round(episode.reference_rate_sm3_per_day, 2),
+                "shortfall_threshold_sm3": round(episode.shortfall_threshold_sm3, 2),
+                "gap_fraction": round(episode.gap_fraction, 4),
+                "poorly_evidenced": episode.poorly_evidenced,
+                "open_ended": episode.open_ended,
+                "valid_producing_days": episode.valid_producing_days,
                 "verdict": finding.verdict.value,
                 "stop_reason": finding.stop_reason.value,
                 "curtailed": finding.curtailed,
@@ -275,9 +288,23 @@ def main(argv: list[str] | None = None) -> int:
     for name, passed in marks.items():
         print(f"  {'PASS' if passed else 'FAIL'}  {name}")
 
+    # Aggregates the console's Production KPI strip shows. Published here rather than summed in the
+    # API, for protocol section 21.1's reason: a figure an operator reads has to come from a run
+    # manifest, and a sum computed in a serving layer has no gate on it.
+    total_shortfall = sum(float(r["cumulative_rate_shortfall_sm3"]) for r in rows)
+    total_deferred = sum(float(r["deferred_volume_sm3"]) for r in rows)
+    no_conclusion = sum(1 for r in rows if r["verdict"] == Verdict.INSUFFICIENT_EVIDENCE.value)
+    unresolved = sum(1 for r in rows if r["verdict"] != Verdict.SUPPORTED_EXPLANATION.value)
+
     payload: dict[str, Any] = {
-        "protocol_version": "v4",
+        "protocol_version": "v12",
         "episodes": len(rows),
+        "wells_with_an_episode": len({r["well"] for r in rows}),
+        "cumulative_rate_shortfall_sm3": round(total_shortfall, 2),
+        "deferred_volume_sm3": round(total_deferred, 2),
+        "episodes_with_no_conclusion": no_conclusion,
+        "episodes_without_a_single_explanation": unresolved,
+        "poorly_evidenced_episodes": sum(1 for r in rows if r["poorly_evidenced"]),
         "development_wells": sorted(usable),
         # As above: the dates this run actually built bundles over. The offset comparison in
         # diagnostics reads every well in this population, so a hold-out well present here reaches

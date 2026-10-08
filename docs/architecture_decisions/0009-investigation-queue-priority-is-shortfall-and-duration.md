@@ -30,16 +30,24 @@ only when the verdict is unresolved **and** the section 19.4 evidence band is `h
 the case where the evidence was there and the system still could not choose between explanations.
 
 **Neither form changes the priority band of a single episode. 0 of 14 differ.** The bucket counts are
-identical under both: 1 HIGH, 5 MEDIUM, 8 LOW.
+identical under both: 1 HIGH, 5 MEDIUM, 8 LOW. The one HIGH episode is `15/9-F-14` from 2009-05-29,
+which scores 5 as shortfall 3 plus duration plus the unresolved term, and it scores 5 under both
+forms.
 
 The reason is visible once the terms are counted rather than argued about:
 
 | term | episodes it fires on |
 |---|---:|
 | cumulative shortfall | 14 of 14, and it is the only term with three levels |
-| episode lasts 40 days or more | 4 of 14 |
+| episode lasts 40 days or more | 5 of 14 |
 | review is pending | **0 of 14** |
-| no single explanation supported | 7 of 14 blunt, 3 of 14 banded |
+| no single explanation supported, blunt form | 7 of 14 |
+| the same, banded form | 5 of 14 |
+
+Every count above is recomputed from `data/cache/investigation_run.json` and the evidence bands in
+`data/cache/evaluation_run.json`. A first draft of this table said 4 and 3 for the second and last
+rows, taken from an earlier scratch script rather than from the published manifests, and the figures
+were wrong in the document whose subject is a rule nobody can check unless its figures are right.
 
 The review term is zero because no review state exists until an operator creates one, so on a first
 run it can never fire. The unresolved term fires on half the queue under the blunt form, and in every
@@ -68,9 +76,10 @@ can resolve.
 
 ## Consequences
 
-The queue's default sort is priority, then cumulative shortfall. Because the rule reduces to those two
-quantities here, that default is close to sorting by shortfall alone, and a reader comparing the two
-orderings will find them nearly identical. That is the honest state of it.
+The queue's default sort is priority, then cumulative shortfall. Thirteen of the fourteen episodes would
+sit in the same band under shortfall and duration alone, so a reader comparing that ordering with the
+full rule finds one row moved. That is the honest state of it: the rule's extra terms earn one promotion
+on this dataset, and the promotion is defensible on its face.
 
 The disputed clause cannot be validated on Volve. It would take a dataset with review history and with
 episodes whose missing evidence is obtainable. Both are named in protocol section 21.7 as deferred,

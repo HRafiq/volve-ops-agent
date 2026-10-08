@@ -398,6 +398,65 @@ ROWS: Final[tuple[MetricRow, ...]] = (
         status=Status.REPORTED,
         note="one; ADR 0008 records why it is rare rather than impossible",
     ),
+    # ------------------------------------------------------- figures the console's KPI strip shows
+    #
+    # Published by the investigation harness rather than summed in the serving layer. Protocol
+    # section 21.1: a figure an operator reads comes from a run manifest, because a sum computed
+    # where it is displayed has no gate on it and no row here.
+    MetricRow(
+        layer="Investigation",
+        metric="Wells with an episode",
+        manifest="investigation",
+        key="wells_with_an_episode",
+        denominator="5 development producing wells swept",
+        status=Status.REPORTED,
+        note="two of five; section 19.11 declines to call 14 episodes on 2 wells a benchmark",
+    ),
+    MetricRow(
+        layer="Investigation",
+        metric="Cumulative rate shortfall across all episodes",
+        manifest="investigation",
+        key="cumulative_rate_shortfall_sm3",
+        denominator="Sm3, summed over 14 development episodes",
+        status=Status.REPORTED,
+        note="rate shortfall against the fitted expectation, not a measured loss",
+    ),
+    MetricRow(
+        layer="Investigation",
+        metric="Deferred volume across all episodes",
+        manifest="investigation",
+        key="deferred_volume_sm3",
+        denominator="Sm3, summed over 14 development episodes",
+        status=Status.REPORTED,
+        note="possibly deferred rather than lost; the console says so wherever it appears",
+    ),
+    MetricRow(
+        layer="Investigation",
+        metric="Episodes with no conclusion issued",
+        manifest="investigation",
+        key="episodes_with_no_conclusion",
+        denominator="14 episodes",
+        status=Status.REPORTED,
+        note="`insufficient_evidence`; section 21.4 renders it as its own state, not as an error",
+    ),
+    MetricRow(
+        layer="Investigation",
+        metric="Episodes without a single supported explanation",
+        manifest="investigation",
+        key="episodes_without_a_single_explanation",
+        denominator="14 episodes",
+        status=Status.REPORTED,
+        note="half; ADR 0009 records why this does not raise queue priority on its own",
+    ),
+    MetricRow(
+        layer="Investigation",
+        metric="Poorly evidenced episodes",
+        manifest="investigation",
+        key="poorly_evidenced_episodes",
+        denominator="14 episodes, over the section 9 gap fraction",
+        status=Status.REPORTED,
+        note="zero; the detector's own data-quality flag, shown in the queue",
+    ),
     MetricRow(
         layer="Investigation",
         metric="Agreement with `strongest-deviation` on the driver family",
