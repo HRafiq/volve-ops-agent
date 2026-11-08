@@ -111,13 +111,15 @@ def main(argv: list[str] | None = None) -> int:
     contradictions: tuple[Any, ...] = ()
     class_3_ran = False
     health_half_ran = False
+    health_compared = 0
     if not have_artifacts:
         print("  cached run artifacts absent. Skipped, not passed.")
     else:
         try:
             per_episode = contradictions_in_console(store)
-            health_found, health_half_ran = health_contradictions(store)
-            contradictions = (*per_episode, *health_found)
+            health_result, health_half_ran = health_contradictions(store)
+            contradictions = (*per_episode, *health_result.contradictions)
+            health_compared = health_result.compared
             class_3_ran = True
         except Exception as exc:
             print(f"  ! could not read the console payloads: {exc}")
@@ -126,8 +128,15 @@ def main(argv: list[str] | None = None) -> int:
         # Reported separately. The per-episode half runs without the section 22 manifests and the
         # health half cannot, so one flag covering both said a check had run when half of it had
         # been skipped — which is what a first-ever run always looks like.
-        print(f"  health screen walked: {health_half_ran}")
+        print(f"  health screen walked: {health_half_ran} ({health_compared} figures compared)")
         print(f"  class 3, figures contradicting their records: {len(contradictions)}")
+        # The guard marks 2 and 13 have and this mark did not. Zero contradictions over zero
+        # figures is not a clean result, and an empty queue produced exactly that.
+        if health_half_ran and health_compared == 0:
+            failures.append(
+                "mark 8: class 3 walked the health screen and compared no figures at all"
+            )
+            print("  ! compared nothing")
         if contradictions:
             failures.append(f"mark 8: {len(contradictions)} figure(s) contradict their records")
             for contradiction in contradictions[:5]:
@@ -136,8 +145,18 @@ def main(argv: list[str] | None = None) -> int:
     print("\nmark 11: health figures resolve to a manifest")
     health_examined = 0
     health_ran = False
-    if not have_artifacts or not (args.cache / "ablation_run.json").exists():
+    # `security_run.json` is an input to this check and an output of this script, so on a
+    # first-ever run the screen cannot be assembled and the mark reports a skip rather than
+    # crashing. That is a real limitation and it is stated rather than hidden: **marks 8-health
+    # and 11 validate the screen built from the previous run's manifest**, not from the one this
+    # run is about to write. A second run checks what the first produced.
+    if (
+        not have_artifacts
+        or not (args.cache / "ablation_run.json").exists()
+        or not (args.cache / "security_run.json").exists()
+    ):
         print("  section 22 manifests absent. Skipped, not passed.")
+        print("  (this mark reads the manifest a previous run wrote; re-run to check this one)")
     else:
         try:
             from volve_ops.console import assemble, gates
@@ -279,6 +298,7 @@ def main(argv: list[str] | None = None) -> int:
             "classes": len(FAILURE_CLASSES),
             "class_3_ran": class_3_ran,
             "class_3_health_screen_walked": health_half_ran,
+            "class_3_health_figures_compared": health_compared,
             "class_3_contradictions": len(contradictions) if class_3_ran else None,
             "detail": [str(c) for c in contradictions[:20]],
             "asserted_in": "tests/test_provenance_failures.py",

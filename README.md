@@ -88,13 +88,13 @@ usable downhole pressure on 31.2 percent of its producer rows where counting non
 
 **Operator console.** A read-only review tool over the same payloads, served by the API that
 produces them. All eight of section 21.6's gates pass and none examines nothing: 631 payload figures
-resolve to a manifest key, a fact id, an event id, an artifact file or a pre-registered rule; 15 routes enumerated,
+resolve to a manifest key, a fact id, an event id, an artifact file or a pre-registered rule; 16 routes enumerated,
 and the only four that accept anything but GET are the review actions.
 
 | Figure | Value |
 |---|---|
 | Payload figures resolving to a source | 631 of 631 |
-| Routes that write | 4 of 15, all of them review actions |
+| Routes that write | 4 of 16, all of them review actions |
 | Abstentions rendering as their own state | 4 of 4 |
 | Currency figures published | 0, because no oil price was supplied |
 
@@ -279,7 +279,7 @@ checked by parsing every workflow file. Anything that would call a model is manu
 
 | Document | What it is |
 |---|---|
-| [`docs/eval_protocol.md`](docs/eval_protocol.md) | The pre-registration. Its commit history is the evidence, tagged `prereg-v0` through `prereg-v15`, with no `v10` and section 13 saying why |
+| [`docs/eval_protocol.md`](docs/eval_protocol.md) | The pre-registration. Its commit history is the evidence, tagged `prereg-v0` through `prereg-v16`, with no `v10` and section 13 saying why |
 | [`docs/data_profile.md`](docs/data_profile.md) | What the data turned out to be, and the coverage gaps that limit what can be claimed |
 | [`docs/results_table.md`](docs/results_table.md) | Every figure in the project, with its denominator and whether it is gated, reported or deferred |
 | [`docs/architecture_decisions/`](docs/architecture_decisions/) | Nine decisions, including all three feasibility outcomes |

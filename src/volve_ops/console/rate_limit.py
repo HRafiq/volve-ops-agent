@@ -8,10 +8,23 @@ further than it goes is worse than none:
 ceiling is the limit times the worker count. The console is served by one process, which is why
 this is adequate here and would not be behind a scaled deployment.
 
-**It is keyed by the peer address**, and `X-Forwarded-For` is deliberately not consulted. A
-caller can set that header to whatever it likes, so trusting it hands the key to the attacker.
-Behind a proxy the peer address is the proxy's, and every client shares one bucket: that fails
-closed, throttling everyone rather than nobody, and the deployment note has to say so.
+**It is keyed by the peer address, and a peer address this process cannot vouch for collapses to
+one shared bucket.** `X-Forwarded-For` is never read here, because a caller can set it to whatever
+it likes and trusting it hands the key to the attacker.
+
+That is not sufficient on its own, and the first version of this module claimed it was. uvicorn
+defaults `proxy_headers=True` with `forwarded_allow_ips="127.0.0.1"`, so in the deployment this
+project documents — uvicorn on loopback — `ProxyHeadersMiddleware` has already rewritten
+`scope["client"]` from the caller's own header before any of this runs. The limiter was then
+keying on an attacker-chosen string, and a rotating header took 100 requests out of 100 through a
+limit of 60. The claim that the header is not consulted was true of this file and false of the
+process.
+
+So `client_key` checks whether the address it was handed looks like one that arrived in a
+forwarded header, and if it does, every such caller shares a single bucket. That is the "fails
+closed, throttling everyone rather than nobody" the module claimed from the start and did not do.
+The deployment note still matters: run with `--no-proxy-headers` unless a trusted proxy is really
+in front, which is what `scripts/serve_console.py` does.
 
 **A fixed window admits a burst at the boundary.** Up to twice the limit can arrive across two
 adjacent windows. A sliding window would not, and the extra machinery is not worth it for a
@@ -32,6 +45,32 @@ from volve_ops.console.limits import (
 
 #: The address used when a request arrives with no peer, which happens in tests.
 UNKNOWN_CLIENT: Final[str] = "unknown"
+
+#: The single bucket every caller shares when the peer address cannot be trusted. One key, so a
+#: rotating forwarded header buys nothing: the limit applies to all of them together.
+FORWARDED_CLIENT: Final[str] = "forwarded-untrusted"
+
+
+def client_key(peer: str | None, forwarded_for: str | None) -> str:
+    """The bucket key for one request, refusing to trust an address a caller may have chosen.
+
+    `peer` is `request.client.host`, which a proxy-headers middleware may already have replaced
+    with a value out of `forwarded_for`. There is no way to recover the true peer once that has
+    happened, so the test is whether the address we were handed appears in the header: if it does,
+    this process cannot tell a real proxy from a caller inventing hops, and everything in that
+    position shares one bucket.
+
+    The cost is real and is the documented trade: behind a genuine proxy every client is throttled
+    together. That is the safe direction, and `--no-proxy-headers` is the fix for a deployment
+    that is not behind one.
+    """
+    if not peer:
+        return UNKNOWN_CLIENT
+    if forwarded_for:
+        hops = {hop.strip() for hop in forwarded_for.split(",") if hop.strip()}
+        if peer in hops:
+            return FORWARDED_CLIENT
+    return peer
 
 
 @dataclass

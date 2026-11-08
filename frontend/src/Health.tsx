@@ -153,8 +153,26 @@ export function Health({ health }: { health: SystemHealth }): JSX.Element {
       <div className="panel">
         <header>
           <h2>Retrieval ablation</h2>
+          <span style={{ fontSize: 12, color: "var(--steel-600)" }}>
+            what removing an episode&rsquo;s in-window document changes
+          </span>
         </header>
-        <Rows rows={health.retrieval_ablation} />
+        {/* Not <Rows>. These values are booleans, and `formatValue` renders a boolean as pass or
+            FAIL, so the episode protocol section 22.4 mark 9 requires be reported as moving
+            nothing was printed as a failed check. An ablation outcome is a result, not a verdict
+            on the system, and the words come from the harness that measured it. */}
+        <table className="health-rows">
+          <tbody>
+            {health.retrieval_ablation.map((row) => (
+              <tr key={row.label}>
+                <td>{row.label}</td>
+                <td className="note" title={row.value.source}>
+                  {row.note}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
         <p className="note">{health.retrieval_note}</p>
       </div>
 

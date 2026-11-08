@@ -80,7 +80,8 @@ class RunStore:
     def manifests(self) -> dict[str, Mapping[str, Any]]:
         """The five run manifests, by the name the results table refers to them by.
 
-        The same `MANIFESTS` map the section 19.3 coverage gate uses, so a source string that
+        The six of `MANIFESTS`, the same map the section 19.3 coverage gate uses, so a source
+        string that
         resolves for the console resolves for the gate and the two cannot drift apart.
         """
         return {name: self._read(self.cache / file) for name, file in MANIFESTS.items()}
@@ -113,7 +114,7 @@ class RunStore:
     def health_manifests(self) -> dict[str, Mapping[str, Any]]:
         """Every manifest a health figure may be sourced to.
 
-        The five of `MANIFESTS` plus the two section 22 runs, so a source on the health screen
+        The six of `MANIFESTS` plus the two section 22 runs, so a source on the health screen
         resolves under mark 1 exactly as a source on any other screen does. `MANIFESTS` itself is
         untouched: adding to it changes what section 19.3 audits.
         """

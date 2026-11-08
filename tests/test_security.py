@@ -889,10 +889,11 @@ class TestTheHealthHalfReportsWhetherItRan:
         (tmp_path / "investigation_run.json").write_text(
             json.dumps({"protocol_version": "v17", "findings": []}), encoding="utf-8"
         )
-        found, health_ran = health_contradictions(
+        result, health_ran = health_contradictions(
             RunStore(cache=tmp_path, traces=tmp_path / "investigations")
         )
-        assert found == ()
+        assert result.contradictions == ()
+        assert result.compared == 0
         assert health_ran is False
 
     def test_a_failure_in_the_health_half_is_not_swallowed(self, tmp_path: Path) -> None:
@@ -917,3 +918,77 @@ class TestTheHealthHalfReportsWhetherItRan:
 
         with pytest.raises(Exception, match=r"."):
             health_contradictions(RunStore(cache=tmp_path, traces=tmp_path / "investigations"))
+
+
+class TestThePayloadSideWalkIsPinnedToo:
+    """Round 2 found the manifest side of the comparison blind to lists. This is the other side.
+
+    `manifest_values` descends lists in the manifest; `figures_contradicting_their_records`
+    descends them in the **payload**. Six tests pin the first. Removing the payload-side descent
+    dropped the health screen from 33 figures compared to 1 and the whole suite still passed,
+    because every one of those six builds a flat dict payload and every real payload is tuples.
+    """
+
+    def test_a_figure_inside_a_tuple_is_compared(self) -> None:
+        from volve_ops.console.sources import Sourced
+        from volve_ops.security.provenance_failures import compare_figures
+
+        payload = {
+            "rows": (
+                Sourced(value=1.0, source="m.a", unit=""),
+                Sourced(value=2.0, source="m.b", unit=""),
+            )
+        }
+        result = compare_figures(payload, {"m.a": 1.0, "m.b": 2.0})
+        assert result.compared == 2
+        assert result.contradictions == ()
+
+    def test_a_contradiction_inside_a_tuple_is_found(self) -> None:
+        from volve_ops.console.sources import Sourced
+        from volve_ops.security.provenance_failures import compare_figures
+
+        payload = {"rows": (Sourced(value=99.0, source="m.a", unit=""),)}
+        result = compare_figures(payload, {"m.a": 1.0})
+        assert len(result.contradictions) == 1
+
+    def test_a_figure_nested_in_a_model_inside_a_tuple_is_compared(self) -> None:
+        # The real shape: SystemHealth holds tuples of HealthRow, each holding a Sourced.
+        from volve_ops.console.payloads import HealthRow
+        from volve_ops.console.sources import Sourced
+        from volve_ops.security.provenance_failures import compare_figures
+
+        payload = {
+            "rows": (
+                HealthRow(label="x", value=Sourced(value=5.0, source="m.a", unit=""), note=""),
+            )
+        }
+        result = compare_figures(payload, {"m.a": 7.0})
+        assert result.compared == 1
+        assert len(result.contradictions) == 1
+
+    def test_the_real_health_payload_compares_many_figures(self) -> None:
+        """A denominator over the actual screen, not a synthetic one.
+
+        Skipped without the cache, which is why the synthetic tests above exist as well: this is
+        the one that would notice the payload walk losing a container type the others do not use.
+        """
+        from volve_ops.console import assemble
+        from volve_ops.console.store import RunStore
+        from volve_ops.security.provenance_failures import compare_figures, manifest_values
+
+        if not Path("data/cache/security_run.json").exists():
+            pytest.skip("no section 22 manifests")
+        store = RunStore()
+        result = compare_figures(
+            {"system_health": assemble.system_health(store)},
+            manifest_values(store.health_manifests()),
+        )
+        assert result.compared >= 30, result.compared
+        assert result.vacuous is False
+
+    def test_a_comparison_over_nothing_is_vacuous(self) -> None:
+        from volve_ops.security.provenance_failures import compare_figures
+
+        result = compare_figures({"empty": {}}, {"m.a": 1.0})
+        assert result.compared == 0
+        assert result.vacuous is True

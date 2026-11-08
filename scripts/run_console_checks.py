@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from volve_ops.console import assemble, gates
+from volve_ops.console.assemble import CONSOLE_PROTOCOL_VERSION
 from volve_ops.console.priority import Scored, score_episode, term_counts
 from volve_ops.console.review import ReviewLog
 from volve_ops.console.store import RunStore, investigation_id
@@ -147,7 +148,10 @@ def main(argv: list[str] | None = None) -> int:
 
     marks = {outcome.name: outcome.passed for outcome in outcomes}
     payload = {
-        "protocol_version": "v14",
+        # Read from the document. A constant here is the defect amendment 9 named and
+        # round 2 of the phase 7 review fixed in run_security_checks.py; the same
+        # line one file over was left at v14 while the document was at v17.
+        "protocol_version": CONSOLE_PROTOCOL_VERSION,
         "console_version": "console-v0",
         "queue_rows": len(queue.rows),
         "detail_screens": len(details),

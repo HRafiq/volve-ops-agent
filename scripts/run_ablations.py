@@ -215,6 +215,10 @@ def main(argv: list[str] | None = None) -> int:
         row["verdict_changed"] = row["verdict_with"] != row["verdict_without"]
         row["band_changed"] = row["evidence_band_with"] != row["evidence_band_without"]
         row["level_changed"] = row["highest_level_with"] != row["highest_level_without"]
+        # The words an operator reads, written by the harness that knows what moved. The console
+        # rendered the boolean through a pass/fail formatter and printed FAIL beside the episode
+        # section 22.4 mark 9 requires be reported as moving nothing.
+        row["outcome_label"] = "the causal level moved" if row["level_changed"] else "nothing moved"
         retrieval_rows.append(row)
         moved = [
             k[: -len("_changed")]

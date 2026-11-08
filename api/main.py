@@ -106,7 +106,14 @@ async def bound_requests(request: Request, call_next: Any) -> Response:
     The limiter's own limits are in its module docstring and they are real: one process, keyed by
     peer address, fixed window. This stops a loop; it is not traffic shaping.
     """
-    client = request.client.host if request.client else rate_limit.UNKNOWN_CLIENT
+    # Not `request.client.host` on its own. uvicorn's proxy-headers middleware runs outside this
+    # one and may already have replaced the peer with a value from the caller's own header, which
+    # made the bound bypassable by rotating it. `client_key` collapses an address it cannot vouch
+    # for into a single shared bucket.
+    client = rate_limit.client_key(
+        request.client.host if request.client else None,
+        request.headers.get("x-forwarded-for"),
+    )
     limiter = rate_limit.limiter_for(request.url.path)
     allowed, remaining = limiter.check(client)
     if not allowed:

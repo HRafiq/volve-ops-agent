@@ -3,7 +3,7 @@
 Version: v17
 Date: 2026-11-08
 Status: pre-registered. Pushed before the work it judges.
-Amendments since v0: twelve, recorded in section 13 and every one labelled post-inspection. Five of
+Amendments since v0: twelve, recorded in section 13 and every one labelled post-inspection. Six of
 them correct pass marks that could not fail, which is this project's recurring defect and is named as
 such in amendments 6, 7 and 8. Amendment 9 corrects a factual claim rather than a check.
 New in v17: amendment 12 records what Phase 7 did not deliver as section 22 wrote it. Mark 11
@@ -774,15 +774,27 @@ pointed at the health payload, but its walk over the manifests handled mappings 
 lists, so it collected 221 of the 768 numeric leaves and compared nothing whose source ran through a
 list. On that screen it could see the twenty-six figures read straight out of a manifest key and
 none of the seven derived ones, which is to say it could see only the figures that could not be
-wrong. Worse, every figure the repair itself added was in the blind half. Corrupting a band count to
-7,000 and the selected model's episode count to 1,014 left mark 8, mark 11 and both test files
-reporting clean.
+wrong. Worse, every figure the repair itself added was in the blind half. Corrupting the **screen's** band count to 7,000 and its
+selected-model episode count to 1,014 left mark 8, mark 11 and both test files reporting clean.
+
+A third pass established what that anecdote does and does not show, and the distinction is worth
+stating. Corrupting the **manifest** still leaves every mark clean, and always will: the screen
+renders what the manifest holds, so a figure read straight from the key it cites is compared
+against itself. **Class 3 over this screen catches a figure the console derives or mis-sources, not
+a corrupt manifest**, and nothing on the console side could catch the latter, because the manifest
+is the only record of what the harness measured. It is a real check — a figure published under a
+sibling key fires it — and it is narrower than the first two rounds of this amendment implied.
 
 What stands now: the walk covers lists with the index as a path segment and records booleans as 0
 and 1, so a flipped flag is a contradiction; every derived figure on the screen names the indexed
 leaf it came from rather than the container, because a source naming a container is one mark 1
-accepts and class 3 cannot compare; and six tests build synthetic manifests and make the value check
-fail, so it runs on every push without a dataset. That last point was its own hole: the health
+accepts and class 3 cannot compare. One container source remains and is not an oversight: the
+expectation ablation is a `SourcedTable`, amendment 10's declared exemption, bounded by a row count
+that does resolve rather than by per-cell sources; and twelve tests build synthetic payloads and manifests, of
+which six make the value check fail and two are negative controls, so it runs on every push without
+a dataset. Six of those twelve pin the manifest side of the comparison and six the payload side:
+the payload side was unpinned until a third pass removed its list descent and watched all 909 tests
+still pass. That last point was its own hole: the health
 checks lived only in a module that skips without `data/cache/` and in a harness step that skips for
 the same reason, so this check ran in neither.
 
@@ -803,6 +815,17 @@ prior places all 14 in `moderate`. The result is published with what it cannot s
 there is no ground truth for whether a band was right and that four of the five features are derived
 from inputs to the verdict.
 
+**Four things this amendment did not record until a third pass.** Section 22.5 requires the attack
+fixtures to be "committed"; they are generated in memory by builder functions, which a reader can
+inspect and which is not what the section says, and the results document had quietly dropped the
+word. `console_run.json` stamped `protocol_version: v14` as a constant while the document was at
+v17, which is the defect this amendment records fixing in `run_security_checks.py`, left standing
+one file over. Both section 22 manifests recorded the `commit_sha` of the commit before the one
+that produced them, because they were written from an uncommitted tree — the field was added in
+this phase precisely so a reader could notice a stale artifact, and it recorded a value that could
+not be right. And mark 8 had no vacuity guard: an empty queue produced `class_3_contradictions: 0`
+over zero figures compared, reported as a clean run, which is the rule marks 2 and 13 both carry.
+
 **Mark 3 is checked by hand and gates nothing.** The mark says hostile text must reach the screen as
 text and that the check is made against the rendered output. It is, and it passes, but it runs
 through a browser against a served console rather than in the test suite or in CI, so nothing stops
@@ -822,8 +845,17 @@ whole-map scan with one entry per client made the ordinary case O(1), but at the
 new client still ran a sweep that found nothing stale to delete: 1.5 milliseconds per request during
 a flood of distinct addresses, worse than the implementation it replaced and in exactly the case its
 own docstring gave as the reason for replacing it. The sweep now runs once per window rather than
-once per request, and the measured cost at the cap is 0.9 microseconds. "O(1)" was the wrong word
-for what the first repair achieved.
+once per request: roughly 0.3 to 0.9 microseconds per request depending on how that one sweep is
+amortised, with the sweep itself still costing milliseconds in the request it lands in. "O(1)" was
+the wrong word for what the first repair achieved, and a single microsecond figure is the wrong
+shape for the second: it moved a cost rather than removing it. The limiter's worse defect was not
+the microseconds at all. uvicorn defaults to trusting proxy headers on loopback, so in the
+deployment this project documents the peer address was already the caller's own
+`X-Forwarded-For` value, and a rotating header took 100 requests out of 100 through a limit of 60.
+The module said the header was never consulted, which was true of the file and false of the
+process, and the test asserting it ran under a client that never loads the middleware that does the
+rewriting. An address this process cannot vouch for now collapses to one shared bucket, and the
+test runs against a real server.
 
 **Mark 9 gates nothing.** Section 22.4's preamble says every mark fails the build when it fails. The
 ablation manifest is read by the console and, for key existence, by mark 11; nothing asserts that
@@ -847,8 +879,11 @@ the number of arms the manifest carries, and the harness writes both from the sa
 publishes a document count for every episode it swept, including the ones that open no arm, and the
 gate reconciles the population against the whole sweep.
 
-**Four published figures were wrong**, three in `docs/security_results.md` and two in the README,
-and the second review round found two of them after the first sweep had corrected the other two. The overclaim gate's file count was given as 128 against an artifact in the same repository
+**At least nine published figures were wrong across the two documents**, and no single sweep found
+them all: round 1 corrected two, round 2 found four more after that sweep, and a third pass found
+three more again. The first version of this paragraph said "two" and the second said "four" while
+listing five; both were counting what the current round had just fixed rather than the total, which
+is why this one is written as a floor. The overclaim gate's file count was given as 128 against an artifact in the same repository
 recording 132, because the gate's roots were widened to include `SECURITY.md` after the sentence was
 written. And "884 characters of hostile text" is the length of the whole quote: 844 hostile
 characters preceded by a 39-character benign span and a space.

@@ -158,6 +158,24 @@ class Contradiction:
         )
 
 
+@dataclass(frozen=True)
+class ComparisonResult:
+    """What class 3 found, and how many figures it actually compared to find it.
+
+    The denominator is the point. Marks 2 and 13 both refuse a clean result over an empty set, and
+    `gates.py` opens by saying a gate that passed over nothing has demonstrated nothing. Mark 8
+    published `class_3_contradictions: 0` with no count beside it, so an empty queue produced a
+    reported-clean run over zero figures.
+    """
+
+    contradictions: tuple[Contradiction, ...]
+    compared: int
+
+    @property
+    def vacuous(self) -> bool:
+        return self.compared == 0
+
+
 def figures_contradicting_their_records(
     payloads: Mapping[str, object], fact_values: Mapping[str, float]
 ) -> tuple[Contradiction, ...]:
@@ -180,6 +198,7 @@ def figures_contradicting_their_records(
     from volve_ops.console.sources import Sourced
 
     found: list[Contradiction] = []
+    compared: list[int] = []
 
     def walk(node: object, path: str, payload_name: str) -> None:
         if isinstance(node, Sourced):
@@ -187,6 +206,7 @@ def figures_contradicting_their_records(
             # `bool` before `int|float`: a boolean is an int in Python, and a published flag
             # should be compared against the 1.0/0.0 the manifest walk records for it.
             if recorded is not None and isinstance(node.value, bool | int | float):
+                compared.append(1)
                 published = float(node.value)
                 if not _close(published, recorded):
                     found.append(
@@ -214,7 +234,23 @@ def figures_contradicting_their_records(
 
     for name, payload in payloads.items():
         walk(payload, "", name)
+    _LAST_COMPARED.clear()
+    _LAST_COMPARED.append(len(compared))
     return tuple(found)
+
+
+#: How many figures the last call to `figures_contradicting_their_records` actually compared.
+#: Module state rather than a changed return type, so the primitive keeps its shape for the tests
+#: that pin it; `compare_figures` is the entry point that returns both.
+_LAST_COMPARED: list[int] = [0]
+
+
+def compare_figures(
+    payloads: Mapping[str, object], fact_values: Mapping[str, float]
+) -> ComparisonResult:
+    """`figures_contradicting_their_records` with the denominator beside the result."""
+    found = figures_contradicting_their_records(payloads, fact_values)
+    return ComparisonResult(contradictions=found, compared=_LAST_COMPARED[0])
 
 
 def _close(published: float, recorded: float) -> bool:
@@ -234,7 +270,7 @@ def manifest_values(manifests: Mapping[str, Mapping[str, Any]]) -> dict[str, flo
 
     **Lists are walked, with the index as a segment.** The first version of this walk handled
     mappings and scalars and nothing else, so it collected 221 of the 768 numeric leaves in the
-    seven manifests, and every figure sourced to a path running through a list was skipped as
+    eight manifests, and every figure sourced to a path running through a list was skipped as
     "not a fact we hold" rather than compared. On the health screen that was all seven derived
     figures and none of the literal reads: the check could see only the figures that could not be
     wrong. Independent review found it in the commit that introduced it, which makes this the
@@ -304,7 +340,7 @@ def contradictions_in_console(store: RunStore) -> tuple[Contradiction, ...]:
     return tuple(found)
 
 
-def health_contradictions(store: RunStore) -> tuple[tuple[Contradiction, ...], bool]:
+def health_contradictions(store: RunStore) -> tuple[ComparisonResult, bool]:
     """Class 3 over the System Health screen, and whether it could run at all.
 
     Its own function with its own flag, rather than a second half of the per-episode check. The
@@ -323,6 +359,9 @@ def health_contradictions(store: RunStore) -> tuple[tuple[Contradiction, ...], b
 
     for name in ("security_run.json", "ablation_run.json"):
         if not (store.cache / name).exists():
-            return (), False
-    found = contradictions_in_health(assemble.system_health(store), store.health_manifests())
-    return found, True
+            return ComparisonResult(contradictions=(), compared=0), False
+    result = compare_figures(
+        {"system_health": assemble.system_health(store)},
+        manifest_values(store.health_manifests()),
+    )
+    return result, True

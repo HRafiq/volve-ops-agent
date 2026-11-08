@@ -58,7 +58,7 @@ calibrate.
 | 4. Abstention renders as its own state | **pass** | 4 findings that abstained, and only those |
 | 5. Every money figure carries its assumption | **pass** | 1 money tile |
 | 6. The review log is append-only | **pass** | 5 probes, each of which must be refused |
-| 7. The API is read-only outside the review log | **pass** | 15 routes enumerated from the application |
+| 7. The API is read-only outside the review log | **pass** | 16 routes enumerated from the application |
 | 8. The priority score equals the rule as printed | **pass** | 14 scores recomputed from the printed rule |
 
 None examined nothing. Each is a function in `src/volve_ops/console/gates.py` with a test that makes

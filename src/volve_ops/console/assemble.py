@@ -920,6 +920,11 @@ def _episodes_opened_by_selected(
     )
 
 
+def _level_text(level: object) -> str:
+    """A causal level for a reader. `None` is a level the finding never reached, not the word."""
+    return "no causal level" if level in (None, "None") else str(level)
+
+
 def _health_row(
     label: str, value: Any, source: str, *, unit: str = "", note: str = ""
 ) -> HealthRow:
@@ -957,7 +962,12 @@ def system_health(store: RunStore) -> SystemHealth:
     injection_rows = tuple(
         _health_row(label, injection[key], f"security.injection.{key}", note=note)
         for label, key, note in (
-            ("Invariants held", "invariants_held", "one per payload per live invariant"),
+            (
+                "Held results recorded",
+                "invariants_held",
+                "not one per payload per invariant: two of the seven live invariants "
+                "are only exercised by the two classes that can reach them",
+            ),
             ("Invariants violated", "invariants_violated", ""),
             (
                 "Fixtures not reached",
@@ -968,6 +978,12 @@ def system_health(store: RunStore) -> SystemHealth:
                 "Live invariants untested",
                 "live_invariants_untested",
                 "a suite that ran nothing does not pass",
+            ),
+            (
+                "Of those, under the attacking class",
+                "invariants_held_under_the_exercising_class",
+                "the pairs EXERCISED_BY declares; the gap to the row above is observations from "
+                "classes not written to provoke that invariant",
             ),
             ("Payloads in the corpus", "payloads", "six classes"),
         )
@@ -1112,15 +1128,18 @@ def system_health(store: RunStore) -> SystemHealth:
             ),
             *(
                 _health_row(
-                    f"{row['well']} {row['onset']}: causal level changed",
+                    f"{row['well']} {row['onset']}",
                     # The manifest's own boolean, at its own leaf. The first version published
                     # `1 if row["level_changed"] else 0`, which is the console computing a figure
-                    # and sourcing it to a list, so section 21.1 and class 3 were both bypassed
-                    # in one line.
+                    # and sourcing it to a list, so section 21.1 and class 3 were both bypassed in
+                    # one line. The boolean is correct and its *rendering* was not: `formatValue`
+                    # prints a boolean as pass or FAIL, so the episode mark 9 requires be reported
+                    # as moving nothing was shown as a failed check. The words now come from the
+                    # harness, in the note, and the flag is what class 3 compares.
                     row["level_changed"],
                     f"ablation.retrieval.rows.{index}.level_changed",
-                    note=f"{row['highest_level_with']} with the document, "
-                    f"{row['highest_level_without']} without it",
+                    note=f"{row['outcome_label']}: {_level_text(row['highest_level_with'])} with "
+                    f"the document, {_level_text(row['highest_level_without'])} without it",
                 )
                 for index, row in enumerate(retrieval["rows"])
             ),

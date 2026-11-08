@@ -37,14 +37,14 @@ retrieve, investigate, compose, render.
 
 | | |
 |---|---:|
-| invariants held | 228 |
+| held results recorded | 228 |
 | of those, under the payload class written to attack that invariant | **71** |
 | invariants violated | **0** |
 | fixtures that never reached their consumer | **0** |
 | invariants declared vacuous, not counted as preserved | 3 |
 | live invariants never exercised | 0 |
 
-Two held counts, not one. The suite runs every live invariant against every payload, so most held
+Two held counts, not one. The suite runs most live invariants against every payload, so most held
 results come from a class that was not written to provoke that invariant: a markup payload leaves
 the stage sequence alone, and so would an empty document. Those observations are real and they are
 not evidence that the invariant was tested. The gap between 228 and 71 is the useful part, and
@@ -248,8 +248,10 @@ Every figure on it is read from `security_run.json` or `ablation_run.json`, and 
 resolves under the same mark 1 gate every other screen's figures go through. **Mark 1 asks whether a
 source resolves, which for a manifest path means only that the key exists**, so class 3 now asks the
 stronger question of this screen too: whether the figure equals the value at that key. The count of
-sources the gate examined is on the screen itself rather than quoted here, because it changes
-whenever a row is added and a sentence in a document does not. Section 21.1 holds
+sources the gate examined is in `security_run.json`, which is where it belongs: it changes
+whenever a row is added, and a figure fixed in a sentence drifts from the artifact. A first
+version of this paragraph quoted 28 against 35 examined, and the correction replaced it with a
+claim that the count was on the screen, which it is not. Section 21.1 holds
 here as everywhere: it renders and does not compute, **including its deltas**.
 
 The version comparison prints a reason where a delta would go, because only one scored version
