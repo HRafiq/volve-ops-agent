@@ -17,14 +17,14 @@ honestly. Several did, and this README says which.
 | 3 | Agent A: bounded investigation controller with a provenance gate | **complete** |
 | 4 | Evaluation harness: version freeze, leakage audit, results table | **complete** |
 | 5 | Agent B: NPT post-mortem, lessons register, correction store | **complete** |
-| 6 | Operator console | **in progress** |
-| 7 | Failure, health and security experiments | not started |
+| 6 | Operator console | **complete** |
+| 7 | Failure, health and security experiments | **next** |
 | 8 | Frozen hold-out scored once, public write-up | not started |
 
 The hold-out has never been scored and never been looked at. Phase 4's leakage audit exists to prove
 that mechanically rather than assert it, and it gates the build.
 
-126 tracked files, 615 tests, ruff and mypy strict clean. No model is called by any layer yet: every
+156 tracked files, 656 tests, ruff and mypy strict clean. No model is called by any layer yet: every
 component runs deterministically, which is what makes it testable.
 
 ## What the data refused to support
@@ -80,6 +80,25 @@ The one documented root cause cites a report dated the day before onset: "Closed
 for handover." Three episodes stop on missing evidence rather than guessing, because `15/9-F-12` has
 usable downhole pressure on 31.2 percent of its producer rows where counting non-empty cells reports
 99.8. [Details](docs/investigation_results.md)
+
+**Operator console.** A read-only review tool over the same payloads, served by the API that
+produces them. All eight of section 21.6's gates pass and none examines nothing: 433 payload figures
+resolve to a manifest key, a fact id, an event id or a pre-registered rule; 15 routes enumerated,
+and the only four that accept anything but GET are the review actions.
+
+| Figure | Value |
+|---|---|
+| Payload figures resolving to a source | 433 of 433 |
+| Routes that write | 4 of 15, all of them review actions |
+| Abstentions rendering as their own state | 4 of 4 |
+| Currency figures published | 0, because no oil price was supplied |
+
+Its first rule is the one that makes the rest checkable: **the console renders and does not
+compute.** Where it needed a figure no manifest held, the harness that owns the figure was extended
+rather than the console allowed to derive it. That forced out a result nobody could previously read:
+the selected expectation model's lower-tail rate is **0.563** at a 7-day horizon against a protocol
+band of 0.05 to 0.20, so 56 percent of evaluated days fall below a bound that permits at most 20. The
+expectation panel shows it where the band is drawn. [Details](docs/console_results.md)
 
 **Post-mortem and lessons register.** Non-productive time is 8,563 hours of 39,495 recorded, 21.7
 percent. The register is built from the source's own fields rather than from the machine-assisted
@@ -178,6 +197,14 @@ python scripts/run_label_scoring.py labels/development_pass1.jsonl
 python scripts/run_investigations.py "data/cache/Volve production data.xlsx" data/cache/ddr_xml
 python scripts/run_postmortem.py data/cache/ddr_xml
 python scripts/run_evaluation.py "data/cache/Volve production data.xlsx" data/cache/ddr_xml
+python scripts/run_console_checks.py
+```
+
+The console needs its optional extra, and serves itself from the API process:
+
+```bash
+pip install -e ".[console]" && npm --prefix frontend install && npm --prefix frontend run build
+python -m uvicorn api.main:app --port 8000
 ```
 
 The last one is the gate: it exits non-zero on a leakage finding or an unreported figure. Raw and
@@ -197,6 +224,7 @@ checked by parsing every workflow file. Anything that would call a model is manu
 | [`docs/architecture_decisions/`](docs/architecture_decisions/) | Nine decisions, including all three feasibility outcomes |
 | [`labels/development_pass1.jsonl`](labels/development_pass1.jsonl) | The label set itself, each row with its provenance, span and the rule that settled it |
 | [`docs/postmortem_results.md`](docs/postmortem_results.md) | Where the non-productive time went, and how little of it any label characterises |
+| [`docs/console_results.md`](docs/console_results.md) | What the operator console shows, what it refuses to show, and the six defects building it found |
 
 ## Scope and boundaries
 
