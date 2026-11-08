@@ -117,15 +117,6 @@ HYPOTHESIS_LABEL: Final[dict[str, str]] = {
     "H-field": "Field-wide or facility constraint",
 }
 
-#: Review states, operator-facing. The log's own vocabulary, which the queue column shows.
-REVIEW_STATE_LABEL: Final[dict[str, str]] = {
-    "none": "Not reviewed",
-    "awaiting_review": "Awaiting review",
-    "rerun_requested": "Re-run requested",
-    "confirmed": "Confirmed",
-    "dismissed": "Dismissed",
-}
-
 #: Status labels for a hypothesis, operator-facing.
 STATUS_LABEL: Final[dict[str, str]] = {
     "supported": "Supported",
@@ -218,8 +209,8 @@ def queue(store: RunStore, log: ReviewLog | None = None) -> Queue:
             causal_level_label=labels.causal_level_label(row.get("highest_level")),
             evidence_strength=_band_for(evaluation, str(row["well"]), str(row["onset"])),
             review_state=states[investigation_id(str(row["well"]), str(row["onset"]))],
-            review_state_label=REVIEW_STATE_LABEL.get(
-                states[investigation_id(str(row["well"]), str(row["onset"]))], "Not reviewed"
+            review_state_label=labels.review_state_label(
+                states[investigation_id(str(row["well"]), str(row["onset"]))]
             ),
             data_quality=("Degraded" if row["poorly_evidenced"] else "Complete"),
             priority=by_key[(str(row["well"]), str(row["onset"]))].priority.value,
@@ -309,8 +300,8 @@ def _production_kpis(
             note=(
                 "No review of any kind has been recorded."
                 if not recorded
-                else f"{recorded} of {len(states)} have a review recorded; "
-                f"{len(states) - awaiting} are settled."
+                else f"{recorded} of {len(states)} have a review recorded, "
+                f"{len(states) - awaiting} settled."
             ),
         ),
         Kpi(

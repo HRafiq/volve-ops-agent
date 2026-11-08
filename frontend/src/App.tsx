@@ -75,13 +75,22 @@ function Header({ header }: { header: HeaderPayload }): JSX.Element {
         </span>
         <span className="posture">{header.posture}</span>
       </div>
-      <div className="build-info">
-        {Object.entries(header.build_info).map(([key, value]) => (
-          <span key={key}>
-            <b>{key}</b> {value}
-          </span>
-        ))}
-      </div>
+      {/* A popover, not a bar. The console design's decision 2 moves AI-engineering details out of
+          the operator's main workflow: commit hashes, version strings and a label set's provenance
+          are for the engineer, and this rendered them across the top of every screen. A pass
+          through the running console found `provenance=machine_assisted` sitting there, which is
+          the vocabulary decision 5 keeps off an operator screen. Collapsed by default, one click
+          away, and nothing removed. */}
+      <details className="build-info">
+        <summary>Build info</summary>
+        <div className="build-info-body">
+          {Object.entries(header.build_info).map(([key, value]) => (
+            <span key={key}>
+              <b>{key}</b> {value}
+            </span>
+          ))}
+        </div>
+      </details>
     </>
   );
 }

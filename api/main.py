@@ -161,9 +161,14 @@ def trace(investigation_id: str, store: StoreDep) -> dict[str, Any]:
 def review_history(investigation_id: str, log: LogDep) -> dict[str, Any]:
     """Every review action against one investigation, in order, with the state they imply."""
     records = log.for_investigation(investigation_id)
+    state = log.state_of(investigation_id)
     return {
         "investigation_id": investigation_id,
-        "state": log.state_of(investigation_id),
+        "state": state,
+        # The label beside the raw state, because the panel renders one of them to an operator and
+        # printed the raw one until a pass through the running console found "state:
+        # awaiting_review" under a heading that says Human review.
+        "state_label": labels.review_state_label(state),
         "records": as_rows(records),
         "actions": dict(labels.REVIEW_ACTION),
         "disclaimer": labels.REVIEW_DISCLAIMER,

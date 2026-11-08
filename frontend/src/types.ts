@@ -215,6 +215,7 @@ export interface ReviewRecord {
 export interface ReviewHistory {
   investigation_id: string;
   state: string;
+  state_label: string;
   records: ReviewRecord[];
   actions: Record<string, string>;
   disclaimer: string;

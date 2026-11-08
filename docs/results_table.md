@@ -226,7 +226,7 @@
 | Mockup placeholder figures compared against | 72 | extracted from the design mockup at check time | `reported` | - | zero when the local-only mockup is absent, which the mark reports as vacuous |
 | Abstentions checked for their own screen state | 4 | findings with `insufficient_evidence`, and only those | `reported` | - | - |
 | API routes enumerated | 15 | read off the application, including the framework's own doc routes | `reported` | - | 4 of them accept a method other than GET, and all 4 are review actions |
-| Engineering vocabulary on operator screens | 0 | nine declared words, over every rendered operator payload | `reported` | - | reported and not gated; a ninth mark after the fact would be an amendment |
+| Engineering vocabulary on operator screens | 1 | nine declared words, over every rendered operator payload | `reported` | - | reported and not gated; a ninth mark after the fact would be an amendment |
 | Priority band `HIGH` | 1 | of 14 episodes | `reported` | - | a stated convention, not a measured ordering; ADR 0009 says what it cannot show |
 | Priority band `MEDIUM` | 5 | of 14 episodes | `reported` | - | a stated convention, not a measured ordering; ADR 0009 says what it cannot show |
 | Priority band `LOW` | 8 | of 14 episodes | `reported` | - | a stated convention, not a measured ordering; ADR 0009 says what it cannot show |

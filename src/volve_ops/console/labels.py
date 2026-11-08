@@ -71,6 +71,10 @@ ENGINEERING_WORDS: Final[tuple[str, ...]] = (
     "machine-assisted",
     "vacuous",
     "tautology",
+    # Raw review states. They belong in the log and not on a screen, and the detail panel printed
+    # them for every investigation until a targeted pass through the running console found it.
+    "awaiting-review",
+    "rerun-requested",
 )
 
 
@@ -87,7 +91,36 @@ def causal_level_label(level: str | None) -> str:
     return CAUSAL_LEVEL.get(level, level or "Unresolved")
 
 
+#: Review states, as an operator reads them. The log's vocabulary is `confirmed`, `rerun_requested`
+#: and so on, which is right for a stored record and wrong for a screen. The queue column mapped
+#: them from the start; the investigation detail panel printed the raw value, so an operator saw
+#: "state: awaiting_review" under a heading that says Human review.
+REVIEW_STATE: Final[dict[str, str]] = {
+    "none": "Not reviewed",
+    "awaiting_review": "Awaiting review",
+    "rerun_requested": "Re-run requested",
+    "confirmed": "Confirmed",
+    "dismissed": "Dismissed",
+}
+
+
+def review_state_label(state: str) -> str:
+    return REVIEW_STATE.get(state, state)
+
+
+def _normalised(text: str) -> str:
+    """Lowercased, with underscores read as spaces or hyphens.
+
+    A first version compared against the hyphenated spellings only, so `machine_assisted` in the
+    console header was invisible to it and the harness reported zero occurrences while the word was
+    on screen. The separator a value happens to carry is not the question being asked.
+    """
+    return text.lower().replace("_", "-")
+
+
 def engineering_words_in(text: str) -> list[str]:
-    """Which forbidden words appear in this text, lowercased comparison."""
-    lowered = text.lower()
-    return [word for word in ENGINEERING_WORDS if word in lowered]
+    """Which forbidden words appear in this text, however their separators are spelled."""
+    lowered = _normalised(text)
+    return [
+        word for word in ENGINEERING_WORDS if _normalised(word) in lowered or word in text.lower()
+    ]

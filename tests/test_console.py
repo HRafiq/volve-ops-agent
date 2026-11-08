@@ -16,7 +16,7 @@ from typing import ClassVar
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from volve_ops.console import assemble, gates, priority
+from volve_ops.console import assemble, gates, labels, priority
 from volve_ops.console import gates as console_gates
 from volve_ops.console.payloads import ChartSeries, EvidenceCoverage, Money
 from volve_ops.console.review import Action, ReviewLog, ReviewRecord, ReviewRefused
@@ -905,3 +905,82 @@ class TestWhatTheFourthReviewFound:
                 if pattern.search(line) and not quoting.search(line):
                     offenders.append(f"{path}:{number}: {line.strip()[:80]}")
         assert not offenders, offenders
+
+
+class TestWhatDrivingTheConsoleFound:
+    """Found by using the running console, not by reading it.
+
+    Four reviews of the code had passed over all of these. Each is a string on an operator screen,
+    which is the half of section 21.6 mark 1 that does not exist and cannot: the mark governs
+    figures. What catches these is opening the thing and looking.
+    """
+
+    def test_a_review_state_reaches_an_operator_as_a_label(self) -> None:
+        """The detail panel printed `state: awaiting_review` under a heading reading Human review.
+
+        The queue column mapped these from the start. The panel read the raw value off the API,
+        which serves the log's own vocabulary because that is right for a stored record.
+        """
+        for raw, shown in labels.REVIEW_STATE.items():
+            assert labels.review_state_label(raw) == shown
+            assert "_" not in shown
+        assert labels.review_state_label("none") == "Not reviewed"
+
+    def test_the_vocabulary_report_sees_a_word_however_its_separator_is_spelled(self) -> None:
+        """It compared hyphenated spellings only.
+
+        `provenance=machine_assisted` sat in the console header while the harness reported zero
+        occurrences of engineering vocabulary, because the declared word is `machine-assisted`.
+        """
+        assert labels.engineering_words_in("provenance=machine_assisted") == ["machine-assisted"]
+        assert labels.engineering_words_in("label set machine-assisted") == ["machine-assisted"]
+        assert labels.engineering_words_in("state: awaiting_review") == ["awaiting-review"]
+        assert labels.engineering_words_in("state: confirmed") == []
+
+    def test_the_raw_review_states_are_declared_as_engineering_vocabulary(self) -> None:
+        """So a screen that prints one is reported rather than passing silently."""
+        assert "awaiting-review" in labels.ENGINEERING_WORDS
+        assert "rerun-requested" in labels.ENGINEERING_WORDS
+
+    def test_the_queue_and_the_api_use_one_label_map(self) -> None:
+        """Two copies of a mapping is how the queue came to be right and the panel wrong."""
+        assert not hasattr(assemble, "REVIEW_STATE_LABEL")
+
+    def test_the_awaiting_review_note_reads_as_english(
+        self, cached_runs: RunStore, tmp_path: Path
+    ) -> None:
+        """It said "1 are settled"."""
+        log = ReviewLog(tmp_path / "review.jsonl")
+        first = assemble.queue(cached_runs, log).rows[0]
+        log.append(
+            first.investigation_id,
+            Action.CONFIRM,
+            actor="a reviewer",
+            investigator_version="investigator-v0",
+            protocol_version="v15",
+        )
+        tile = next(
+            k for k in assemble.queue(cached_runs, log).kpis if k.label == "Awaiting review"
+        )
+        assert tile.note is not None
+        assert " are settled" not in tile.note
+        assert "1 settled" in tile.note
+
+    def test_no_operator_payload_carries_engineering_vocabulary(
+        self, cached_runs: RunStore
+    ) -> None:
+        """The check the harness reports, now that it can see underscore spellings.
+
+        The header is where this failed: the build-info block is served to the operator screen, and
+        it carries a label set's provenance. It is a collapsed popover now rather than a bar across
+        the top of every screen, which is the console design's decision 2, but the words would still
+        be reported if they returned.
+        """
+        payloads = {
+            "queue": assemble.queue(cached_runs).model_dump_json(),
+            "header": assemble.header(cached_runs).model_dump_json(),
+        }
+        found = gates.operator_screens_avoid_engineering_words(payloads)
+        assert found == [
+            "header: 'machine-assisted'"
+        ], f"unexpected vocabulary on an operator screen: {found}"

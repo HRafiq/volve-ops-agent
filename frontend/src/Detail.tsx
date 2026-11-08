@@ -303,13 +303,14 @@ function Review({
       <header>
         <h2>Human review</h2>
         <span style={{ fontSize: 12, color: "var(--steel-600)" }}>
-          state: {review?.state ?? "not reviewed"}
+          {review?.state_label ?? "Not reviewed"}
         </span>
       </header>
       <div className="body">
         {settled ? (
           <p style={{ fontSize: 13, margin: 0 }}>
-            This finding is {review?.state}. A settled finding is immutable: a person who put their
+            This finding is {(review?.state_label ?? "").toLowerCase()}. A settled finding is
+            immutable: a person who put their
             name to an assessment cannot be made to vouch for a different one. Record a new
             investigation run if the evidence has changed.
           </p>

@@ -160,6 +160,33 @@ Each hypothesis now fills the family it is actually judged on, carrying the stre
 decided it: the water-cut rise for `H-water`, the offset comparison against the other producing wells
 for `H-field`. Both are figures section 18.2's bundle already computed and nothing was showing.
 
+## What driving it found that reading it did not
+
+Four reviews of the code passed over all of these. Each is a **string on an operator screen**, which
+is the half of mark 1 that does not exist and cannot: the mark governs figures. What catches them is
+opening the console and using it.
+
+| what an operator saw | why no check saw it |
+|---|---|
+| `state: awaiting_review` under a heading reading Human review | the queue column mapped these to labels from the start; the detail panel read the raw value off the API, which serves the log's own vocabulary because that is right for a stored record |
+| `provenance=machine_assisted` across the top of every screen | the vocabulary report compared hyphenated spellings only, so it reported zero occurrences while the word was on screen |
+| commit hashes and version strings on every screen | decision 2 moves them out of the operator's workflow; they rendered as a permanent bar rather than the popover it specifies |
+| "1 are settled" | nothing checks grammar |
+
+All four are fixed: the API serves a review label beside the raw state, the report normalises
+separators before matching and declares the raw review states as engineering vocabulary, and build
+info is a collapsed popover.
+
+**The vocabulary report now reads 1 rather than 0**, and the occurrence is the label set's
+`provenance=machine_assisted` inside that popover. It is left there: a label set's provenance is
+engineering metadata, decision 2 puts engineering metadata behind the popover, and the report names
+it on every run rather than a gate hiding it. A zero that was a measurement error is worse than a one
+that is a disclosure.
+
+A sweep of all fourteen screens clicked every interactive cell: **140 cells, 140 drawers, no crash,
+nothing rendering as undefined or NaN.** Every figure in the queue was compared against the payload
+it came from and matched.
+
 ## What an operator can answer without leaving the page
 
 The console design fixes eight questions. Where each is answered:
