@@ -561,15 +561,16 @@ class TestWhatTheThirdReviewFound:
     both limits. The cases below are the ones that got through.
     """
 
-    @pytest.mark.skipif(not MANIFEST.exists(), reason="needs cached runs")
-    def test_every_drawer_figure_equals_what_its_own_source_records(self) -> None:
+    def test_every_drawer_figure_equals_what_its_own_source_records(
+        self, cached_runs: RunStore
+    ) -> None:
         """198 of 198 were wrong, and every source resolved.
 
         The drawer attached ledger fact ids to two window medians the ledger does not record:
         `fact_000002` holds a reference rate of 3,052.735 Sm3/d and the drawer published 4,351.41
         under its id, a different quantity from the same manifest row.
         """
-        store = RunStore()
+        store = cached_runs
         manifests = store.manifests()
         checked = 0
         for row in assemble.queue(store).rows:
@@ -591,24 +592,25 @@ class TestWhatTheThirdReviewFound:
                         assert ledger[fact.fact_id]["value"] == fact.value.value, fact.fact_id
         assert checked > 300
 
-    @pytest.mark.skipif(not MANIFEST.exists(), reason="needs cached runs")
-    def test_the_expectation_panel_does_not_claim_a_coverage_bar(self) -> None:
+    def test_the_expectation_panel_does_not_claim_a_coverage_bar(
+        self, cached_runs: RunStore
+    ) -> None:
         """Section 8 bands the lower-tail rate and reports coverage without a pass mark.
 
         The panel said "section 8's coverage bar is missed by two to four times on both qualifying
         wells", which was wrong three ways: wrong quantity, wrong population (two candidate models,
         not two wells), and the selected model has never been evaluated against the condition.
         """
-        panel = assemble.expectation_panel(RunStore())
+        panel = assemble.expectation_panel(cached_runs)
         assert "coverage bar" not in panel.note
         assert "qualifying wells" not in panel.note
         assert "two to four times" not in panel.note
         assert "never been evaluated for this model" in panel.note
         assert panel.lower_tail_rate.value is not None
 
-    def test_the_queue_reads_the_review_log(self, tmp_path: Path) -> None:
+    def test_the_queue_reads_the_review_log(self, tmp_path: Path, cached_runs: RunStore) -> None:
         """It hardcoded the state and published a KPI asserting the log was empty."""
-        store = RunStore()
+        store = cached_runs
         log = ReviewLog(tmp_path / "review.jsonl")
         before = assemble.queue(store, log)
         target = before.rows[0]
@@ -627,13 +629,15 @@ class TestWhatTheThirdReviewFound:
         counts = after.rule.term_counts[priority.Term.REVIEW_PENDING.value]
         assert counts.value == 1
 
-    def test_the_queue_caveat_carries_both_of_adr_0009s_measurements(self) -> None:
+    def test_the_queue_caveat_carries_both_of_adr_0009s_measurements(
+        self, cached_runs: RunStore
+    ) -> None:
         """Section 21.5 requires both wherever the rule is printed.
 
         The first alone reads as the term being inert, which it is not: removing it leaves the
         queue with no HIGH case at all.
         """
-        caveat = assemble.queue(RunStore()).rule.caveat
+        caveat = assemble.queue(cached_runs).rule.caveat
         assert "no episode's band" in caveat
         assert "no HIGH case" in caveat
 
