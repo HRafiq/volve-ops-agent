@@ -52,7 +52,7 @@ export function App(): JSX.Element {
             <Queue onOpen={setOpen} />
           )
         ) : null}
-        {workspace === "drilling" ? <Planned name="Drilling &amp; NPT" /> : null}
+        {workspace === "drilling" ? <Planned name="Drilling & NPT" /> : null}
         {workspace === "system" ? <Planned name="System Health" /> : null}
       </main>
     </>
@@ -100,7 +100,7 @@ function Header({ header }: { header: HeaderPayload }): JSX.Element {
 function Planned({ name }: { name: string }): JSX.Element {
   return (
     <div className="planned-page">
-      <h1 dangerouslySetInnerHTML={{ __html: name }} />
+      <h1>{name}</h1>
       <p>
         Planned, and deliberately not stubbed with placeholder figures. The backend for this
         workspace exists: the post-mortem harness publishes recorded time in three categories, the
