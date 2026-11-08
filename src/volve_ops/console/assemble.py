@@ -12,7 +12,7 @@ range is written. None of those is a figure.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 from volve_ops.console import labels, priority
@@ -37,6 +37,9 @@ from volve_ops.console.payloads import (
 from volve_ops.console.sources import ARTIFACT_PREFIX, RULE_PREFIX, Sourced
 from volve_ops.console.store import EpisodeArtifacts, RunStore, investigation_id
 
+#: The protocol document version this console was built against. Section 21 and its amendments.
+CONSOLE_PROTOCOL_VERSION: Final[str] = "v14"
+
 #: The columns of the hypothesis and evidence matrix, in the order the console design shows them.
 #: A presentation choice, not a figure: these group the channels section 18.2 already defines.
 EVIDENCE_FAMILIES: Final[tuple[str, ...]] = (
@@ -47,13 +50,41 @@ EVIDENCE_FAMILIES: Final[tuple[str, ...]] = (
     "Report",
 )
 
-#: Which family a mandatory channel belongs to. Channels the bundle names, grouped for display.
-FAMILY_OF_CHANNEL: Final[dict[str, str]] = {
-    "on_stream_hours": "Production",
-    "choke_size": "Control",
-    "choke_dp_bar": "Control",
-    "downhole_pressure_bar": "Pressure",
-    "wellhead_pressure_bar": "Pressure",
+#: Which family each hypothesis's evidence belongs to, and which strength feature carries it.
+#:
+#: Keyed on the hypothesis rather than on `required_channels`, which a first version used and which
+#: is empty for two of the five. The screen then showed `H-water` as **Supported** with every cell
+#: reading "Not applicable", a supported conclusion with no visible support, which is the exact
+#: failure section 21.3 is about. `H-water` is judged on the water-cut rise and `H-field` on the
+#: offset comparison against the other producing wells; neither declares a mandatory channel
+#: because neither needs one to be available, and that is a different thing from having no evidence.
+FAMILY_OF_HYPOTHESIS: Final[dict[str, tuple[str, str, str]]] = {
+    "H-uptime": (
+        "Production",
+        "uptime_standardised_shift",
+        "On-stream hours against the reference window, in standard deviations of the window.",
+    ),
+    "H-choke": (
+        "Control",
+        "choke_standardised_shift",
+        "Choke position against the reference window, in standard deviations of the window.",
+    ),
+    "H-pressure": (
+        "Pressure",
+        "pressure_standardised_shift",
+        "Downhole pressure against the reference window, in standard deviations of the window.",
+    ),
+    "H-water": (
+        "Fluids",
+        "water_cut_rise",
+        "Rise in median water cut from the reference window to the episode window.",
+    ),
+    "H-field": (
+        "Production",
+        "offset_median_rate_change",
+        "Median rate change across the other producing wells over the same dates, which separates "
+        "a field-wide event from a well-specific one.",
+    ),
 }
 
 #: Hypothesis labels. The schema ids are terse by design; an operator reads the sentence.
@@ -284,13 +315,25 @@ def header(store: RunStore) -> Header:
     manifests = store.manifests()
     expectation = manifests["expectation"]
     extraction = manifests["extraction"]
+    investigation = manifests["investigation"]
     evaluation = store.evaluation()
     freeze = evaluation.get("version_freeze", {})
+    # Every key below is one the manifest actually holds. A first version guessed at
+    # `expectation.wells`, `version_freeze.dataset_hash` and `version_freeze.expectation_version`,
+    # none of which exist, and the header rendered "? development producing wells" and two
+    # "unknown"s. None of it failed a gate, because the header's state lines are strings rather than
+    # figures and section 21.6 mark 1 governs figures. Caught by looking at the screen, which is the
+    # only thing that catches it.
+    # `dataset_version` in the freeze is already a rendered string, not the nested object the
+    # expectation manifest holds. Guessing at its shape is what produced "unknown" twice.
+    dataset = str(freeze.get("dataset_version", "unknown"))
     return Header(
         field="Volve, 15/9",
         mode="Historical replay",
         data_through=str(expectation.get("split", {}).get("boundary", "unknown")),
-        production_availability=f"{expectation.get('wells', '?')} development producing wells",
+        production_availability=(
+            f"{len(investigation.get('development_wells', []))} development producing wells"
+        ),
         report_index_availability=f"{extraction.get('reports', '?')} drilling reports indexed",
         pressure_coverage=(
             "Partial. Downhole pressure is absent for the whole episode on 3 of 14 "
@@ -299,12 +342,20 @@ def header(store: RunStore) -> Header:
         posture="Read-only, human-reviewed, no actuation path",
         build_info={
             "commit": str(freeze.get("commit", "unknown")),
-            "dataset": str(freeze.get("dataset_hash", "unknown")),
-            "expectation model": str(freeze.get("expectation_version", "unknown")),
+            "dataset": dataset,
+            "expectation model": str(expectation.get("selected_model", "unknown")),
+            "extractor": str(freeze.get("extractor_version", "unknown")),
+            "investigator": str(freeze.get("investigator_version", "unknown")),
             "retrieval index": str(freeze.get("retrieval_index_version", "unknown")),
+            "label set": str(freeze.get("label_set_version", "unknown")),
             "model roles": str(freeze.get("model_roles", "none")),
             "correction store": str(freeze.get("correction_store_version", "empty")),
-            "protocol": str(manifests["investigation"].get("protocol_version", "unknown")),
+            # The protocol document in force, from the console's own run manifest. Not the
+            # investigation manifest's stamp: that names the version whose *marks* that layer
+            # implements, section 18.7's, which have not changed since v4. Showing it in a header
+            # labelled "protocol" told a reader the document was at v12 when it is at v14. Two
+            # different questions, and conflating them is the whole of the bug.
+            "protocol": CONSOLE_PROTOCOL_VERSION,
         },
     )
 
@@ -393,90 +444,122 @@ def _hypotheses(finding: Mapping[str, Any], fact_ids: frozenset[str]) -> tuple[H
     `not_applicable` and a family it searched and found nothing in is `absent` with the retrieval
     record attached. Section 21.3: absence is an object, because a conclusion drawn from nothing
     looks identical to one drawn from something unless the nothing is recorded.
+
+    Each hypothesis fills exactly one evidence family plus the report column, which is what the
+    controller actually judges: section 18.2's bundle gives one standardised shift per hypothesis,
+    and a matrix that spread it across columns would be inventing comparisons nobody made.
     """
     out: list[Hypothesis] = []
     for index, raw in enumerate(finding.get("hypotheses", [])):
         hypothesis_id = str(raw["hypothesis_id"])
-        required = {str(c) for c in raw.get("required_channels", [])}
-        families = {FAMILY_OF_CHANNEL[c] for c in required if c in FAMILY_OF_CHANNEL}
-        supporting = list(raw.get("supporting", []))
-        documents = [s for s in supporting if str(s.get("kind")) == "document_span"]
+        status = str(raw.get("status", "unresolved"))
+        features = dict(raw.get("strength_features", {}))
+        home, feature_name, rule = FAMILY_OF_HYPOTHESIS.get(
+            hypothesis_id, ("Production", "", "No rule recorded for this hypothesis.")
+        )
+        documents = [s for s in raw.get("supporting", []) if str(s.get("kind")) == "document_span"]
         cells: dict[str, MatrixCell] = {}
         for family in EVIDENCE_FAMILIES:
             if family == "Report":
-                if documents:
-                    first = documents[0]
-                    cells[family] = MatrixCell(
-                        verdict="supports",
-                        label="Supports",
-                        rule=(
-                            "A report in the evidence window names the change, and the quoted span "
-                            "is verbatim in the event's own comment."
-                        ),
-                        document=_document_evidence(first),
-                    )
-                else:
-                    cells[family] = MatrixCell(
-                        verdict="absent",
-                        label="None found",
-                        rule=(
-                            "Retrieval ran over the drilling narrative for this well and window "
-                            "and returned nothing that names a reason."
-                        ),
-                        absence=Absence(
-                            absence_id=f"absence_{hypothesis_id}_{index}",
-                            corpus="drilling-report narrative, BM25 over extracted events",
-                            filters=(
-                                f"well = {finding['well']}",
-                                f"window = {finding['episode_onset']} "
-                                f"to {finding['episode_offset']}, plus 45 days either side",
-                            ),
-                            queries=(f"terms derived from {hypothesis_id}",),
-                            documents_examined=Sourced(
-                                value=0,
-                                source=f"{RULE_PREFIX}18.6 retrieval record",
-                                denominator="documents returned for this hypothesis",
-                            ),
-                            outcome="none_found",
-                        ),
-                    )
-                continue
-            if family not in families:
+                cells[family] = _report_cell(finding, hypothesis_id, index, documents)
+            elif family == home:
+                cells[family] = _evidence_cell(
+                    finding, hypothesis_id, status, features, feature_name, rule, fact_ids
+                )
+            else:
                 cells[family] = MatrixCell(
                     verdict="not_applicable",
                     label="Not applicable",
-                    rule="This hypothesis declares no mandatory channel in this family.",
+                    rule=(
+                        f"{hypothesis_id} is judged on {home.lower()} evidence. This family is not "
+                        "part of its test, so no comparison was made here."
+                    ),
                 )
-                continue
-            status = str(raw.get("status", "unresolved"))
-            if status == "contradicted":
-                verdict, label = "contradicts", "Contradicts"
-            elif status == "supported":
-                verdict, label = "supports", "Supports"
-            else:
-                verdict, label = "neutral", STATUS_LABEL.get(status, status)
-            fact = _fact_evidence(finding, family, fact_ids)
-            if verdict in {"supports", "contradicts"} and fact is None:
-                verdict, label = "neutral", STATUS_LABEL.get(status, status)
-            cells[family] = MatrixCell(
-                verdict=verdict,
-                label=label,
-                rule=(
-                    "The channel moved with the direction and timing the hypothesis predicts, "
-                    "comparing the episode window against the governing reference window."
-                ),
-                fact=fact,
-            )
         out.append(
             Hypothesis(
                 hypothesis_id=hypothesis_id,
                 label=HYPOTHESIS_LABEL.get(hypothesis_id, str(raw.get("description", ""))),
-                status=str(raw.get("status", "unresolved")),
-                status_label=STATUS_LABEL.get(str(raw.get("status", "")), "Unresolved"),
+                status=status,
+                status_label=STATUS_LABEL.get(status, status),
                 cells=cells,
             )
         )
     return tuple(out)
+
+
+def _evidence_cell(
+    finding: Mapping[str, Any],
+    hypothesis_id: str,
+    status: str,
+    features: Mapping[str, Any],
+    feature_name: str,
+    rule: str,
+    fact_ids: frozenset[str],
+) -> MatrixCell:
+    """The cell in a hypothesis's own evidence family, carrying the figure that decided it."""
+    value = features.get(feature_name)
+    verdict: str
+    if status == "supported":
+        verdict, label = "supports", "Supports"
+    elif status == "contradicted":
+        verdict, label = "contradicts", "Contradicts"
+    else:
+        verdict, label = "neutral", STATUS_LABEL.get(status, status)
+    fact = (
+        _fact_evidence(finding, hypothesis_id, feature_name, value, fact_ids)
+        if value is not None
+        else None
+    )
+    if verdict in {"supports", "contradicts"} and fact is None:
+        # A judgement with nothing to show it is downgraded rather than asserted. The opposite of
+        # the usual failure: a cell claiming support it cannot display is worse than one claiming
+        # less than it could.
+        verdict, label = "neutral", STATUS_LABEL.get(status, status)
+    return MatrixCell(verdict=verdict, label=label, rule=rule, fact=fact)
+
+
+def _report_cell(
+    finding: Mapping[str, Any],
+    hypothesis_id: str,
+    index: int,
+    documents: Sequence[Mapping[str, Any]],
+) -> MatrixCell:
+    """The report column: a cited span, or a recorded absence with the search behind it."""
+    if documents:
+        return MatrixCell(
+            verdict="supports",
+            label="Supports",
+            rule=(
+                "A report in the evidence window names the change, and the quoted span is verbatim "
+                "in the event's own comment, which section 18.6's gate checks."
+            ),
+            document=_document_evidence(documents[0]),
+        )
+    return MatrixCell(
+        verdict="absent",
+        label="None found",
+        rule=(
+            "Retrieval ran over the drilling narrative for this well and window and returned "
+            "nothing naming a reason. ADR 0008 records why that is the normal case: not one of "
+            "3,673 drilling-report events falls inside any episode window."
+        ),
+        absence=Absence(
+            absence_id=f"absence_{hypothesis_id}_{index}",
+            corpus="drilling-report narrative, BM25 over extracted events",
+            filters=(
+                f"well = {finding['well']}",
+                f"window = {finding['episode_onset']} to {finding['episode_offset']}, "
+                "plus 45 days either side",
+            ),
+            queries=(f"terms derived from {hypothesis_id}",),
+            documents_examined=Sourced(
+                value=0,
+                source=f"{RULE_PREFIX}18.6 retrieval record",
+                denominator="documents returned for this hypothesis",
+            ),
+            outcome="none_found",
+        ),
+    )
 
 
 def _document_evidence(span: Mapping[str, Any]) -> DocumentEvidence:
@@ -509,41 +592,45 @@ def _document_evidence(span: Mapping[str, Any]) -> DocumentEvidence:
 
 
 def _fact_evidence(
-    finding: Mapping[str, Any], family: str, fact_ids: frozenset[str]
+    finding: Mapping[str, Any],
+    hypothesis_id: str,
+    feature_name: str,
+    value: Any,
+    fact_ids: frozenset[str],
 ) -> FactEvidence | None:
-    """The drawer for a fact, when the finding cites one the ledger defines.
+    """The drawer for the figure that decided a cell.
 
-    Returns None when it does not, and the caller then downgrades the cell to neutral rather than
-    asserting a judgement with nothing behind it. That is the opposite of the usual failure here: a
-    cell that claims support it cannot show is worse than a cell that claims less than it could.
+    The figure is the hypothesis's own strength feature, which section 18.2's bundle computed from
+    the two windows. It is sourced to the finding's shortfall fact when the ledger defines one, and
+    the drawer prints the two window medians beside it so a reader can see what moved.
     """
-    wanted = str(finding.get("shortfall_fact_id") or "")
-    if family != "Production" or wanted not in fact_ids:
-        return None
+    anchor = str(finding.get("shortfall_fact_id") or "")
+    source = anchor if anchor in fact_ids else f"{RULE_PREFIX}18.2 diagnostic bundle"
     return FactEvidence(
-        fact_id=wanted,
-        metric="episode rate shortfall",
+        fact_id=anchor or f"{hypothesis_id}:{feature_name}",
+        metric=feature_name.replace("_", " "),
         baseline_value=Sourced(
             value=finding.get("baseline_median_rate_sm3_per_day"),
-            source=str(finding.get("expected_volume_fact_id") or wanted),
+            source=str(finding.get("expected_volume_fact_id") or source),
             unit="Sm3/d",
-            denominator="median over the governing reference window",
+            denominator="median rate over the governing reference window",
         ),
         episode_value=Sourced(
             value=finding.get("episode_median_rate_sm3_per_day"),
-            source=str(finding.get("actual_volume_fact_id") or wanted),
+            source=str(finding.get("actual_volume_fact_id") or source),
             unit="Sm3/d",
-            denominator="median over the episode's valid producing days",
+            denominator="median rate over the episode's valid producing days",
         ),
         baseline_window=str(finding.get("baseline_window", "see the expectation panel")),
-        episode_window=_period(
-            str(finding["episode_onset"]), str(finding["episode_offset"])
+        episode_window=_period(str(finding["episode_onset"]), str(finding["episode_offset"])),
+        source_table="production daily, through the section 18.2 diagnostic bundle",
+        transformation=(
+            f"{feature_name.replace('_', ' ')} = {float(value):.4g}, comparing the episode window "
+            "against the governing reference window"
         ),
-        source_table="production daily, via the episode detector",
-        transformation="median rate per valid producing day, differenced against the expectation",
         input_records=Sourced(
             value=None,
-            source=wanted,
+            source=source,
             denominator="walk the fact's lineage in the facts artifact",
         ),
         derived_facts=tuple(
@@ -567,7 +654,9 @@ def expectation_panel(store: RunStore) -> ExpectationPanel:
     wape = expectation.get("wape", {}).get(chosen, {})
     return ExpectationPanel(
         model_name=chosen,
-        model_version=str(expectation.get("expectation_version", "unknown")),
+        # The parser version the run recorded. `expectation_version` was a guess at a key the
+        # manifest does not hold, and the panel rendered "naive-median28 (unknown)" on every screen.
+        model_version=str(expectation.get("parser_version", "unknown")),
         reference_window="the most recent stable window ending before the episode",
         regime="valid producing days only, downtime and quarantined days excluded",
         backtest_wape=Sourced(

@@ -339,7 +339,11 @@ def main(argv: list[str] | None = None) -> int:
     unresolved = sum(1 for r in rows if r["verdict"] != Verdict.SUPPORTED_EXPLANATION.value)
 
     payload: dict[str, Any] = {
-        "protocol_version": "v12",
+        # v4, the version that fixed section 18.7's pass marks, which have not changed. This stamp
+        # names the marks a run implements, not the protocol document in force: it was briefly set
+        # to v12 when this harness started publishing figures for the console, which confused the
+        # two and put "protocol v12" in a console header while the document was at v14.
+        "protocol_version": "v4",
         "episodes": len(rows),
         "wells_with_an_episode": len({r["well"] for r in rows}),
         "cumulative_rate_shortfall_sm3": round(total_shortfall, 2),

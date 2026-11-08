@@ -93,12 +93,18 @@ class TestThePriorityRule:
             assert priority.Term.UNRESOLVED_WITH_EVIDENCE not in scored.terms_fired
 
     def test_the_duration_term_fires_at_forty_days_and_not_at_thirty_nine(self) -> None:
-        assert priority.Term.DURATION in priority.score_episode(
-            **episode(episode_days=40)  # type: ignore[arg-type]
-        ).terms_fired
-        assert priority.Term.DURATION not in priority.score_episode(
-            **episode(episode_days=39)  # type: ignore[arg-type]
-        ).terms_fired
+        assert (
+            priority.Term.DURATION
+            in priority.score_episode(
+                **episode(episode_days=40)  # type: ignore[arg-type]
+            ).terms_fired
+        )
+        assert (
+            priority.Term.DURATION
+            not in priority.score_episode(
+                **episode(episode_days=39)  # type: ignore[arg-type]
+            ).terms_fired
+        )
 
     @pytest.mark.parametrize("state", ["awaiting_review", "rerun_requested"])
     def test_a_pending_review_raises_priority(self, state: str) -> None:
@@ -251,8 +257,7 @@ class TestTheChartSeriesIsTheDetectorsOwn:
         return [
             p
             for p in points
-            if episode.onset <= p.date <= episode.offset
-            and p.day_class is DayClass.VALID_PRODUCING
+            if episode.onset <= p.date <= episode.offset and p.day_class is DayClass.VALID_PRODUCING
         ]
 
     def test_every_onset_and_trigger_run_is_below_band_in_the_series(self) -> None:
@@ -362,7 +367,7 @@ class TestEachConsoleGateCanFail:
         mockup = tmp_path / "mockup.jsx"
         mockup.write_text('const wape = "11.2%"; const id = "fact_0871";', encoding="utf-8")
         outcome = gates.no_placeholder_appears(
-            {"queue": 'the model reached fact_0871 at 11.2%'}, mockup
+            {"queue": "the model reached fact_0871 at 11.2%"}, mockup
         )
         assert not outcome.passed
         assert any("fact_0871" in line for line in outcome.detail)
@@ -516,8 +521,10 @@ class TestTheConsoleGatesOnTheRealRun:
         assert held.passed, held.detail
 
         abstentions = gates.abstention_renders(
-            [(r.investigation_id, r.assessment, details[r.investigation_id].coverage)
-             for r in queue.rows]
+            [
+                (r.investigation_id, r.assessment, details[r.investigation_id].coverage)
+                for r in queue.rows
+            ]
         )
         assert abstentions.passed, abstentions.detail
         assert abstentions.examined == 4

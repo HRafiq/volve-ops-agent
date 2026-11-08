@@ -19,9 +19,11 @@ Run it with the `console` extra installed:
 from __future__ import annotations
 
 import datetime as dt
+from pathlib import Path
 from typing import Annotated, Any, Final
 
 from fastapi import Body, Depends, FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
 from volve_ops.console import assemble, labels
@@ -41,6 +43,7 @@ app = FastAPI(
     ),
     version="console-v0",
 )
+
 
 #: The store and the log as dependencies rather than module globals, so a test can point them at a
 #: temporary directory. Not a nicety: the review log is append-only, so a test that wrote to the
@@ -243,6 +246,17 @@ def add_correction(
 ) -> ReviewResponse:
     """Add correction. Appends a revision; the finding keeps its text."""
     return _record(investigation_id, Action.ADD_CORRECTION, request, store, log)
+
+
+#: The built console, served by the same process that serves the API.
+#:
+#: One process rather than a dev server and a proxy, because the console is a read-only view of
+#: these payloads and splitting it across two origins buys nothing but a CORS policy. `StaticFiles`
+#: answers GET and HEAD only, so section 21.6 mark 7 still holds with the mount in place: the route
+#: table below picks it up and the gate checks it like any other route.
+_BUILT = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if _BUILT.is_dir():
+    app.mount("/", StaticFiles(directory=_BUILT, html=True), name="console")
 
 
 def route_table() -> list[tuple[str, frozenset[str]]]:

@@ -252,3 +252,10 @@ secrets.yaml
 .netrc
 token.json
 .aws/
+
+# Frontend build and dependencies. `dist/` is already ignored above as a Python build directory,
+# which happens to cover the Vite output too; node_modules and the Vite cache are not.
+frontend/node_modules/
+frontend/.vite/
+# Local launch configuration for the dev server. Machine-specific ports.
+.claude/
