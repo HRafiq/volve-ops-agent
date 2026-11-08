@@ -19,6 +19,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The operator console's API. Optional for the same reason the MCP adapter is: the domain services,
+# the harnesses and the gates all run without a web server, and the deterministic CI job should not
+# need one to check that a figure resolves to a manifest key. `httpx` is here rather than in `dev`
+# because FastAPI's TestClient needs it, and the console gates are exercised through that client.
+console = [
+    "fastapi==0.115.6",
+    "uvicorn==0.34.0",
+    "httpx==0.28.1",
+]
 # The MCP adapter is optional on purpose: the domain services and the tool layer work without
 # it, and the deterministic CI job should not need a protocol server to run unit tests.
 mcp = [

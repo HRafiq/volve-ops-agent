@@ -12,8 +12,12 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 
-from volve_ops.console import priority
+from volve_ops.console import assemble, gates, priority
+from volve_ops.console.payloads import ChartSeries, EvidenceCoverage, Money
+from volve_ops.console.review import Action, ReviewLog, ReviewRecord, ReviewRefused
+from volve_ops.console.sources import Sourced
 from volve_ops.domain.activity import activity_dates_by_well
 from volve_ops.domain.day_class import DayClass
 from volve_ops.domain.episodes import (
@@ -303,3 +307,235 @@ class TestTheChartSeriesIsTheDetectorsOwn:
                     published += 1
                     assert 0.0 <= point.water_cut <= 1.0, (well, point.date, point.water_cut)
         assert published > 1_000
+
+
+class TestEachConsoleGateCanFail:
+    """Section 21.6's eight marks, each shown failing.
+
+    Five phases of this project ended with a gate that could not fail, so a mark without a failing
+    case here is not a mark. The inputs are built by hand rather than taken from a run, because a
+    gate fed only the artifacts of a passing run is the shape the whole pattern reduces to.
+    """
+
+    def sourced(self, value: object = 1, source: str = "investigation.episodes") -> Sourced:
+        return Sourced(value=value, source=source)
+
+    def test_a_bare_number_in_a_payload_fails_mark_1(self) -> None:
+        outcome = gates.figures_resolve(
+            {"made_up": {"shortfall": 12345.0}},
+            {"investigation": {"episodes": 14}},
+            fact_ids=frozenset(),
+            artifacts=Path("/nonexistent"),
+        )
+        assert not outcome.passed
+        assert any("bare number" in line for line in outcome.detail)
+
+    def test_a_source_that_resolves_to_nothing_fails_mark_1(self) -> None:
+        outcome = gates.figures_resolve(
+            {"made_up": {"figure": self.sourced(source="investigation.no_such_key")}},
+            {"investigation": {"episodes": 14}},
+            fact_ids=frozenset(),
+            artifacts=Path("/nonexistent"),
+        )
+        assert not outcome.passed
+        assert any("resolves to nothing" in line for line in outcome.detail)
+
+    def test_a_table_that_miscounts_its_rows_fails_mark_1(self) -> None:
+        """Amendment 10's exemption is bounded by the row count, so a mismatch voids it."""
+        series = ChartSeries(
+            source="rule:test",
+            rows=(),
+            row_count=Sourced(value=99, source="rule:test"),
+            episode_window="x",
+            governing_window="y",
+        )
+        outcome = gates.figures_resolve(
+            {"made_up": series},
+            {},
+            fact_ids=frozenset(),
+            artifacts=Path("/nonexistent"),
+        )
+        assert not outcome.passed
+        assert any("claims 99 rows and carries 0" in line for line in outcome.detail)
+
+    def test_a_mockup_placeholder_in_a_payload_fails_mark_2(self, tmp_path: Path) -> None:
+        mockup = tmp_path / "mockup.jsx"
+        mockup.write_text('const wape = "11.2%"; const id = "fact_0871";', encoding="utf-8")
+        outcome = gates.no_placeholder_appears(
+            {"queue": 'the model reached fact_0871 at 11.2%'}, mockup
+        )
+        assert not outcome.passed
+        assert any("fact_0871" in line for line in outcome.detail)
+
+    def test_an_absent_mockup_makes_mark_2_vacuous_rather_than_passing_quietly(
+        self, tmp_path: Path
+    ) -> None:
+        outcome = gates.no_placeholder_appears({"queue": "anything"}, tmp_path / "absent.jsx")
+        assert outcome.passed
+        assert outcome.vacuous
+        assert any("not present" in line for line in outcome.detail)
+
+    @pytest.mark.parametrize("name", ["15/9-F-4", "F-5"])
+    def test_a_hold_out_well_in_a_payload_fails_mark_3(self, name: str) -> None:
+        outcome = gates.no_hold_out_well({"queue": f"the episode on {name} ran clean"})
+        assert not outcome.passed
+        assert any(name.split("-", 1)[-1] in line for line in outcome.detail)
+
+    def test_an_abstention_with_an_empty_missing_list_fails_mark_4(self) -> None:
+        """The defect this mark found in the real screen, kept as the failing case.
+
+        `15/9-F-14` from 2012-03-11 abstains with every channel available, and the first version of
+        the panel showed an empty missing list, which reads as the system saying there was no reason
+        it could not conclude.
+        """
+        outcome = gates.abstention_renders(
+            [("x", "insufficient_evidence", EvidenceCoverage(available=("a",), missing=()))]
+        )
+        assert not outcome.passed
+        assert any("nothing listed as missing" in line for line in outcome.detail)
+
+    def test_mark_4_examines_only_the_findings_that_abstained(self) -> None:
+        """So it cannot pass by looking at a supported finding instead."""
+        outcome = gates.abstention_renders(
+            [("x", "supported_explanation", EvidenceCoverage(available=(), missing=()))]
+        )
+        assert outcome.passed
+        assert outcome.vacuous
+
+    def test_a_currency_figure_without_its_assumption_fails_mark_5(self) -> None:
+        """`Money` refuses this at construction, so the gate is shown the shape that bypasses it."""
+        tile = Money(reason="placeholder").model_copy(
+            update={"amount": Sourced(value=1_000_000.0, source="rule:test"), "assumption": None}
+        )
+        outcome = gates.money_carries_its_assumption([("Estimated cost", tile)])
+        assert not outcome.passed
+        assert any("no assumption" in line for line in outcome.detail)
+
+    def test_a_non_finite_currency_figure_fails_mark_5(self) -> None:
+        """Review fed the post-mortem's currency gate `nan` and it approved it. Not here."""
+        tile = Money(
+            amount=Sourced(value=float("nan"), source="rule:test"),
+            assumption="at a stated rate",
+        )
+        outcome = gates.money_carries_its_assumption([("Estimated cost", tile)])
+        assert not outcome.passed
+        assert any("non-finite" in line for line in outcome.detail)
+
+    def test_a_money_tile_with_neither_figure_nor_reason_fails_mark_5(self) -> None:
+        tile = Money(reason="placeholder").model_copy(update={"reason": None})
+        outcome = gates.money_carries_its_assumption([("Estimated cost", tile)])
+        assert not outcome.passed
+        assert any("reads as a bug" in line for line in outcome.detail)
+
+    def test_a_log_that_accepts_a_second_judgement_fails_mark_6(self, tmp_path: Path) -> None:
+        class Permissive(ReviewLog):
+            def append(self, *args: object, **kwargs: object) -> ReviewRecord:
+                return ReviewRecord(
+                    investigation_id="probe-never-reviewed",
+                    action=Action.CONFIRM,
+                    actor="permissive",
+                    recorded_at="1970-01-01T00:00:00+00:00",
+                    investigator_version="investigator-v0",
+                    protocol_version="probe",
+                )
+
+            def state_of(self, investigation_id: str) -> str:
+                return "confirmed"
+
+        outcome = gates.review_log_is_append_only(Permissive(tmp_path / "l.jsonl"))
+        assert not outcome.passed
+        assert any("settled finding" in line for line in outcome.detail)
+
+    def test_a_log_that_refuses_everything_also_fails_mark_6(self, tmp_path: Path) -> None:
+        """The other direction. A log that accepts nothing satisfies every refusal probe."""
+
+        class RefusesEverything(ReviewLog):
+            def append(self, *args: object, **kwargs: object) -> ReviewRecord:
+                raise ReviewRefused("nothing may ever be recorded")
+
+        outcome = gates.review_log_is_append_only(RefusesEverything(tmp_path / "l.jsonl"))
+        assert not outcome.passed
+        assert any("accepts nothing" in line for line in outcome.detail)
+
+    def test_a_writing_route_outside_the_review_prefix_fails_mark_7(self) -> None:
+        outcome = gates.api_is_read_only(
+            [("/api/investigations/{id}", frozenset({"GET", "DELETE"}))]
+        )
+        assert not outcome.passed
+        assert any("DELETE" in line for line in outcome.detail)
+
+    def test_a_review_route_may_write(self) -> None:
+        outcome = gates.api_is_read_only([("/api/review/{id}/confirm", frozenset({"POST"}))])
+        assert outcome.passed
+
+    def test_a_priority_score_that_disagrees_with_the_rule_fails_mark_8(self) -> None:
+        outcome = gates.priority_matches_the_printed_rule(
+            [("x", 99, 1_000.0, 5, "supported_explanation", "high", "none")],
+            ("30,000", "10,000", "40", "5"),
+        )
+        assert not outcome.passed
+        assert any("the rule gives 1 and the payload says 99" in line for line in outcome.detail)
+
+    def test_a_printed_rule_missing_a_threshold_fails_mark_8(self) -> None:
+        """The rule has to state its own numbers, or a reader cannot recompute a score from it."""
+        outcome = gates.priority_matches_the_printed_rule([], ("30,000", "10,000"))
+        assert not outcome.passed
+        assert any("does not state the threshold 40" in line for line in outcome.detail)
+
+
+@pytest.mark.skipif(not MANIFEST.exists(), reason="needs cached runs")
+class TestTheConsoleGatesOnTheRealRun:
+    """Every mark against the payloads the API actually serves."""
+
+    def test_all_eight_marks_pass_and_none_is_vacuous(self) -> None:
+        from volve_ops.console.store import DEFAULT_TRACES, RunStore
+
+        store = RunStore()
+        manifests = store.manifests()
+        queue = assemble.queue(store)
+        details = {
+            r.investigation_id: assemble.detail(store, r.investigation_id) for r in queue.rows
+        }
+        payloads: dict[str, BaseModel] = {
+            "queue": queue,
+            "header": assemble.header(store),
+            **details,
+        }
+        fact_ids: frozenset[str] = frozenset()
+        for detail in details.values():
+            fact_ids |= store.resolvable_ids(detail.well, detail.period.split(" to ")[0])
+        rendered = {name: payload.model_dump_json() for name, payload in payloads.items()}
+
+        resolved = gates.figures_resolve(
+            payloads, manifests, fact_ids=fact_ids, artifacts=DEFAULT_TRACES
+        )
+        assert resolved.passed, resolved.detail
+        assert resolved.examined > 200
+
+        held = gates.no_hold_out_well(rendered)
+        assert held.passed, held.detail
+
+        abstentions = gates.abstention_renders(
+            [(r.investigation_id, r.assessment, details[r.investigation_id].coverage)
+             for r in queue.rows]
+        )
+        assert abstentions.passed, abstentions.detail
+        assert abstentions.examined == 4
+
+        money = gates.money_carries_its_assumption(
+            [(t.label, t.money) for t in queue.kpis if t.money is not None]
+        )
+        assert money.passed, money.detail
+
+    def test_no_engineering_vocabulary_reaches_an_operator_screen(self) -> None:
+        """Decision 5, measured. Reported by the harness rather than gated, per section 21.6."""
+        from volve_ops.console.store import RunStore
+
+        store = RunStore()
+        queue = assemble.queue(store)
+        rendered = {
+            r.investigation_id: assemble.detail(store, r.investigation_id).model_dump_json()
+            for r in queue.rows
+        }
+        rendered["queue"] = queue.model_dump_json()
+        assert gates.operator_screens_avoid_engineering_words(rendered) == []
