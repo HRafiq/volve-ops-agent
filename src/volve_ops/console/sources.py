@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any, Final
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -40,9 +41,48 @@ _FACT_ID: Final = re.compile(r"^(fact|derived|doc_ev|npt)_[A-Za-z0-9]+$")
 #: constructing the score from `Sourced` inputs.
 RULE_PREFIX: Final[str] = "rule:"
 
+#: The prefix for a figure read from a per-episode artifact rather than a run manifest. The artifact
+#: is a file a harness wrote, so the source resolves by the file existing, and `resolve_source` is
+#: given the directory to look in. Used for the chart series, whose rows are not in any manifest
+#: because 109 days of ten channels is a record rather than a published figure.
+ARTIFACT_PREFIX: Final[str] = "artifact:"
+
 
 class UnsourcedFigure(Exception):
     """A payload carried a bare number. Section 21.6 mark 1."""
+
+
+class SourcedTable(BaseModel):
+    """A block of rows vouched for by one source, rather than per cell.
+
+    The declared exemption to mark 1, and protocol amendment 10 records why it exists. The chart on
+    an investigation screen is 109 days of ten channels: 1,090 numbers, every one of them from the
+    same artifact, written by the same harness, in one pass. Wrapping each in a `Sourced` would
+    repeat one answer a thousand times and make the payload unreadable, and mark 1's purpose is that
+    a reader can ask where a number came from, not that the answer be restated beside each one.
+
+    What keeps the exemption honest is `row_count`. The walker does not descend into these rows, so
+    the gate checks instead that the count the table publishes equals the rows it actually carries.
+    A table cannot then vouch for rows it does not have, and the one number that bounds the
+    exemption is itself a `Sourced` that has to resolve.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source: str
+    row_count: Sourced
+
+    def declared_rows(self) -> int:
+        value = self.row_count.value
+        return int(value) if isinstance(value, int | float) else -1
+
+    def actual_rows(self) -> int:
+        for name, value in self:
+            if name in {"source", "row_count"}:
+                continue
+            if isinstance(value, tuple | list):
+                return len(value)
+        return -1
 
 
 class Sourced(BaseModel):
@@ -71,18 +111,26 @@ def resolve_source(
     manifests: Mapping[str, Mapping[str, Any]],
     *,
     fact_ids: frozenset[str] = frozenset(),
+    artifacts: Path | None = None,
 ) -> bool:
     """Whether this source names something that exists.
 
-    Three kinds, and nothing else is accepted:
+    Four kinds, and nothing else is accepted:
 
     - a dotted manifest path, resolved with the same `locate` the results table uses, so a key whose
       name contains dots resolves here exactly as it does there;
-    - a fact or document-evidence id present in `fact_ids`;
+    - a fact, derived-fact or event id present in `fact_ids`, which the caller takes from the
+      ledger and the event store rather than from the artifact that cites it;
+    - an `artifact:` path to a file a harness wrote, resolved by the file existing;
     - a `rule:` reference to a pre-registered rule.
     """
     if source.startswith(RULE_PREFIX):
         return len(source) > len(RULE_PREFIX)
+    if source.startswith(ARTIFACT_PREFIX):
+        name = source[len(ARTIFACT_PREFIX) :]
+        if artifacts is None or not name or "/" in name or ".." in name:
+            return False
+        return (artifacts / name).exists()
     if _FACT_ID.match(source):
         return source in fact_ids
     manifest, _, key = source.partition(".")
@@ -101,6 +149,10 @@ def unsourced_figures(payload: Any, path: str = "") -> list[str]:
     found: list[str] = []
     if isinstance(payload, Sourced):
         return found
+    if isinstance(payload, SourcedTable):
+        # The declared exemption. `source` and `row_count` are still walked, so the table's own
+        # figure is checked; its rows are not, and `tables_in` hands them to the gate instead.
+        return unsourced_figures(payload.row_count, f"{path}.row_count" if path else "row_count")
     if isinstance(payload, BaseModel):
         for name, value in payload:
             found.extend(unsourced_figures(value, f"{path}.{name}" if path else name))
@@ -120,11 +172,37 @@ def unsourced_figures(payload: Any, path: str = "") -> list[str]:
     return found
 
 
+def tables_in(payload: Any) -> list[SourcedTable]:
+    """Every `SourcedTable` in a payload, for the gate that checks their counts."""
+    found: list[SourcedTable] = []
+    if isinstance(payload, Sourced):
+        return found
+    if isinstance(payload, SourcedTable):
+        return [payload]
+    if isinstance(payload, BaseModel):
+        for _, value in payload:
+            found.extend(tables_in(value))
+        return found
+    if isinstance(payload, Mapping):
+        for value in payload.values():
+            found.extend(tables_in(value))
+        return found
+    if isinstance(payload, str):
+        return found
+    if isinstance(payload, Sequence):
+        for value in payload:
+            found.extend(tables_in(value))
+        return found
+    return found
+
+
 def sources_in(payload: Any) -> list[str]:
     """Every source string a payload carries, in walk order."""
     found: list[str] = []
     if isinstance(payload, Sourced):
         return [payload.source]
+    if isinstance(payload, SourcedTable):
+        return [payload.source, payload.row_count.source]
     if isinstance(payload, BaseModel):
         for _, value in payload:
             found.extend(sources_in(value))

@@ -236,6 +236,22 @@ def main(argv: list[str] | None = None) -> int:
                 "cumulative_rate_shortfall_sm3": round(episode.cumulative_rate_shortfall_sm3, 2),
                 "deferred_volume_sm3": round(episode.deferred_volume_sm3, 2),
                 "reference_rate_sm3_per_day": round(episode.reference_rate_sm3_per_day, 2),
+                # Both medians from the bundle the controller was given, so the queue's "actual
+                # against expected" column is the comparison the investigation was judged on. The
+                # console may not derive an actual rate from a shortfall and a day count: that is
+                # arithmetic on a domain value, which section 21.1 puts out of its reach.
+                "episode_median_rate_sm3_per_day": (
+                    None
+                    if bundle.episode_rates.median_rate_sm3_per_day is None
+                    else round(bundle.episode_rates.median_rate_sm3_per_day, 2)
+                ),
+                "baseline_median_rate_sm3_per_day": (
+                    None
+                    if bundle.baseline_rates.median_rate_sm3_per_day is None
+                    else round(bundle.baseline_rates.median_rate_sm3_per_day, 2)
+                ),
+                "baseline_start": bundle.baseline_start.isoformat(),
+                "baseline_end": bundle.baseline_end.isoformat(),
                 "shortfall_threshold_sm3": round(episode.shortfall_threshold_sm3, 2),
                 "gap_fraction": round(episode.gap_fraction, 4),
                 "poorly_evidenced": episode.poorly_evidenced,

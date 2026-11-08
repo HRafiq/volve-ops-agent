@@ -23,7 +23,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from volve_ops.console.sources import Sourced
+from volve_ops.console.sources import Sourced, SourcedTable
 
 
 class Money(BaseModel):
@@ -193,14 +193,15 @@ class SeriesRow(BaseModel):
     water_cut: float | None
 
 
-class ChartSeries(BaseModel):
-    """The chart's rows, with one source for the lot and the row count as a sourced figure."""
+class ChartSeries(SourcedTable):
+    """The chart's rows, with one source for the lot and the row count as a sourced figure.
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    A `SourcedTable`, which is mark 1's declared exemption: 109 days of ten channels is 1,090
+    numbers from one artifact, and a `Sourced` around each would repeat one answer a thousand times.
+    `row_count` is what bounds the exemption, and the gate checks it against the rows actually here.
+    """
 
-    source: str
     rows: tuple[SeriesRow, ...]
-    row_count: Sourced
     episode_window: str
     governing_window: str
 

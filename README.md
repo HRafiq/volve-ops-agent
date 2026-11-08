@@ -146,7 +146,7 @@ reader I do not have. Protocol sections 17, 18 and 19 each say so, and section 1
 adjudication that would settle it: 40 events, blind, 80 percent agreement.
 
 Thirteen metrics the plan asked for are deferred, each with its obstacle named in
-[`docs/results_table.md`](docs/results_table.md) beside the 137 rows that carry a figure. Every
+[`docs/results_table.md`](docs/results_table.md) beside the 148 rows that carry a figure. Every
 obstacle is one of three things: the dataset lacks what the metric needs, the sample is too small for
 the number to mean anything, or there is no domain reader. The third is named in four of the thirteen
 and a fifth depends on one of those.
@@ -191,7 +191,7 @@ checked by parsing every workflow file. Anything that would call a model is manu
 
 | Document | What it is |
 |---|---|
-| [`docs/eval_protocol.md`](docs/eval_protocol.md) | The pre-registration. Its commit history is the evidence, tagged `prereg-v0` through `prereg-v13`, with no `v10` and section 13 saying why |
+| [`docs/eval_protocol.md`](docs/eval_protocol.md) | The pre-registration. Its commit history is the evidence, tagged `prereg-v0` through `prereg-v14`, with no `v10` and section 13 saying why |
 | [`docs/data_profile.md`](docs/data_profile.md) | What the data turned out to be, and the coverage gaps that limit what can be claimed |
 | [`docs/results_table.md`](docs/results_table.md) | Every figure in the project, with its denominator and whether it is gated, reported or deferred |
 | [`docs/architecture_decisions/`](docs/architecture_decisions/) | Nine decisions, including all three feasibility outcomes |

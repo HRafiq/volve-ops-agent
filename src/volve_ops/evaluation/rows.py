@@ -47,6 +47,32 @@ ROWS: Final[tuple[MetricRow, ...]] = (
         note="reported in the harness output rather than a run manifest",
     ),
     # ------------------------------------------------------------------ expectation
+    # The calibration figure the console's expectation panel shows an operator. It existed only
+    # inside condition 2's detail string until Phase 6 needed it, which is section 21.1 working as
+    # intended: the console may not derive a figure, so the harness that owns it publishes it.
+    *(
+        MetricRow(
+            layer="Expectation engine",
+            metric=f"Lower-tail rate, selected model, H={horizon}",
+            manifest="expectation",
+            key=f"lower_tail_rate.{horizon}",
+            denominator="evaluated development valid producing days at that horizon",
+            status=Status.REPORTED,
+            note="section 8 accepts 0.05 to 0.20; this is the calibration mark that fails",
+        )
+        for horizon in (7, 14, 28)
+    ),
+    *(
+        MetricRow(
+            layer="Expectation engine",
+            metric=f"Lower-tail bound, {edge}",
+            manifest="expectation",
+            key=f"lower_tail_bounds.{edge}",
+            denominator="fraction, fixed in section 8 before any model was fitted",
+            status=Status.REPORTED,
+        )
+        for edge in ("low", "high")
+    ),
     MetricRow(
         layer="Expectation engine",
         metric="Episodes opened on development data",

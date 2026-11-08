@@ -9,6 +9,11 @@
 
 | metric | value | denominator | status | what would settle it | note |
 |---|---|---|---|---|---|
+| Lower-tail rate, selected model, H=7 | 0.5632 | evaluated development valid producing days at that horizon | `reported` | - | section 8 accepts 0.05 to 0.20; this is the calibration mark that fails |
+| Lower-tail rate, selected model, H=14 | 0.5275 | evaluated development valid producing days at that horizon | `reported` | - | section 8 accepts 0.05 to 0.20; this is the calibration mark that fails |
+| Lower-tail rate, selected model, H=28 | 0.5096 | evaluated development valid producing days at that horizon | `reported` | - | section 8 accepts 0.05 to 0.20; this is the calibration mark that fails |
+| Lower-tail bound, low | 0.05 | fraction, fixed in section 8 before any model was fitted | `reported` | - | - |
+| Lower-tail bound, high | 0.2 | fraction, fixed in section 8 before any model was fitted | `reported` | - | - |
 | Episodes opened on development data | 14 | development days of 5 producing wells | `reported` | - | one detector, two wells carry all of them; not a benchmark, per section 19.11 |
 | Days evaluated, naive-median28 | 2548 | development valid producing days with a fitted window | `reported` | - | - |
 | Days evaluated, naive-persistence | 2548 | development valid producing days with a fitted window | `reported` | - | - |

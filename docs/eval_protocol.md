@@ -1,14 +1,18 @@
 # Evaluation protocol
 
-Version: v13
+Version: v14
 Date: 2026-10-08
 Status: pre-registered. Pushed before the work it judges.
-Amendments since v0: nine, recorded in section 13 and every one labelled post-inspection. Five of
+Amendments since v0: ten, recorded in section 13 and every one labelled post-inspection. Five of
 them correct pass marks that could not fail, which is this project's recurring defect and is named as
 such in amendments 6, 7 and 8. Amendment 9 corrects a factual claim rather than a check.
 New in v7 to v11: sections 19 and 20 and the amendments correcting them. Amendment 7 records three more
 marks that could not fail, a pre-registered gate dropped with the count rewritten around it, five holes
 in the correction store, and the thresholds section 20 promised to state and did not.
+New in v14: amendment 10 declares mark 1's exemption for a table of records, bounded by a row count
+the gate checks, and records the three figures section 21.1 forced into a manifest rather than letting
+the console derive them. One of those, the selected model's lower-tail rate, is 0.563 against a band
+of 0.05 to 0.20.
 New in v13: amendment 9 corrects two statements about the priority rule that were wrong when v12 was
 pushed, caught by writing one of them as a test and watching it fail.
 New in v12: section 21 fixes the operator console, before any of it is built. Its first rule is that
@@ -727,6 +731,46 @@ this document was silent on it until amendment 6. The rule now: an amendment tha
 which has just failed must state what the check was examining when it failed, why the failure was the
 check's rather than the project's, and what still audits the thing the check was supposed to audit. If
 it cannot, the finding stands and the project is in breach, not the check.
+
+### Amendment 10, v13 to v14: mark 1's exemption for a table of records, declared rather than finessed
+
+Date: 2026-11-08. Made **after** the first payloads were assembled, labelled as such. It widens a
+pass mark, which section 13 requires a justification for, and states what still audits the thing.
+
+Section 21.6 mark 1 as pushed says **every** figure in every API payload resolves to a manifest key
+or a fact id. The investigation screen's chart is 109 days of ten channels: **1,090 numbers**, every
+one from the same artifact, written by the same harness in one pass. Wrapping each in a source
+object would repeat one answer a thousand times, and mark 1's purpose is that a reader can ask where
+a number came from, not that the answer be restated beside each one.
+
+So a payload may carry a **table of records** whose rows are vouched for collectively, and three
+things bound the exemption:
+
+1. **The table declares its own source**, which must resolve like any other, and an `artifact:`
+   source resolves by the file a harness wrote actually existing.
+2. **The table publishes its row count as an ordinary sourced figure**, and the gate checks that
+   count against the rows the table actually carries. A table cannot then vouch for rows it does not
+   have, which is the failure this exemption would otherwise open.
+3. **Only a record qualifies, never a result.** A daily production rate is what the source says
+   happened; a shortfall, a share, a count or a score is a figure this project computed, and none of
+   those may live in a table. The exemption covers exactly one payload type today, the chart series,
+   and adding a second is an amendment.
+
+Two other source kinds were added at the same time and are narrower. An `artifact:` source names a
+per-episode file. An **event id** resolves against the event store rather than against the artifact
+citing it, which matters: a finding citing an event the store does not hold is the defect section
+18.6's provenance gate exists to catch, so taking the resolvable set from the citing document would
+have made that unfindable here too.
+
+**What section 21.1 forced on the way**, recorded because it is the rule working rather than failing.
+Three figures the console needs existed nowhere a reader could get them, and in each case the harness
+that owns the figure was extended rather than the console allowed to derive it: the per-episode
+shortfall, duration and rates; six queue aggregates; and the selected model's **lower-tail rate**,
+which existed only inside a condition's detail string. That last one is worth stating as a result
+rather than a plumbing note. At the 7-day horizon it is **0.563** against a section 8 band of 0.05 to
+0.20, so 56 percent of evaluated days fall below a bound that permits at most 20. The console's
+expectation panel shows that number where the line is drawn, because an operator reading a band has
+to know it does not calibrate.
 
 ### Amendment 9, v12 to v13: a factual claim in section 21.5 that was wrong when it was pushed
 
@@ -2271,9 +2315,13 @@ Each is a function with a test that makes it fail, and each reports what it exam
 five phases is that a gate written as an expression in the script that produces the thing it checks cannot
 fail, and the correction is structural rather than a matter of care.
 
-1. **Every figure in every API payload resolves to a manifest key or a fact id.** 100 percent. A payload
-   field that resolves to neither fails the build, which is the console's version of section 19.3's two
-   directions: every served figure has a source, and every source the console claims is real.
+1. **Every figure in every API payload resolves to a manifest key, a fact id, an event id, an
+   artifact file or a pre-registered rule.** 100 percent. A payload field that resolves to none of
+   those fails the build, which is the console's version of section 19.3's two directions: every
+   served figure has a source, and every source the console claims is real. Amendment 10 adds the
+   last three kinds and the one exemption: a **table of records** may be vouched for by one source
+   plus a row count the gate checks against the rows actually present, which covers the chart series
+   and nothing else.
 2. **No mockup placeholder appears**, section 21.2, checked against the enumerated list.
 3. **No hold-out well appears in any payload or any rendered view**, section 16. 100 percent, checked on
    the payloads the API actually serves rather than on the filter that builds them.
