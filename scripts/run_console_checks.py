@@ -17,7 +17,9 @@ checks cannot fail, and no amount of care substitutes for moving it out.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -33,6 +35,15 @@ from volve_ops.console.store import RunStore, investigation_id
 #: check time rather than listing them in a tracked file, and reports examining nothing when it is
 #: absent so that a skipped check is not mistaken for a passed one.
 DEFAULT_MOCKUP = Path("_private/mockup/VolveOpsConsole.jsx")
+
+
+def _commit() -> str:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "unknown"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -148,9 +159,14 @@ def main(argv: list[str] | None = None) -> int:
 
     marks = {outcome.name: outcome.passed for outcome in outcomes}
     payload = {
-        # Read from the document. A constant here is the defect amendment 9 named and
-        # round 2 of the phase 7 review fixed in run_security_checks.py; the same
-        # line one file over was left at v14 while the document was at v17.
+        # Recorded like every other manifest in this project. This one carried neither, so
+        # nothing in it would let a reader notice it had been written by an older script or
+        # against a different tree.
+        "generated": dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
+        "commit_sha": _commit(),
+        # Read from the document. A constant here is the defect amendment 9 named and round 2 of
+        # the phase 7 review fixed in run_security_checks.py; the same line one file over was
+        # left at v14 while the document was at v17.
         "protocol_version": CONSOLE_PROTOCOL_VERSION,
         "console_version": "console-v0",
         "queue_rows": len(queue.rows),
