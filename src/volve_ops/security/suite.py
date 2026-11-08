@@ -379,9 +379,7 @@ def _synthetic_history(well: str, onset: dt.date) -> list[Any]:
     return before + during
 
 
-def _investigation_results(
-    payload: Payload, control: Arm, treated: Arm
-) -> Iterator[Result]:
+def _investigation_results(payload: Payload, control: Arm, treated: Arm) -> Iterator[Result]:
     """Invariants judged on what the controller recorded and published."""
     consumer = "investigation: indexed document text"
 

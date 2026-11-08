@@ -22,11 +22,12 @@ import datetime as dt
 from pathlib import Path
 from typing import Annotated, Any, Final
 
-from fastapi import Body, Depends, FastAPI, HTTPException
+from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from volve_ops.console import assemble, labels
+from volve_ops.console import assemble, labels, limits, rate_limit
 from volve_ops.console.payloads import Header, InvestigationDetail, Queue
 from volve_ops.console.review import Action, ReviewLog, ReviewRecord, ReviewRefused, as_rows
 from volve_ops.console.store import ArtifactMissing, RunStore
@@ -62,12 +63,18 @@ LogDep = Annotated[ReviewLog, Depends(get_log)]
 
 
 class ReviewRequest(BaseModel):
-    """What a reviewer sends. The actor is required: an unattributed judgement is not a review."""
+    """What a reviewer sends. The actor is required: an unattributed judgement is not a review.
+
+    Both fields are length-bounded, which protocol section 22.4 mark 6 requires and section 22.8
+    fixes the numbers for. The review log is append-only, so an unbounded note is unbounded
+    permanently: no route removes one. A value over the bound is refused with the limit in the
+    error rather than truncated, because a silently shortened correction is a falsified record.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    actor: str
-    note: str | None = None
+    actor: Annotated[str, Field(max_length=limits.MAX_ACTOR_CHARS)]
+    note: Annotated[str | None, Field(max_length=limits.MAX_NOTE_CHARS)] = None
 
 
 class ReviewResponse(BaseModel):
@@ -86,6 +93,40 @@ def _not_found(exc: ArtifactMissing) -> HTTPException:
     like an answer.
     """
     return HTTPException(status_code=404, detail=str(exc))
+
+
+@app.middleware("http")
+async def bound_requests(request: Request, call_next: Any) -> Response:
+    """Section 22.8's per-client request bound, and mark 10.
+
+    Applied to every route including the static console, with a higher bound for assets because
+    one page load fetches several files. The refusal is a 429 carrying the limit and a Retry-After,
+    so a caller can tell a bound from a fault.
+
+    The limiter's own limits are in its module docstring and they are real: one process, keyed by
+    peer address, fixed window. This stops a loop; it is not traffic shaping.
+    """
+    client = request.client.host if request.client else rate_limit.UNKNOWN_CLIENT
+    limiter = rate_limit.limiter_for(request.url.path)
+    allowed, remaining = limiter.check(client)
+    if not allowed:
+        retry = limiter.retry_after()
+        return JSONResponse(
+            status_code=429,
+            content={
+                "detail": (
+                    f"rate limit of {limiter.limit} requests per "
+                    f"{limiter.window_seconds} seconds exceeded"
+                ),
+                "limit": limiter.limit,
+                "window_seconds": limiter.window_seconds,
+            },
+            headers={"Retry-After": str(retry)},
+        )
+    response: Response = await call_next(request)
+    response.headers["X-RateLimit-Limit"] = str(limiter.limit)
+    response.headers["X-RateLimit-Remaining"] = str(remaining)
+    return response
 
 
 @app.get("/api/health")
@@ -158,8 +199,23 @@ def trace(investigation_id: str, store: StoreDep) -> dict[str, Any]:
 
 
 @app.get("/api/investigations/{investigation_id}/review")
-def review_history(investigation_id: str, log: LogDep) -> dict[str, Any]:
-    """Every review action against one investigation, in order, with the state they imply."""
+def review_history(investigation_id: str, store: StoreDep, log: LogDep) -> dict[str, Any]:
+    """Every review action against one investigation, in order, with the state they imply.
+
+    The id is resolved against the published rows before anything is read, as every other route
+    that takes one does. This route did not, and it was the only one: it consulted the log alone,
+    so any string at all came back 200 with a state of `awaiting_review` and the string echoed as
+    an investigation id. An episode that does not exist got a confident review panel, which is the
+    failure `RunStore._read` names in its own message: an empty screen looks like an answer.
+
+    Found by a test that enumerated every route taking an id rather than checking the obvious
+    ones. Nothing here opened a path built from the id, so it was never a traversal; it was a
+    screen answering a question about something that is not there.
+    """
+    try:
+        store.by_id(investigation_id)
+    except ArtifactMissing as exc:
+        raise _not_found(exc) from exc
     records = log.for_investigation(investigation_id)
     state = log.state_of(investigation_id)
     return {

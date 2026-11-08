@@ -28,6 +28,12 @@ from volve_ops.extraction.npt import extract_from_report
 from volve_ops.investigation.schemas import CausalLevel, Finding, Verdict
 from volve_ops.investigation.trace import Stage
 from volve_ops.security import suite
+from volve_ops.security.attacks import (
+    ARCHIVE_ATTACKS,
+    PARSES_CORRECTLY,
+    XML_ATTACKS,
+    Attack,
+)
 from volve_ops.security.invariants import (
     ALL_INVARIANTS,
     LIVE_INVARIANTS,
@@ -476,3 +482,124 @@ class TestTheMarkupSinkGate:
             "// we never use inner" + "HTML here\n", encoding="utf-8"
         )
         assert len(scan(tmp_path)) == 1
+
+
+class TestTheAttackCorpus:
+    """Section 22.4 mark 5 and section 22.5. The defences exist; this attacks them."""
+
+    @pytest.mark.parametrize("attack", XML_ATTACKS, ids=lambda a: a.name)
+    def test_every_xml_attack_is_refused(self, attack: Attack, tmp_path: Path) -> None:
+        from volve_ops.ingest.quarantine import UnsafeInputError
+        from volve_ops.ingest.safe_xml import parse_xml_file
+
+        path = attack.build(tmp_path)
+        with pytest.raises(UnsafeInputError) as refusal:
+            # The size bound is lowered so the oversized fixture need not be eight mebibytes.
+            # Every other fixture is far below it, so the lowered bound changes nothing for them.
+            parse_xml_file(path, max_bytes=10_000)
+        message = str(refusal.value).lower()
+        for expected in attack.expect_refusal_mentioning:
+            assert expected in message, f"{attack.name}: refusal said {message!r}"
+
+    @pytest.mark.parametrize("attack", ARCHIVE_ATTACKS, ids=lambda a: a.name)
+    def test_every_archive_attack_is_refused(self, attack: Attack, tmp_path: Path) -> None:
+        from volve_ops.ingest.quarantine import UnsafeInputError
+        from volve_ops.ingest.safe_archive import safe_extract_zip
+
+        archive = attack.build(tmp_path)
+        destination = tmp_path / "out"
+        with pytest.raises(UnsafeInputError) as refusal:
+            safe_extract_zip(
+                archive,
+                destination,
+                # Lowered so a bomb fixture is kilobytes rather than gigabytes. This tests the
+                # comparison; the constants themselves are asserted separately below.
+                max_total_bytes=1_000_000,
+                max_member_bytes=500_000,
+                max_members=20,
+                max_ratio=50.0,
+            )
+        message = str(refusal.value).lower()
+        for expected in attack.expect_refusal_mentioning:
+            assert expected in message, f"{attack.name}: refusal said {message!r}"
+
+    def test_the_real_budgets_are_what_the_protocol_says(self) -> None:
+        # The bombs above run against lowered budgets, so the production constants are checked
+        # here. Without this the suite would prove a comparison works and say nothing about the
+        # numbers the system actually runs with.
+        from volve_ops.ingest import safe_archive, safe_xml
+
+        assert safe_xml.MAX_XML_BYTES == 8 * 1024 * 1024
+        assert safe_archive.MAX_UNCOMPRESSED_BYTES == 32 * 1024 * 1024 * 1024
+        assert safe_archive.MAX_MEMBER_BYTES == 4 * 1024 * 1024 * 1024
+        assert safe_archive.MAX_MEMBERS == 100_000
+        assert safe_archive.MAX_COMPRESSION_RATIO == 900.0
+
+    def test_nothing_was_written_when_an_archive_is_refused(self, tmp_path: Path) -> None:
+        from volve_ops.ingest.quarantine import UnsafeInputError
+        from volve_ops.ingest.safe_archive import safe_extract_zip
+
+        archive = _relative_escape_fixture(tmp_path)
+        destination = tmp_path / "out"
+        with pytest.raises(UnsafeInputError):
+            safe_extract_zip(archive, destination)
+        assert not (tmp_path.parent / "escaped.xml").exists()
+        assert not list(destination.glob("**/*")) if destination.exists() else True
+
+    @pytest.mark.parametrize("attack", XML_ATTACKS, ids=lambda a: a.name)
+    def test_a_refusal_does_not_relax_the_next_file(self, attack: Attack, tmp_path: Path) -> None:
+        """Section 22.4 mark 5's second clause.
+
+        A parser that disabled a check after refusing something, or cached a permissive
+        configuration, would pass every fixture above and fail here. The valid file is parsed
+        immediately after each refusal and must still get the whole check set, which is shown by
+        feeding it a document that only the full set refuses.
+        """
+        from volve_ops.ingest.quarantine import UnsafeInputError
+        from volve_ops.ingest.safe_xml import parse_xml_file
+
+        with pytest.raises(UnsafeInputError):
+            parse_xml_file(attack.build(tmp_path), max_bytes=10_000)
+
+        good = tmp_path / "good.xml"
+        good.write_text('<?xml version="1.0"?><drillReport><a/></drillReport>', encoding="utf-8")
+        assert parse_xml_file(good).tag == "drillReport"
+
+        # And the full check set still runs: an entity document offered right after a refusal is
+        # still refused, rather than slipping through a parser left in a relaxed state.
+        again = tmp_path / "again.xml"
+        again.write_text(
+            '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x "y">]><r>&x;</r>', encoding="utf-8"
+        )
+        with pytest.raises(UnsafeInputError):
+            parse_xml_file(again)
+
+    @pytest.mark.parametrize("case", PARSES_CORRECTLY, ids=lambda a: a.name)
+    def test_an_odd_but_harmless_document_is_read_correctly(
+        self, case: Attack, tmp_path: Path
+    ) -> None:
+        """A corpus of things that must fail cannot tell a careful parser from a broken one.
+
+        The encoding-mismatch document declares UTF-8 and is written in UTF-16. It is not an
+        attack on this parser, because `safe_xml` refuses constructs rather than filtering
+        content, so there is no content filter for a re-encoding to slip past. What matters is
+        that the text comes back right.
+        """
+        from volve_ops.ingest.safe_xml import parse_xml_file
+
+        root = parse_xml_file(case.build(tmp_path), max_bytes=10_000)
+        assert root.tag == "r"
+        assert root.text == "drilling"
+
+    def test_every_fixture_names_an_unreachable_path(self) -> None:
+        # A fixture pointing at /etc/passwd that succeeded would look like a test that passed.
+        from volve_ops.security.attacks import UNREACHABLE
+
+        assert not Path(UNREACHABLE).exists()
+        assert not Path(UNREACHABLE).parent.exists()
+
+
+def _relative_escape_fixture(directory: Path) -> Path:
+    from volve_ops.security.attacks import ARCHIVE_ATTACKS
+
+    return next(a for a in ARCHIVE_ATTACKS if a.name == "relative-escape").build(directory)
