@@ -14,9 +14,24 @@ from pathlib import Path
 import pytest
 
 from volve_ops.console import priority
+from volve_ops.domain.activity import activity_dates_by_well
+from volve_ops.domain.day_class import DayClass
+from volve_ops.domain.episodes import (
+    MIN_TRIGGER_RUN,
+    Episode,
+    SeriesPoint,
+    sweep_series,
+    sweep_well,
+)
+from volve_ops.domain.expectation import NaiveMedian28
+from volve_ops.domain.production_service import load_volve_production
+from volve_ops.domain.regimes import stable_reference_windows
+from volve_ops.domain.splits import derive_split, development_only
 
 MANIFEST = Path("data/cache/investigation_run.json")
 EVALUATION = Path("data/cache/evaluation_run.json")
+WORKBOOK = Path("data/cache/Volve production data.xlsx")
+REPORTS = Path("data/cache/ddr_xml")
 
 
 def episode(**over: object) -> dict[str, object]:
@@ -205,3 +220,86 @@ class TestThePriorityRuleOnTheRealRun:
         assert reduced[("15/9-F-14", "2009-05-29")] is priority.Priority.MEDIUM
         assert sum(1 for s in scored if s.priority is priority.Priority.HIGH) == 1
         assert not [p for p in reduced.values() if p is priority.Priority.HIGH]
+
+
+@pytest.mark.skipif(not WORKBOOK.exists(), reason="needs the cached workbook and reports")
+class TestTheChartSeriesIsTheDetectorsOwn:
+    """`sweep_series` against `sweep_well`, protocol section 21.1.
+
+    The expected rate and its band are not readings: they are the output of the model section 7
+    selected, fitted on the window section 7 chose, at the step count the detector used. The console
+    must draw the band the verdict was judged against, so the two loops are pinned together here.
+    """
+
+    WELLS = ("15/9-F-12", "15/9-F-14")
+
+    def swept(self, well: str) -> tuple[list[Episode], list[SeriesPoint]]:
+        history = load_volve_production(WORKBOOK)
+        split = derive_split(history.days)
+        days = development_only(history.for_well(well), split)
+        windows = stable_reference_windows(
+            days, activity_dates=activity_dates_by_well(REPORTS).get(well, set())
+        )
+        model = NaiveMedian28()
+        return sweep_well(well, days, windows, model), sweep_series(well, days, windows, model)
+
+    def valid_window(self, episode: Episode, points: list[SeriesPoint]) -> list[SeriesPoint]:
+        return [
+            p
+            for p in points
+            if episode.onset <= p.date <= episode.offset
+            and p.day_class is DayClass.VALID_PRODUCING
+        ]
+
+    def test_every_onset_and_trigger_run_is_below_band_in_the_series(self) -> None:
+        for well in self.WELLS:
+            episodes, points = self.swept(well)
+            by_date = {p.date: p for p in points}
+            assert episodes, well
+            for episode in episodes:
+                assert by_date[episode.onset].below_band, (well, episode.onset)
+                run = self.valid_window(episode, points)[:MIN_TRIGGER_RUN]
+                assert len(run) == MIN_TRIGGER_RUN, (well, episode.onset)
+                assert all(p.below_band for p in run), (well, episode.onset)
+
+    def test_a_window_may_contain_days_back_inside_the_band(self) -> None:
+        """Section 9 extends an episode through short recoveries, so this is expected.
+
+        Asserted rather than left implicit, because the obvious stronger property is false: it fails
+        on 5 of the 14 development episodes, and a reader who assumed it would mistrust the chart
+        whenever a point sat inside the band.
+        """
+        recovered = 0
+        for well in self.WELLS:
+            episodes, points = self.swept(well)
+            for episode in episodes:
+                recovered += sum(1 for p in self.valid_window(episode, points) if not p.below_band)
+        assert recovered > 0
+
+    def test_a_day_that_is_not_valid_producing_has_no_derived_figure(self) -> None:
+        """The model predicts per valid producing day, so a shut-in day gets no line and no ratio.
+
+        The water cut is here for a reason found by this test. A first version computed it on every
+        governed day and published four negative water cuts, down to -2.61, on days the classifier
+        had already quarantined with `negative_volume`. A day section 6 refuses is a day nothing may
+        be derived from.
+        """
+        for well in self.WELLS:
+            _, points = self.swept(well)
+            for point in points:
+                if point.day_class is not DayClass.VALID_PRODUCING:
+                    assert point.expected is None
+                    assert point.lower is None
+                    assert point.upper is None
+                    assert point.water_cut is None
+                    assert not point.below_band
+
+    def test_every_published_water_cut_is_a_fraction(self) -> None:
+        published = 0
+        for well in self.WELLS:
+            _, points = self.swept(well)
+            for point in points:
+                if point.water_cut is not None:
+                    published += 1
+                    assert 0.0 <= point.water_cut <= 1.0, (well, point.date, point.water_cut)
+        assert published > 1_000
