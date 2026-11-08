@@ -220,6 +220,27 @@ class FactLedger:
                     "a derivation across units must say what it produced"
                 )
 
+    def as_records(self) -> list[dict[str, object]]:
+        """Every fact, serialised, in id order, for an artifact a reader can walk.
+
+        Added for the console's evidence drawer, which the console design's decision 7 specifies as
+        the object behind a cell rather than a restatement of it: the metric, both window values,
+        the source table, the transformation and the input record count. All of that is already in
+        the ledger and was being discarded when the run ended, so a reader could see a fact id in a
+        finding and had nothing to resolve it against.
+
+        `kind` is written out rather than inferred from which keys are present, because a reader
+        checking an artifact by hand should not have to know the model to tell a measurement from a
+        derivation.
+        """
+        out: list[dict[str, object]] = []
+        for fact_id in sorted(self._facts):
+            fact = self._facts[fact_id]
+            record = fact.model_dump(mode="json")
+            record["kind"] = "derived" if isinstance(fact, DerivedFact) else "measured"
+            out.append(record)
+        return out
+
     def manifest_hash(self) -> str:
         """A digest of the ledger's content, for a run manifest.
 

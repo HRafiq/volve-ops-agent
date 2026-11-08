@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import argparse
 import collections
+import datetime as dt
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from volve_ops.domain.activity import activity_dates_by_well
 from volve_ops.domain.day_class import DayClass
-from volve_ops.domain.episodes import sweep_well
+from volve_ops.domain.episodes import SeriesPoint, sweep_series, sweep_well
 from volve_ops.domain.expectation import NaiveMedian28
 from volve_ops.domain.production_service import load_volve_production
 from volve_ops.domain.regimes import stable_reference_windows
@@ -49,6 +50,11 @@ from volve_ops.investigation.trace import Stage, Trace
 from volve_ops.investigation.validator import CitableDocument, check
 from volve_ops.provenance.facts import FactLedger
 from volve_ops.retrieval.index import BM25Index, chunks_from_events
+
+#: Days either side of an episode the chart shows, so an operator can see the well before and after
+#: rather than only during. A margin and not the whole history: the point of the screen is the
+#: episode, and the governing reference window is named in the expectation panel beside it.
+CHART_MARGIN: Final = dt.timedelta(days=45)
 
 
 def stop_matches_trace(trace: Trace, finding: Finding) -> bool:
@@ -111,8 +117,12 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     episodes = []
+    series: dict[str, list[SeriesPoint]] = {}
     for well in sorted(usable):
         episodes.extend(sweep_well(well, usable[well], windows[well], NaiveMedian28()))
+        # The same model and windows the sweep just used, so the chart shows the band the verdict
+        # was judged against rather than one fitted again for display.
+        series[well] = sweep_series(well, usable[well], windows[well], NaiveMedian28())
 
     events = list(EventStore(args.store).read(args.version))
     index = BM25Index(chunks_from_events(events))
@@ -175,6 +185,22 @@ def main(argv: list[str] | None = None) -> int:
         result.trace.write(args.traces / f"{slug}.trace.json")
         (args.traces / f"{slug}.finding.json").write_text(
             finding.model_dump_json(indent=2) + "\n", encoding="utf-8"
+        )
+        # The ledger and the chart series, written per episode because the console reads them and
+        # protocol section 21.1 does not let it rebuild either. A finding cites fact ids, and until
+        # now the ledger that defines them was discarded when the run ended, so the ids resolved to
+        # nothing. The series is the detector's own, from `sweep_series`.
+        (args.traces / f"{slug}.facts.json").write_text(
+            json.dumps(ledger.as_records(), indent=2) + "\n", encoding="utf-8"
+        )
+        window = [
+            p
+            for p in series.get(episode.well, [])
+            if episode.onset - CHART_MARGIN <= p.date <= episode.offset + CHART_MARGIN
+        ]
+        (args.traces / f"{slug}.series.json").write_text(
+            json.dumps([p.model_dump(mode="json") for p in window], indent=2) + "\n",
+            encoding="utf-8",
         )
 
         supported = [
