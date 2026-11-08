@@ -364,6 +364,25 @@ def _coverage(finding: Mapping[str, Any]) -> EvidenceCoverage:
         line = f"{channel}: {usable} of {days} days usable"
         (available if usable > 0 else missing).append(line)
     missing.extend(str(line) for line in finding.get("missing_evidence", []))
+
+    # An investigation can decline to conclude with nothing missing at all, and the first version of
+    # this panel showed an empty list when that happened. The section 21.6 mark 4 gate caught it on
+    # `15/9-F-14` from 2012-03-11: every mandatory channel was available, retrieval found no
+    # document, and no hypothesis reached the threshold. An empty "missing" list on an abstention
+    # screen reads as the system saying there was no reason it could not conclude, which is the
+    # opposite of what happened.
+    #
+    # So the stop reason is rendered as its own line. It is a recorded field, not a new figure.
+    if not missing and str(finding.get("verdict", "")) == "insufficient_evidence":
+        stop = str(finding.get("stop_reason", ""))
+        if stop == "evidence_exhausted":
+            missing.append(
+                "Nothing was missing. Every mandatory channel was available and the drilling "
+                "narrative was searched; no hypothesis reached the evidence threshold, so no "
+                "single explanation is issued."
+            )
+        else:
+            missing.append(f"The run stopped on {stop!r} before reaching a conclusion.")
     return EvidenceCoverage(available=tuple(available), missing=tuple(missing))
 
 
