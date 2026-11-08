@@ -1,11 +1,16 @@
 # Evaluation protocol
 
-Version: v15
-Date: 2026-10-08
+Version: v16
+Date: 2026-11-08
 Status: pre-registered. Pushed before the work it judges.
 Amendments since v0: eleven, recorded in section 13 and every one labelled post-inspection. Five of
 them correct pass marks that could not fail, which is this project's recurring defect and is named as
 such in amendments 6, 7 and 8. Amendment 9 corrects a factual claim rather than a check.
+New in v16: section 22 pre-registers phase 7, the health, security and failure experiments. It
+classifies three of the design brief's seven injection invariants as vacuous in a system that calls no
+model, and says why reporting a vacuous check as a passed one is the defect this project keeps finding.
+Section 22.2 names the Phase 7 form of that defect in advance: a fixture whose payload never reaches
+the component under test. Thirteen marks gate.
 New in v7 to v11: sections 19 and 20 and the amendments correcting them. Amendment 7 records three more
 marks that could not fail, a pre-registered gate dropped with the count rewritten around it, five holes
 in the correction store, and the thresholds section 20 promised to state and did not.
@@ -2460,3 +2465,216 @@ in both directions. Mark 1 covers every figure in the **assembled payloads**, wh
 console's screens render. Two routes, `/facts` and `/trace`, serve a per-episode artifact verbatim so
 that a reader can walk a fact's lineage and an investigation's recorded steps; they are a copy of a
 file on disk rather than an assembled payload, and they are declared here as outside both.
+
+## 22. Health, security and failure experiments
+
+Pre-registered before any of it is built, and pushed before a single fixture runs. This section covers
+the injection suite, the parser and archive attack corpus, the provenance-failure experiments, the
+ablations, the public-demo request bound, and the System Health workspace that reports all of them.
+
+### 22.1 What "injection" can mean in a system with no model in it
+
+Section 11.3 of the design brief lists seven prompt-injection invariants. Every one of them is written
+for a system where document text reaches a language model. **No shipped module in this project calls a
+model.** The extraction layer is rule-based, the investigation controller is a fixed sequence of
+deterministic stages, and section 21.1 confines the console to rendering. So three of the seven
+invariants have nothing to hold against here, and the project's own standard forbids reporting a
+vacuous check as a passed one.
+
+They are therefore classified before they are tested, and the classification is part of the result:
+
+| Section 11.3 invariant | Here |
+|---|---|
+| document text cannot override system/developer policy | **vacuous**: no prompt exists to override |
+| system/developer prompts are not leaked | **vacuous**: there are none to leak |
+| document text cannot initiate tools merely because it instructs the model to | **vacuous as written**, replaced below by a live form |
+| document text cannot broaden tool parameters outside the investigation need | live |
+| document text cannot access secrets or arbitrary local files | live |
+| document text cannot alter the verdict or provenance schema | live |
+| document text cannot disable grounding or human gating | live |
+
+The third is replaced rather than dropped. Nothing here reads an instruction, but the nearby property
+is real and worth holding: **the stage sequence is fixed, and no document content can add a stage, a
+tool call, or a retrieval query that the controller would not otherwise have made.** That is testable
+against the recorded trace.
+
+Removing the model does not remove the attack surface; it moves it. What remains is data injection
+against deterministic consumers, and the question becomes which consumers **interpret** their input
+rather than recording it. Almost everything here records. The console interprets, because markup is
+interpreted by a browser, which makes the rendering layer the live injection channel in this
+architecture and the one section 11.3 does not mention.
+
+### 22.2 A fixture that never arrives has not been tested
+
+Every phase of this project has found the same defect in a different costume: a check that could not
+fail. Phase 6's form was that mark 1 asked whether a figure's source resolved and never whether the
+figure came from it. The Phase 7 form is predictable from the shape of the work, so it is written down
+before the work starts:
+
+**An injection fixture proves nothing unless its payload reached the component under test.** A hostile
+string written into an XML attribute no parser reads, or into a field the assembler drops, will pass
+every invariant while testing nothing at all. The suite would report green and the greenness would be
+an artifact of the payload going nowhere.
+
+So each fixture carries a **reachability assertion**: the payload must be found in the input the
+component actually consumed, and the suite records that separately from the invariant result. A fixture
+whose payload cannot be located downstream is reported as **not reached**, which is a defect in the
+fixture, and is never counted as a preserved invariant. This is the same distinction amendment 11 forced
+on the absence records, where a question never asked had been reported as an answer of none found.
+
+The suite publishes three counts, not one: invariants held, invariants violated, fixtures not reached.
+A run with any fixture in the third column has not finished.
+
+### 22.3 The injection corpus
+
+Payloads are injected into copies of real drilling-report XML, in the fields the extraction layer does
+read, and carried through the whole path: parse, extract, index, retrieve, investigate, assemble,
+render. Classes, each with encoding and Unicode variants as section 11.3 requires:
+
+1. **Imperative text**, instructing a reader to ignore prior instruction, call a tool, or report a
+   conclusion. Tests the replaced third invariant: the trace must be step-for-step identical to the
+   same episode's trace without the payload, apart from the span text itself.
+2. **Markup and script**, including `<script>`, event-handler attributes, `javascript:` and `data:`
+   URLs, and HTML entities that decode into those. Tests the rendering channel.
+3. **Schema forgery**: text shaped like a verdict, a fact id, a confidence, a causal level, or a source
+   string, including strings that imitate this project's own `artifact:` and `rule:` prefixes.
+4. **Path and secret bait**: `../` sequences, absolute paths, `file:` URLs, environment-variable names,
+   and the literal names of this repository's own secret files.
+5. **Parameter widening**: dates far outside any episode, enormous row counts, and well names that are
+   not wells, placed where a date or a well name is read.
+6. **Unicode and encoding**: right-to-left override, zero-width and bidirectional controls, homoglyph
+   well names, overlong UTF-8, NFC/NFKC pairs that normalise together, and nested entity encodings of
+   classes 2 and 4.
+
+### 22.4 Pass marks that gate
+
+Every mark below fails the build when it fails. Where a mark can only be checked against an artifact,
+it reads the artifact and not the function that produced it, which is section 21's rule and the only
+one that has held across six phases.
+
+1. **Every live invariant in 22.1 holds under every fixture in 22.3, and every fixture is proven
+   reached.** Vacuous invariants are reported as vacuous, with the reason, and are not added to any
+   count of invariants preserved. A violated invariant names the fixture, the component and the
+   observed behaviour.
+2. **The console has no unescaped-markup sink.** Zero occurrences of `dangerouslySetInnerHTML`,
+   `innerHTML`, `outerHTML`, `document.write` and `eval` in the frontend source. Checked by a gate over
+   the source text, because this is a property of the code rather than of a payload, and one sink
+   reintroduced later is exactly the regression a payload corpus can miss.
+3. **Hostile text reaches the screen as text.** For every class 2 and class 6 payload, the assembled
+   payload carries the string, and the rendered DOM contains it as a text node with no element, no
+   attribute and no URL scheme derived from it. Checked against the rendered output, not against the
+   assembler.
+4. **Every class 4 payload is refused or rendered inert, and no file outside the declared data
+   directories is opened during the run.** File access is observed during the run rather than argued
+   from the code.
+5. **Every attack fixture in 22.5 is refused as an unsafe input and quarantined**, never parsed, and the
+   refusal is observed at the parser. A refused file does not relax any check for the file after it,
+   which is tested by running a valid file immediately after each refusal and requiring the full check
+   set to run on it.
+6. **Every operator-supplied string has a declared maximum length, and the API refuses one that exceeds
+   it** with a typed error. The review log is append-only, so an unbounded string is unbounded
+   permanently.
+7. **No route opens a path that was not derived from a manifest row.** The investigation id in a URL is
+   resolved by exact match against published rows before any path is built, for every route that takes
+   one, including the four review writes.
+8. **Each provenance-failure class in 22.6 is blocked, and the block is observed at the publication
+   gate.** A test that constructs an invalid finding and asserts the constructor refused it has tested
+   the constructor; the mark requires the attempt to reach the gate and be stopped there.
+9. **Each ablation in 22.7 reports a measured delta against the unablated run**, with identical gates
+   applied to both arms. An ablation that moves nothing is reported as moving nothing. An ablation whose
+   arm fails a gate is reported as failed, not dropped.
+10. **The request bound in 22.8 exists, is enforced, and the health tab states it.** Where a protection
+    the design brief asks for has nothing to protect in this architecture, it is declared not applicable
+    with the reason, and no counter is invented to make the screen look complete.
+11. **Every number on the System Health workspace resolves to a manifest or artifact**, under section
+    21.1 and mark 1 of section 21.6. The health tab renders and does not compute, including its deltas:
+    a delta is published by the harness that owns both arms, or it does not appear.
+12. **The version-comparison table shows no delta it cannot compute.** Where only one version exists,
+    the comparison column says so. A `0.00` in a delta column against an absent baseline is a figure
+    from nowhere, which section 21.2 forbids, and it is the most likely way this screen lies.
+13. **No text in this phase's output claims an operator safety case.** Section 11.1 is explicit that the
+    read-only posture reduces the risk surface and does not satisfy a formal safety case; the gate
+    searches this phase's documents and payloads for the stronger claim.
+
+### 22.5 The parser and archive corpus
+
+The defences already exist, written in the ingest layer in an early phase: `safe_xml` refuses DTDs,
+entities, external references and XInclude, with a size and extension allow-list; `safe_archive` refuses
+path escape, symlink members, absolute and ratio-based decompression bombs, member counts and
+case-or-normalisation collisions. Phase 7 does not write them. It attacks them, which is a different
+activity and the only one that produces evidence.
+
+Fixtures: external-entity file read, external-entity HTTP fetch, recursive internal entity, parameter
+entity, external DTD, XInclude of a local file, a document whose declared encoding disagrees with its
+bytes, an oversized document, a document with a disallowed extension; and for archives, `..` escape,
+absolute member path, drive-prefixed and URL-scheme member names, symlink member, a member that
+decompresses past its budget, an archive past its total budget, excess member count, and two members
+colliding under case folding and under NFC.
+
+Each fixture is small, synthetic, committed, and generated by a script so a reader can see what it
+contains. The entity fixtures point at paths that do not exist, so a fixture that somehow succeeds fails
+loudly rather than reading a real file.
+
+### 22.6 Provenance-failure classes
+
+Failure F12 of the design brief, made specific. Each is an attempt to publish something the provenance
+rules forbid, and each must be stopped at the gate:
+
+1. a derived figure with no lineage;
+2. a figure whose declared source does not resolve;
+3. a figure whose source resolves to a record holding a different value, which is the defect amendment
+   11 recorded on 198 of 198 drawer figures and which no gate could then see;
+4. a quote attributed to a document version other than the one the index holds;
+5. a cited event id that does not exist in the event store;
+6. a finding citing evidence outside its own episode window;
+7. a confidence or causal level with no evidence record behind it.
+
+Class 3 is the reason this list exists in this form. A source that resolves is a weaker property than a
+source that supports the figure, and the difference was invisible for an entire phase.
+
+### 22.7 Ablations
+
+Each ablation removes one capability, re-runs on development data only, and reports what moved. The
+hold-out is not touched; section 19.2 checks that.
+
+1. **Expectation** (F1): the selected model against each baseline, and the count of episodes each opens.
+   A bad expectation manufactures investigations, and the count is the measurement of that.
+2. **Retrieval** (F5): remove in-window documents for episodes that have them, and measure the change in
+   verdict, evidence band and abstention rate. ADR 0008 established that most episodes have no in-window
+   document, so this ablation runs on the minority that do and the population size is reported with the
+   result.
+3. **Calibration** (F8): evidence-derived confidence against a flat prior, scored the same way.
+4. **Cost and latency** (F13): wall-clock and stage counts per investigation, with and without the
+   caches. **Token and model-call cost is declared not applicable**: no model is called, so a cost
+   curve denominated in tokens would be a decorative zero. What is real here is compute time and I/O,
+   and that is what is reported.
+
+### 22.8 The public-demo request bound
+
+A public deployment needs a bound on what one caller can consume. The design brief asks for rate limits,
+model-call budgets and safe fallback fixtures. Here, **model-call budgets are not applicable** for the
+reason in 22.7, and saying so is better than a token counter that counts nothing.
+
+What is applicable: a per-client request rate limit, a bounded response size, the existing bounded date
+range on every query-shaped tool, and a declared maximum on operator-supplied strings. The limits are
+fixed in this section before they are implemented: 60 requests per minute per client, 120 for the static
+console assets, 4,000 characters for a review note, 200 for an actor name. A refusal is a typed error
+with the limit in it, never a truncation, because a silently truncated correction is a falsified record.
+
+### 22.9 Deferred, with what would settle each
+
+- **A model in the loop.** Most of section 11.3 becomes live the moment one is added, and the three
+  vacuous invariants in 22.1 would need real tests. What would settle it is a model-backed stage with
+  its own pre-registered invariant suite, which is not this phase.
+- **Correction-store leakage** (F11). Section 19.2's fourth check is still vacuous because the
+  correction store is empty. What would settle it is a recorded correction originating in a hold-out
+  case, which requires a review session that has not happened.
+- **Version comparison across real versions.** Mark 12 keeps the screen honest in the meantime; what
+  would settle it is a second scored version of the investigator, which arrives when the next phase
+  changes one.
+
+### 22.10 The Phase 7 gate
+
+All thirteen marks of 22.4 pass. The injection suite reports zero violations and zero fixtures not
+reached. The System Health workspace shows measured numbers and experiment ids that reproduce from the
+committed scripts. The hold-out is untouched.
