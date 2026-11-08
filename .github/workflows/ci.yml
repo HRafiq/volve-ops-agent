@@ -42,12 +42,19 @@ jobs:
           fi
           echo "No private, data or secret paths tracked."
 
-      # The optional mcp extra is installed here even though it is optional, because the
-      # adapter module is type-checked and strict mypy cannot check a decorator whose type
-      # it cannot resolve. Without it, `@mcp.tool()` is an untyped decorator and the job
-      # fails on code that is correct. It needs no API key, so the job stays cheap.
+      # Both optional extras are installed here even though both are optional, because their
+      # modules are type-checked and strict mypy cannot check a decorator whose type it cannot
+      # resolve. Without `mcp`, `@mcp.tool()` is an untyped decorator; without `console`,
+      # `@app.get()` is, and the job fails on thirteen lines of correct code. Neither needs an API
+      # key, so the job stays cheap.
+      #
+      # `api/` is not in mypy's `files`, but `scripts/run_console_checks.py` imports it to read the
+      # route table for section 21.6 mark 7, so mypy follows the import and checks it. That is the
+      # behaviour we want: the API is worth type-checking. It is also why this line has to carry
+      # the extra, and the Phase 6 commit that added FastAPI did not, repeating the mistake commit
+      # 5accf6e fixed for `mcp` three phases earlier.
       - name: Install
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev,mcp]"
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev,mcp,console]"
 
       - name: Lint
         run: ruff check .
@@ -76,10 +83,42 @@ jobs:
             echo "Cached dataset absent; the harness needs it. Skipped, not passed."
           fi
 
-  # The project claims the domain services and the tool layer work without MCP installed.
-  # That claim is only true if something checks it, and the job above cannot: it installs the
-  # extra. This one proves nothing imports mcp eagerly and that the adapter's tests skip
-  # rather than fail.
+      # Section 21.6's eight marks, on the same terms and for the same reason: the console reads the
+      # run artifacts, which are not committed. The gates themselves are covered on every push by
+      # tests/test_console.py, which makes each of the eight fail.
+      - name: Console gates, section 21.6 pass marks (local dataset only)
+        run: |
+          if [ -f data/cache/investigation_run.json ] && [ -d data/cache/investigations ]; then
+            python scripts/run_console_checks.py
+          else
+            echo "Cached run artifacts absent; the harness needs them. Skipped, not passed."
+          fi
+
+  # The console is TypeScript, so a type error in it is as much a build failure as one in the
+  # Python. It needs no dataset: nothing here renders a figure, it only checks that the code
+  # compiles and builds.
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: npm ci --prefix frontend
+      - name: Types
+        run: npm run lint --prefix frontend
+      - name: Build
+        run: npm run build --prefix frontend
+
+  # The project claims the domain services, the harnesses and the tool layer work without the
+  # optional extras installed. That claim is only true if something checks it, and the job above
+  # cannot: it installs them. This one proves nothing imports `mcp` or `fastapi` eagerly, that the
+  # adapter's tests skip rather than fail, and that the console harness reports an honest skip
+  # rather than crashing.
 
   without-optional-extras:
     runs-on: ubuntu-latest
@@ -112,5 +151,38 @@ jobs:
               print("adapter raises a clear ImportError:", exc)
               sys.exit(0)
           print("expected an ImportError without the extra", file=sys.stderr)
+          sys.exit(1)
+          PY
+
+      - name: The console extra really is absent too
+        run: |
+          if python -c "import fastapi" 2>/dev/null; then
+            echo "fastapi is installed; this job cannot prove what it exists to prove." >&2
+            exit 1
+          fi
+          echo "fastapi absent, as intended."
+
+      # Section 21.6 mark 7 reads the API's route table. Without FastAPI it cannot, and what
+      # matters is that it says so rather than crashing or, worse, reporting a pass over nothing.
+      # A gate that examines nothing and blames the wrong thing is the defect this step guards:
+      # the first version of that harness printed "fastapi is not installed" when FastAPI was
+      # installed and the repository root was simply not on the path.
+      - name: The console harness degrades honestly without the extra
+        run: |
+          python - <<'PY'
+          import sys
+          from volve_ops.console import gates
+
+          sys.path.insert(0, ".")
+          try:
+              import api.main  # noqa: F401
+          except ModuleNotFoundError as missing:
+              assert missing.name == "fastapi", f"expected fastapi to be the missing one, got {missing.name}"
+              outcome = gates.api_is_read_only([])
+              assert outcome.examined == 0, outcome
+              assert outcome.vacuous, "a gate over no routes must report itself as demonstrating nothing"
+              print("mark 7 reports examining nothing, and flags itself vacuous:", outcome.name)
+              sys.exit(0)
+          print("expected a ModuleNotFoundError for fastapi", file=sys.stderr)
           sys.exit(1)
           PY
