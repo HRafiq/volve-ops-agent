@@ -56,10 +56,19 @@ CLAIM_PATTERNS: Final[tuple[tuple[str, str], ...]] = (
 )
 
 #: What the gate reads: the protocol, the phase's own documents, the architecture decisions and
-#: the README. Source files are included because a docstring is published text too.
+#: every top-level document. Source files are included because a docstring is published text too.
+#:
+#: The top level is a glob rather than a list of names. SECURITY.md was written after this gate
+#: and sat outside it, so the one document most likely to overclaim about security was the one
+#: document the overclaim gate did not read. A list of filenames would have had the same hole
+#: again the next time a document is added.
+#: Local-only documents, which are not published and are absent from a clean clone. Scanning one
+#: would make the gate's result depend on whose machine it ran on.
+_LOCAL_ONLY: Final[frozenset[str]] = frozenset({"CLAUDE.local.md"})
+
 DEFAULT_ROOTS: Final[tuple[Path, ...]] = (
     Path("docs"),
-    Path("README.md"),
+    *(p for p in sorted(Path().glob("*.md")) if p.name not in _LOCAL_ONLY),
     Path("src/volve_ops"),
     Path("api"),
     Path("scripts"),

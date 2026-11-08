@@ -86,45 +86,65 @@ def main(argv: list[str] | None = None) -> int:
         f"{len(PARSES_CORRECTLY)} must-parse"
     )
 
-    # --- mark 8: provenance failure classes ---------------------------------------------------
-    print("\nmark 8: provenance failures")
+    # --- marks 8 and 11: the two that need the run artifacts -----------------------------------
+    #
+    # Both read artifacts the harnesses write, and `data/` is not committed, so on a runner there
+    # is nothing for them to read. They report a skip and record `ran: false`; neither is ever
+    # folded into a pass. The checks themselves run on every push through
+    # tests/test_provenance_failures.py and tests/test_health_payload.py, which make each fail.
     store = RunStore(cache=args.cache, traces=args.cache / "investigations")
-    try:
-        contradictions = contradictions_in_console(store)
-    except Exception as exc:
-        contradictions = ()
-        print(f"  ! could not read the console payloads: {exc}")
-        failures.append(f"mark 8: class 3 could not run: {exc}")
-    print(f"  class 3, figures contradicting their records: {len(contradictions)}")
-    if contradictions:
-        failures.append(f"mark 8: {len(contradictions)} figure(s) contradict their records")
-        for contradiction in contradictions[:5]:
-            print(f"  ! {contradiction}")
+    have_artifacts = (args.cache / "investigation_run.json").exists() and (
+        args.cache / "investigations"
+    ).is_dir()
 
-    # --- mark 11: every health figure resolves ------------------------------------------------
+    print("\nmark 8: provenance failures")
+    contradictions: tuple[Any, ...] = ()
+    class_3_ran = False
+    if not have_artifacts:
+        print("  cached run artifacts absent. Skipped, not passed.")
+    else:
+        try:
+            contradictions = contradictions_in_console(store)
+            class_3_ran = True
+        except Exception as exc:
+            print(f"  ! could not read the console payloads: {exc}")
+            failures.append(f"mark 8: class 3 could not run: {exc}")
+    if class_3_ran:
+        print(f"  class 3, figures contradicting their records: {len(contradictions)}")
+        if contradictions:
+            failures.append(f"mark 8: {len(contradictions)} figure(s) contradict their records")
+            for contradiction in contradictions[:5]:
+                print(f"  ! {contradiction}")
+
     print("\nmark 11: health figures resolve to a manifest")
     health_examined = 0
-    try:
-        from volve_ops.console import assemble, gates
+    health_ran = False
+    if not have_artifacts or not (args.cache / "ablation_run.json").exists():
+        print("  section 22 manifests absent. Skipped, not passed.")
+    else:
+        try:
+            from volve_ops.console import assemble, gates
 
-        facts: set[str] = set()
-        for path in (args.cache / "investigations").glob("*.facts.json"):
-            facts |= {str(f["id"]) for f in json.loads(path.read_text(encoding="utf-8"))}
-        outcome = gates.figures_resolve(
-            {"system_health": assemble.system_health(store)},
-            store.health_manifests(),
-            fact_ids=frozenset(facts),
-            artifacts=args.cache / "investigations",
-        )
-        health_examined = outcome.examined
-        print(f"  {outcome.examined} source(s) examined, {'pass' if outcome.passed else 'FAIL'}")
-        if not outcome.passed:
-            failures.append("mark 11: a health figure does not resolve")
-            for detail in outcome.detail:
-                print(f"  ! {detail}")
-    except Exception as exc:
-        print(f"  ! could not assemble the health payload: {exc}")
-        failures.append(f"mark 11: {exc}")
+            facts: set[str] = set()
+            for path in (args.cache / "investigations").glob("*.facts.json"):
+                facts |= {str(f["id"]) for f in json.loads(path.read_text(encoding="utf-8"))}
+            outcome = gates.figures_resolve(
+                {"system_health": assemble.system_health(store)},
+                store.health_manifests(),
+                fact_ids=frozenset(facts),
+                artifacts=args.cache / "investigations",
+            )
+            health_examined = outcome.examined
+            health_ran = True
+            verdict = "pass" if outcome.passed else "FAIL"
+            print(f"  {outcome.examined} source(s) examined, {verdict}")
+            if not outcome.passed:
+                failures.append("mark 11: a health figure does not resolve")
+                for detail in outcome.detail:
+                    print(f"  ! {detail}")
+        except Exception as exc:
+            print(f"  ! could not assemble the health payload: {exc}")
+            failures.append(f"mark 11: {exc}")
 
     # --- mark 13: no claim of an operator safety case -----------------------------------------
     print("\nmark 13: overclaims")
@@ -165,14 +185,16 @@ def main(argv: list[str] | None = None) -> int:
         },
         "provenance_failures": {
             "classes": len(FAILURE_CLASSES),
-            "class_3_contradictions": len(contradictions),
+            "class_3_ran": class_3_ran,
+            "class_3_contradictions": len(contradictions) if class_3_ran else None,
             "detail": [str(c) for c in contradictions[:20]],
             "asserted_in": "tests/test_provenance_failures.py",
         },
         "limits": {**declared_limits(), "not_applicable": NOT_APPLICABLE},
         "health_figures": {
+            "ran": health_ran,
             "sources_examined": health_examined,
-            "passed": health_examined > 0 and not any(f.startswith("mark 11") for f in failures),
+            "passed": health_ran and not any(f.startswith("mark 11") for f in failures),
         },
         "overclaims": {
             "found": len(claims),

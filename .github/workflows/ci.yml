@@ -94,6 +94,22 @@ jobs:
             echo "Cached run artifacts absent; the harness needs them. Skipped, not passed."
           fi
 
+      # Section 22's marks. Most of them need no dataset at all: the injection corpus runs
+      # against synthetic documents, and the sink and overclaim gates read the source. The two
+      # that do need the run artifacts report a skip and record `ran: false`, so a runner that
+      # cannot check them does not report that they passed.
+      - name: Security gates, section 22 pass marks
+        run: python scripts/run_security_checks.py
+
+      # Section 22.7's ablations, on the same terms as the evaluation harness above.
+      - name: Ablations, section 22.7 (local dataset only)
+        run: |
+          if [ -f "data/cache/Volve production data.xlsx" ] && [ -d data/cache/ddr_xml ]; then
+            python scripts/run_ablations.py "data/cache/Volve production data.xlsx" data/cache/ddr_xml
+          else
+            echo "Cached dataset absent; the ablations need it. Skipped, not passed."
+          fi
+
   # The console is TypeScript, so a type error in it is as much a build failure as one in the
   # Python. It needs no dataset: nothing here renders a figure, it only checks that the code
   # compiles and builds.

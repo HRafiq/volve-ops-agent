@@ -18,20 +18,30 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from api.main import app, get_log, get_store
-from fastapi.testclient import TestClient
 
-from volve_ops.console import rate_limit
-from volve_ops.console.limits import (
+pytest.importorskip("fastapi", reason="the console API is an optional extra")
+
+import sys  # noqa: E402
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+# The repository root, so `api` imports when pytest's rootdir is not already on the path. The
+# same line scripts/run_console_checks.py needs, for the same reason.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from api.main import app, get_log, get_store  # noqa: E402
+
+from volve_ops.console import rate_limit  # noqa: E402
+from volve_ops.console.limits import (  # noqa: E402
     MAX_ACTOR_CHARS,
     MAX_ASSET_REQUESTS_PER_MINUTE,
     MAX_NOTE_CHARS,
     MAX_REQUESTS_PER_MINUTE,
     declared_limits,
 )
-from volve_ops.console.review import ReviewLog
-from volve_ops.console.store import RunStore
-from volve_ops.security.observation import observing
+from volve_ops.console.review import ReviewLog  # noqa: E402
+from volve_ops.console.store import RunStore  # noqa: E402
+from volve_ops.security.observation import observing  # noqa: E402
 
 #: Ids that try to leave the store. Each is a real traversal shape rather than a decoration.
 TRAVERSAL_IDS: tuple[str, ...] = (

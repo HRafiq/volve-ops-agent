@@ -18,8 +18,8 @@ honestly. Several did, and this README says which.
 | 4 | Evaluation harness: version freeze, leakage audit, results table | **complete** |
 | 5 | Agent B: NPT post-mortem, lessons register, correction store | **complete** |
 | 6 | Operator console | **complete** |
-| 7 | Failure, health and security experiments | **next** |
-| 8 | Frozen hold-out scored once, public write-up | not started |
+| 7 | Failure, health and security experiments | **complete** |
+| 8 | Frozen hold-out scored once, public write-up | **next** |
 
 The hold-out has never been scored and never been looked at. Phase 4's leakage audit exists to prove
 that mechanically rather than assert it, and it gates the build.
@@ -131,6 +131,60 @@ excludes include sidetracks, lost circulation, well control and casing, which ar
 operations reader would look for. The largest single exclusion is 562 hours of sidetrack time on one
 well, 7.6 percent of development non-productive hours, kept out by the three-well bar and not by its
 size. [Details](docs/postmortem_results.md)
+
+**Health, security and failure experiments.** 38 injection payloads in six classes carried through
+the real path a drilling report takes, 21 attack fixtures against the parser and archive hardening,
+seven provenance-failure classes put to the publication gate, and four capability ablations.
+
+The first thing this phase had to settle is what "injection" can mean here at all. The design brief
+lists seven prompt-injection invariants and every one presumes document text reaching a language
+model. **No module in this project calls one.** Three are therefore vacuous, and the suite declares
+them vacuous with the reason rather than collecting three free passes: a vacuous invariant can never
+produce a held result, because the outcome enum has a separate member for it.
+
+Removing the model moves the attack surface rather than removing it. What is left is data injection
+against deterministic consumers, and the live question is which consumers *interpret* their input
+instead of recording it. Almost all of them record. The console interprets, because a browser
+interprets markup, which makes the rendering layer the live channel and the one the brief does not
+mention.
+
+| Figure | Value |
+|---|---|
+| Invariants held / violated / fixtures that never arrived | 228 / **0** / **0** |
+| Invariants declared vacuous, not counted as preserved | 3 of 7 |
+| Hostile characters rendered in the evidence drawer, as inert text | 884 |
+| Unescaped-markup sinks in the console | 0, after removing the one that existed |
+| Attack fixtures refused by the ingest hardening | 21 of 21 |
+| Published figures contradicting the record they cite | 0 |
+
+The pre-registration named this phase's likely defect in advance, and it fired. A hostile string in a
+field no parser reads passes every invariant while testing nothing, so every fixture must prove its
+payload arrived. The first honest run found the payload in **none** of the published artifacts for
+every markup fixture: the controller quotes the first sentence carrying a term from its closed query
+map, so a payload appended as a trailing sentence is never published at all. **Only text the
+controller selects as a quote is ever published.** The first version of the check called that a
+violation and would have reported sixteen security failures that were nothing of the kind.
+
+Writing tests for every route rather than the obvious ones found the API's one route that validated
+nothing: `GET /api/investigations/{id}/review` consulted the review log and never the store, so any
+string came back `200` with a review state and the string echoed as an investigation id. Not a
+traversal, since no path was built from it, but an episode that does not exist got a confident review
+panel.
+
+The ablations produced one result worth arguing with. The most accurate expectation model of the five
+is also the one that opens the most investigations.
+
+| model | episodes opened | WAPE |
+|---|---:|---:|
+| naive-median28 *(selected)* | 14 | 0.1211 |
+| hyperbolic-decline | 11 | 0.1199 |
+| choke-scaled | **18** | **0.0984** |
+
+Accuracy and investigation volume move in opposite directions here, which is the measurement a WAPE
+table cannot make. Removing the in-window document from the one episode that has one drops the
+finding from `documented_root_cause` to `proximate_driver` while the verdict and evidence band hold,
+which is exactly what the retrieval stage exists to lift. [Details](docs/security_results.md), and
+[SECURITY.md](SECURITY.md) for the trust boundaries and the known limitations.
 
 ## The three things I learned
 
