@@ -73,13 +73,20 @@ class MetricRow(BaseModel):
         return str(self.value)
 
 
-#: The five manifests the project's scripts write, by the name rows refer to them by.
+#: The manifests the project's scripts write, by the name rows refer to them by.
+#:
+#: The console's own run joins them in amendment 11. Section 21.8 claimed "the results table covers
+#: every figure the API serves", and it did not: `console_run.json` was outside the set the section
+#: 19.3 coverage gate walks, so none of its figures had a row or a published denominator. The
+#: evaluation harness's own manifest stays out, for the reason the console store records: putting a
+#: gate's output into the set the gate walks makes it demand rows for its own findings.
 MANIFESTS: Final[dict[str, str]] = {
     "expectation": "run_manifest.json",
     "extraction": "extraction_run.json",
     "labels": "label_scoring_run.json",
     "investigation": "investigation_run.json",
     "postmortem": "postmortem_run.json",
+    "console": "console_run.json",
 }
 
 #: Manifest paths excused from needing a table row. Independent review found the first version

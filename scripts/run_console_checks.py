@@ -26,7 +26,7 @@ from typing import Any
 from volve_ops.console import assemble, gates
 from volve_ops.console.priority import Scored, score_episode, term_counts
 from volve_ops.console.review import ReviewLog
-from volve_ops.console.store import RunStore
+from volve_ops.console.store import RunStore, investigation_id
 
 #: The design mockup, which is local-only. Section 21.2's mark extracts its placeholder figures at
 #: check time rather than listing them in a tracked file, and reports examining nothing when it is
@@ -69,7 +69,9 @@ def main(argv: list[str] | None = None) -> int:
             evidence_band=assemble._band_for(
                 store.evaluation(), str(row["well"]), str(row["onset"])
             ),
-            review_state="none",
+            review_state=ReviewLog().state_of(
+                investigation_id(str(row["well"]), str(row["onset"]))
+            ),
         )
         for row in store.episodes()
     ]
@@ -80,8 +82,11 @@ def main(argv: list[str] | None = None) -> int:
     for band in ("HIGH", "MEDIUM", "LOW"):
         rows = [s for s in scored if s.priority.value == band]
         print(f"  {band:<7} {len(rows)}")
-    print("  the review term fires on nothing until someone uses the console; ADR 0009 also")
-    print("  measures that the disputed clause changes no episode's band on this data")
+    print("  the review term fires on nothing until someone uses the console. Section 21.5")
+    print("  requires both of ADR 0009's measurements wherever the rule is printed: the disputed")
+    print("  clause changes no episode's band on this data, AND removing the term leaves the queue")
+    print("  with no HIGH case, so it is undetectable between its forms and load-bearing against")
+    print("  its absence. The first alone reads as the term being inert, which it is not.")
 
     with tempfile.TemporaryDirectory() as scratch:
         probe_log = ReviewLog(Path(scratch) / "probe.jsonl")
@@ -110,7 +115,10 @@ def main(argv: list[str] | None = None) -> int:
                         int(row.episode_days.value or 0),
                         row.assessment,
                         row.evidence_strength,
-                        "none",
+                        # The payload's own state, not a literal. Passing "none" here made the
+                        # gate agree with the payload by construction on the review term, which is
+                        # the one term that was broken: the queue never read the log at all.
+                        row.review_state,
                     )
                     for row in queue.rows
                 ],

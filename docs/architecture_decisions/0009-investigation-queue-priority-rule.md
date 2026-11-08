@@ -1,4 +1,7 @@
-# ADR 0009: the investigation queue's priority rule reduces to shortfall and duration, and says so
+# ADR 0009: the investigation queue's priority rule, what it is worth, and what it cannot show
+
+Renamed, and the file renamed with it. The original title asserted the sentence amendment 9
+retracted, so the retraction left the claim standing in the one place a reader meets first.
 
 Date: 2026-10-08
 Status: accepted
@@ -55,9 +58,27 @@ one of those cases the additional attention has nothing to act on: three are blo
 pressure that is absent for the whole episode, and the remaining four have no in-window document to
 find, which ADR 0008 established is the normal case rather than the exception.
 
-So **on this dataset the four-term rule reduces to shortfall plus duration**, and the two terms that
-would make it a judgement about where a human is needed are either inert or pointed at cases nobody
-can resolve.
+A first draft of this ADR concluded from that table that the rule "reduces to shortfall plus
+duration" on this dataset. **That was wrong, and a test written to assert it is what caught it.**
+Dropping the unresolved term moves `15/9-F-14` from 2009-05-29 from HIGH to MEDIUM, and it is the
+only HIGH episode in the queue. Without the term the queue has no HIGH case at all:
+
+| rule | bands produced |
+|---|---|
+| all four terms | 1 HIGH, 5 MEDIUM, 8 LOW |
+| shortfall and duration only | 0 HIGH, 6 MEDIUM, 8 LOW |
+
+So the accurate statement is narrower and more useful than the one it replaces. The **choice between
+the two forms of the clause** cannot be validated here, because neither changes a band. The **clause
+itself** is not inert: it is the only thing that raises any episode to HIGH, and the episode it
+raises is the one a human would most want to see first, 95,904 Sm3 of shortfall over 66 days with
+good evidence and no single explanation.
+
+That correction is protocol amendment 9's. It did not reach this document until a third review: the
+edit was in a multi-substitution script that aborted before it wrote, and amendment 9's own claim
+that "both corrected statements are now in 21.5 and in the ADR" was therefore false. Amendment 11
+records it. The lesson is one this project already wrote down after Phase 5 and then repeated:
+**when a batch of edits can partially fail, verify the end state rather than the exit code.**
 
 ## Decision
 

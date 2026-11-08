@@ -24,7 +24,7 @@ honestly. Several did, and this README says which.
 The hold-out has never been scored and never been looked at. Phase 4's leakage audit exists to prove
 that mechanically rather than assert it, and it gates the build.
 
-156 tracked files, 656 tests, ruff and mypy strict clean. No model is called by any layer yet: every
+156 tracked files, 667 tests, ruff and mypy strict clean. No model is called by any layer yet: every
 component runs deterministically, which is what makes it testable.
 
 ## What the data refused to support
@@ -47,8 +47,13 @@ availability.
 baseline by 10 percent relative WAPE at three horizons. The best clears it at 7 and 14 days, by 18.7
 and 11.6 percent, and loses by 1.9 percent at 28. The protocol's fallback therefore applies and
 `naive-median28` becomes the expectation model, deliberately not the better-scoring persistence
-baseline, which cannot detect sustained underperformance by construction. Calibration fails by 2 to 4
-times on both qualifying wells. [Details](docs/expectation_results.md)
+baseline, which cannot detect sustained underperformance by construction.
+
+Calibration fails, and the figure that matters is the one the detector uses. Section 8 gates the
+**lower-tail exceedance rate** at 0.05 to 0.20: the two candidate models pool at 0.302 and 0.387, and
+`naive-median28`, the fallback actually in use, at **0.5632** over a 7-day horizon. Section 8's
+calibration condition has never been evaluated for it, because the conditions are applied to
+candidates and this model is the fallback. [Details](docs/expectation_results.md)
 
 **Cause labels.** 135 labels over drilling-report events, and they are **machine-assisted**: produced
 by a language model applying a guide written beforehand, not by a domain expert. I have no
@@ -82,13 +87,13 @@ usable downhole pressure on 31.2 percent of its producer rows where counting non
 99.8. [Details](docs/investigation_results.md)
 
 **Operator console.** A read-only review tool over the same payloads, served by the API that
-produces them. All eight of section 21.6's gates pass and none examines nothing: 433 payload figures
-resolve to a manifest key, a fact id, an event id or a pre-registered rule; 15 routes enumerated,
+produces them. All eight of section 21.6's gates pass and none examines nothing: 631 payload figures
+resolve to a manifest key, a fact id, an event id, an artifact file or a pre-registered rule; 15 routes enumerated,
 and the only four that accept anything but GET are the review actions.
 
 | Figure | Value |
 |---|---|
-| Payload figures resolving to a source | 433 of 433 |
+| Payload figures resolving to a source | 631 of 631 |
 | Routes that write | 4 of 15, all of them review actions |
 | Abstentions rendering as their own state | 4 of 4 |
 | Currency figures published | 0, because no oil price was supplied |
@@ -164,8 +169,8 @@ project. Scoring whether a choke reduction explains a shortfall on a specific No
 reader I do not have. Protocol sections 17, 18 and 19 each say so, and section 17.4 fixes the
 adjudication that would settle it: 40 events, blind, 80 percent agreement.
 
-Thirteen metrics the plan asked for are deferred, each with its obstacle named in
-[`docs/results_table.md`](docs/results_table.md) beside the 148 rows that carry a figure. Every
+Fourteen metrics the plan asked for are deferred, each with its obstacle named in
+[`docs/results_table.md`](docs/results_table.md) beside the 172 rows that carry a figure. Every
 obstacle is one of three things: the dataset lacks what the metric needs, the sample is too small for
 the number to mean anything, or there is no domain reader. The third is named in four of the thirteen
 and a fifth depends on one of those.
@@ -218,7 +223,7 @@ checked by parsing every workflow file. Anything that would call a model is manu
 
 | Document | What it is |
 |---|---|
-| [`docs/eval_protocol.md`](docs/eval_protocol.md) | The pre-registration. Its commit history is the evidence, tagged `prereg-v0` through `prereg-v14`, with no `v10` and section 13 saying why |
+| [`docs/eval_protocol.md`](docs/eval_protocol.md) | The pre-registration. Its commit history is the evidence, tagged `prereg-v0` through `prereg-v15`, with no `v10` and section 13 saying why |
 | [`docs/data_profile.md`](docs/data_profile.md) | What the data turned out to be, and the coverage gaps that limit what can be claimed |
 | [`docs/results_table.md`](docs/results_table.md) | Every figure in the project, with its denominator and whether it is gated, reported or deferred |
 | [`docs/architecture_decisions/`](docs/architecture_decisions/) | Nine decisions, including all three feasibility outcomes |

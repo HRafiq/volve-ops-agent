@@ -14,8 +14,11 @@ and a proxy, because the console is a read-only view of those payloads and split
 origins buys nothing but a CORS policy.
 
 Protocol section 21 fixed all of this before any of it was built and was pushed as `prereg-v12`.
-Amendment 9 corrected a claim section 21.5 made about the priority rule, and amendment 10 declared
-mark 1's one exemption. Both are post-inspection and labelled as such.
+Three amendments then corrected it after inspection, each labelled as such. Amendment 9 corrected a
+claim section 21.5 made about the priority rule. Amendment 10 declared mark 1's one exemption.
+**Amendment 11 is the one worth reading**: a third review found two false claims served by live
+routes, a queue that asserted the review log was empty while never reading it, and three bounds that
+could not fail. It is recorded below.
 
 ## The rule the rest rests on
 
@@ -49,7 +52,7 @@ calibrate.
 
 | section 21.6 pass mark | result | what it examined |
 |---|---|---|
-| 1. Every payload figure resolves to a source | **pass** | 433 source strings across 16 payloads |
+| 1. Every payload figure resolves to a source | **pass** | 631 source strings and tables across 16 payloads |
 | 2. No mockup placeholder appears | **pass** | 72 figures extracted from the design mockup |
 | 3. No hold-out well in any payload | **pass** | 16 rendered payloads, both spellings |
 | 4. Abstention renders as its own state | **pass** | 4 findings that abstained, and only those |
@@ -86,6 +89,47 @@ reason it could not conclude.
 The panel now renders the stop reason as its own line, which is a recorded field and not a new
 figure. The other three abstentions are the opposite case, blocked on downhole pressure that is
 absent for the whole episode.
+
+## What the third review found, and the limit it exposed in mark 1
+
+Mark 1 asks whether a figure's source **resolves**. It does not ask whether the figure **came from**
+that source, and it cannot see a figure written into a string. Both gaps were exploited, by me, in
+the same phase that wrote the mark. Amendment 11 records all of it.
+
+| finding | scale | why no gate saw it |
+|---|---|---|
+| Every evidence drawer attributed its figures to ledger facts recording different numbers | **198 of 198** fact-sourced leaves, 66 drawers, all 14 investigations | every source resolved |
+| A false calibration claim on all 14 detail screens, the README and the results table | 3 errors in one sentence | it is a string |
+| The queue asserted the review log was empty and never read it | every row, every request | the assertion is a denominator, which is a string |
+| Amendment 10's "only a record, never a result" bound | 4 of 10 chart columns, 1,883 rows | nothing checked bound 3 at all |
+| The row-count bound could not fail on two classes of input | a null count and a missing rows field cancelled; a decoy list was measured instead of the rows | the sentinels agreed |
+
+**The drawer defect is the one to understand.** It published two window medians from the
+investigation manifest and attached ledger fact ids as their sources. `fact_000002` records a
+reference rate of 3,052.735 Sm3/d; the drawer published 4,351.41 Sm3/d under its id, a different
+quantity from the same manifest row. `fact_000001` is a volume in Sm3 and its id sat on a rate in
+Sm3/d. Mark 1 passed on every one, because each id existed.
+
+The fix is structural rather than another gate. A ledger fact is now an object carrying the ledger's
+own value, so the two cannot be different numbers, and every other figure is sourced to the manifest
+key it came from. Mark 1's wording gains the missing half: a source must name where the figure came
+from.
+
+**The calibration claim was wrong three ways.** It said "section 8's coverage bar is missed by two to
+four times on both qualifying wells". Section 8 bands the **lower-tail exceedance rate** and reports
+two-sided coverage without a pass mark, so there is no coverage bar. "Two to four times" belongs to
+the two **candidate** models, 0.302 and 0.387 against a nominal 0.10, not to two wells. And a
+disclosure rather than a wording fix: **section 8's calibration condition has never been evaluated
+for the model in use.** The conditions are applied to candidates; `naive-median28` is the fallback
+the protocol selects when no candidate passes; nothing runs the condition on a fallback. Its pooled
+lower-tail rate is 0.5632 at a 7-day horizon against a permitted 0.05 to 0.20, and both facts are now
+on the screen where the band is drawn.
+
+**The queue never read the log.** `review_state` was hardcoded, every row said "Not reviewed", and a
+KPI denominator asserted "none has been reviewed; the review log is empty". A finding confirmed
+through the API left all three standing. So the priority rule's review term was dead rather than
+inert, and mark 8 could not catch it because the harness fed the gate a hardcoded `"none"` instead of
+the payload's own state. The gate agreed with the payload by construction on exactly the broken term.
 
 ## What the screen showed that no gate caught
 

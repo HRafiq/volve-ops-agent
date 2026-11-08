@@ -151,7 +151,7 @@ function Table({
             <td>{row.assessment_label}</td>
             <td>{row.causal_level_label}</td>
             <td>{row.evidence_strength}</td>
-            <td>{row.review_state}</td>
+            <td>{row.review_state_label}</td>
             <td>
               {row.data_quality === "Degraded" ? (
                 <span className="pill degraded">Degraded</span>

@@ -27,6 +27,7 @@ from volve_ops.console.payloads import EvidenceCoverage, Money
 from volve_ops.console.review import Action, ReviewLog, ReviewRefused
 from volve_ops.console.sources import (
     Sourced,
+    SourcedTable,
     resolve_source,
     sources_in,
     tables_in,
@@ -38,8 +39,9 @@ from volve_ops.extraction.sampling import HOLD_OUT_WELLS
 #:
 #: The **rule** is here and the **figures** are not, because the mockup lives in a local-only folder
 #: and copying its contents into a tracked file would publish private material to make a test
-#: convenient. Protocol amendment 11 records the change: section 21.2 said the figures would be
-#: enumerated in the test suite, and they are extracted from the mockup at check time instead.
+#: convenient. Protocol amendment 11 records the change, and section 21.2 now says what this mark
+#: does: it said the figures would be enumerated in the test suite, and they are extracted from the
+#: mockup at check time instead.
 #:
 #: What survives a fresh clone without the mockup is mark 1, which makes an invented figure
 #: unconstructible rather than merely detectable. This mark is the belt to that braces, and it
@@ -101,11 +103,20 @@ def figures_resolve(
                 problems.append(f"{name}: {source!r} resolves to nothing")
         for table in tables_in(payload):
             examined += 1
-            declared, actual = table.declared_rows(), table.actual_rows()
-            if declared != actual:
+            mismatch = table.rows_mismatch()
+            if mismatch:
                 problems.append(
-                    f"{name}: a table claims {declared} rows and carries {actual}; the row count "
-                    "is what bounds amendment 10's exemption, so a mismatch voids it"
+                    f"{name}: a table {mismatch}; the row count is what bounds amendment 10's "
+                    "exemption, so this voids it"
+                )
+            # Amendment 10's third bound, which nothing checked until review found it violated by
+            # the exemption's only user. A derived column is permitted and must be declared, so a
+            # result cannot ride into a table unnoticed beside the records.
+            undeclared = _undeclared_results(table)
+            if undeclared:
+                problems.append(
+                    f"{name}: a table carries undeclared derived columns {sorted(undeclared)}; "
+                    "amendment 11 requires a result in a table to be declared in `derived_columns`"
                 )
     return GateOutcome(
         name=GATE_NAMES[0],
@@ -113,6 +124,40 @@ def figures_resolve(
         examined=examined,
         detail=tuple(problems[:6]),
     )
+
+
+#: Column names that name a computed quantity rather than a reading. Deliberately a small, literal
+#: list: the alternative is a heuristic over names, and a heuristic that decides what counts as a
+#: result is exactly the kind of judgement a gate should not be making on its own.
+RESULT_COLUMNS: Final[frozenset[str]] = frozenset(
+    {
+        "expected",
+        "lower",
+        "upper",
+        "below_band",
+        "shortfall",
+        "cumulative_shortfall",
+        "deferred_volume",
+        "score",
+        "priority_score",
+        "share",
+        "fraction",
+        "rate_change",
+        "standardised_shift",
+    }
+)
+
+
+def _undeclared_results(table: SourcedTable) -> set[str]:
+    """Result-shaped columns a table carries without declaring them."""
+    rows = getattr(table, table.rows_field, None)
+    if not isinstance(rows, tuple | list) or not rows:
+        return set()
+    first = rows[0]
+    names = (
+        {name for name, _ in first} if isinstance(first, BaseModel) else set(getattr(first, "", []))
+    )
+    return (names & RESULT_COLUMNS) - set(table.derived_columns)
 
 
 def no_placeholder_appears(rendered: Mapping[str, str], mockup: Path) -> GateOutcome:

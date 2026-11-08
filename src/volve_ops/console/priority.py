@@ -3,16 +3,22 @@
 Deterministic, printed wherever the queue is printed, and never decided by a model. A queue ordered
 by a language model's sense of importance is the failure this project exists to avoid.
 
-ADR 0009 is the honest account of what this rule is worth, and it is worth repeating here because
-the rule's shape flatters it. Four terms, of which **two fire on nothing in a first run**: review is
-pending for no episode until an operator creates a review, and the unresolved term is scoped to the
-cases where the evidence was good enough to choose and the system still did not. On the fourteen
-development episodes the rule therefore reduces to shortfall plus duration, and the clause the
-console design left open changes the band of none of them.
+ADR 0009 is the honest account of what this rule is worth, and two of its measurements belong here
+because the rule's shape flatters it.
 
-So `term_counts` is part of the output rather than a diagnostic. A rubric with four lines that
-behaves like two is more persuasive than it deserves to be, and the only fix is to publish how often
-each line fires next to the scores it produced.
+**One of the four terms fires on nothing in a first run.** No episode has a review state until an
+operator creates one, so the review term cannot fire on a queue nobody has reviewed. It is live
+after that: a recorded re-run request moves an episode from LOW to MEDIUM.
+
+**The clause the console design left open cannot be validated here, and is still load-bearing.**
+Scoring the blunt form, a point for any unresolved verdict, against the banded form implemented
+below changes the priority band of 0 of the 14 development episodes, so this dataset cannot tell the
+two apart. But removing the term entirely moves the single HIGH episode to MEDIUM and leaves the
+queue with no HIGH case, so the term decides the one promotion the rule makes.
+
+So `term_counts` is part of the output rather than a diagnostic. A rubric whose fourth line fires on
+nothing until someone uses the console is more persuasive than it deserves to be, and the only fix
+is to publish how often each line fires next to the scores it produced.
 """
 
 from __future__ import annotations

@@ -20,7 +20,8 @@
 | Days evaluated, exponential-decline | 2548 | development valid producing days with a fitted window | `reported` | - | - |
 | Days evaluated, hyperbolic-decline | 2548 | development valid producing days with a fitted window | `reported` | - | - |
 | Days evaluated, choke-scaled | 2548 | development valid producing days with a fitted window | `reported` | - | - |
-| Interval coverage within the section 8 band | deferred | development valid producing days, 2 wells reaching the 150-day gate | `deferred` | an interval construction that calibrates; the current one fails by 2 to 4 times and the failure is reported in docs/expectation_results.md | - |
+| Two-sided interval coverage | deferred | development valid producing days, 2 wells reaching the 150-day gate | `deferred` | an interval construction that calibrates; section 8 reports this without a pass mark and gates the lower-tail rate instead, which is published per horizon above | not the gated quantity; the lower-tail rate is, and it is 0.5632 at H=7 |
+| Section 8 condition 2 evaluated for the selected model | deferred | the selected model, naive-median28 | `deferred` | running condition 2 on the fallback model, which needs a decision about what a fallback's failing a selection condition would mean when there is nothing to fall back to; section 8 applies the conditions to candidates and is silent on the fallback | never evaluated: the conditions run on candidates, and this model is the fallback |
 | Episode precision and recall | deferred | would need a curated episode set | `deferred` | a curated episode set; section 19.11 declines to manufacture one from 14 episodes on 2 wells | - |
 
 ### Drilling-report extraction
@@ -213,3 +214,32 @@
 | Of those, events carrying a cause label | 65 | events in recurring patterns | `reported` | - | - |
 | Labelled fraction of recurring patterns | 0.025 | events in recurring patterns | `reported` | - | the phase's headline figure; review found it quoted in bold and computable from neither the manifest nor the harness output |
 | Largest pattern the thresholds exclude | 561.5 | hours, on a single well | `reported` | - | a single-well event cannot enter the register however expensive; the register publishes what it excludes |
+
+### Operator console
+
+| metric | value | denominator | status | what would settle it | note |
+|---|---|---|---|---|---|
+| Queue rows served | 14 | one per development episode | `reported` | - | - |
+| Investigation detail screens served | 14 | one per development episode | `reported` | - | - |
+| KPI tiles on the production strip | 7 | decision 3's contextual strip | `reported` | - | - |
+| Payload source strings checked | 631 | across the queue, the header and every detail screen | `reported` | - | section 21.6 mark 1; every one resolves and names where its figure came from |
+| Mockup placeholder figures compared against | 72 | extracted from the design mockup at check time | `reported` | - | zero when the local-only mockup is absent, which the mark reports as vacuous |
+| Abstentions checked for their own screen state | 4 | findings with `insufficient_evidence`, and only those | `reported` | - | - |
+| API routes enumerated | 15 | read off the application, including the framework's own doc routes | `reported` | - | 4 of them accept a method other than GET, and all 4 are review actions |
+| Engineering vocabulary on operator screens | 0 | nine declared words, over every rendered operator payload | `reported` | - | reported and not gated; a ninth mark after the fact would be an amendment |
+| Priority band `HIGH` | 1 | of 14 episodes | `reported` | - | a stated convention, not a measured ordering; ADR 0009 says what it cannot show |
+| Priority band `MEDIUM` | 5 | of 14 episodes | `reported` | - | a stated convention, not a measured ordering; ADR 0009 says what it cannot show |
+| Priority band `LOW` | 8 | of 14 episodes | `reported` | - | a stated convention, not a measured ordering; ADR 0009 says what it cannot show |
+| Priority term fires: cumulative shortfall | 14 | of 14 episodes | `reported` | - | - |
+| Priority term fires: episode lasts 40 days or more | 5 | of 14 episodes | `reported` | - | - |
+| Priority term fires: review is pending | 0 | of 14 episodes | `reported` | - | - |
+| Priority term fires: no single explanation supported, and the evidence band is high or moderate | 5 | of 14 episodes | `reported` | - | - |
+| All 8 section 21.6 gates pass | pass | the console's payloads, routes and review log | `gated` | - | - |
+| Section 21.6 gate: 21.6 every payload figure resolves to a source | pass | the console check run | `gated` | - | - |
+| Section 21.6 gate: 21.2 no mockup placeholder appears | pass | the console check run | `gated` | - | - |
+| Section 21.6 gate: 21.6 no hold-out well in any payload | pass | the console check run | `gated` | - | - |
+| Section 21.6 gate: 21.4 abstention renders as its own state | pass | the console check run | `gated` | - | - |
+| Section 21.6 gate: 21.6 every money figure carries its assumption | pass | the console check run | `gated` | - | - |
+| Section 21.6 gate: 21.6 the review log is append-only | pass | the console check run | `gated` | - | - |
+| Section 21.6 gate: 21.6 the API is read-only outside the review log | pass | the console check run | `gated` | - | - |
+| Section 21.6 gate: 21.5 the priority score equals the rule as printed | pass | the console check run | `gated` | - | - |

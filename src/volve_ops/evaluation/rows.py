@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import Final
 
+from volve_ops.console import gates as console_gates
+from volve_ops.console import priority
 from volve_ops.evaluation.table import MetricRow, Status
 from volve_ops.investigation.schemas import CausalLevel, StopReason, Verdict
 from volve_ops.postmortem import gates
@@ -99,15 +101,33 @@ ROWS: Final[tuple[MetricRow, ...]] = (
             "choke-scaled",
         )
     ),
+    # Two-sided coverage, which section 8 reports without a pass mark. Named for what it is: this
+    # row said "interval coverage within the section 8 band", and section 8 bands the **lower-tail**
+    # rate rather than coverage. The "2 to 4 times" it cited belongs to the two candidate models,
+    # 0.302 and 0.387 against a nominal 0.10, and not to wells or to the model in use.
     MetricRow(
         layer="Expectation engine",
-        metric="Interval coverage within the section 8 band",
+        metric="Two-sided interval coverage",
         manifest=None,
         key=None,
         denominator="development valid producing days, 2 wells reaching the 150-day gate",
         status=Status.DEFERRED,
-        settled_by="an interval construction that calibrates; the current one fails by 2 to 4 "
-        "times and the failure is reported in docs/expectation_results.md",
+        settled_by="an interval construction that calibrates; section 8 reports this without a "
+        "pass mark and gates the lower-tail rate instead, which is published per horizon above",
+        note="not the gated quantity; the lower-tail rate is, and it is 0.5632 at H=7",
+    ),
+    # The condition that governs the model actually in use, and has never been run on it.
+    MetricRow(
+        layer="Expectation engine",
+        metric="Section 8 condition 2 evaluated for the selected model",
+        manifest=None,
+        key=None,
+        denominator="the selected model, naive-median28",
+        status=Status.DEFERRED,
+        settled_by="running condition 2 on the fallback model, which needs a decision about what "
+        "a fallback's failing a selection condition would mean when there is nothing to fall back "
+        "to; section 8 applies the conditions to candidates and is silent on the fallback",
+        note="never evaluated: the conditions run on candidates, and this model is the fallback",
     ),
     MetricRow(
         layer="Expectation engine",
@@ -934,5 +954,121 @@ ROWS: Final[tuple[MetricRow, ...]] = (
         status=Status.REPORTED,
         note="a single-well event cannot enter the register however expensive; the register "
         "publishes what it excludes",
+    ),
+    # ---------------------------------------------------------------- operator console
+    #
+    # Amendment 11 brought `console_run.json` under the section 19.3 coverage gate, which section
+    # 21.8 had claimed covered it and did not. The gate then named all twenty-four figures that had
+    # no row. Gate names come from `console_gates.GATE_NAMES` rather than retyped, for the reason
+    # the post-mortem's did: typed twice, they drift.
+    MetricRow(
+        layer="Operator console",
+        metric="Queue rows served",
+        manifest="console",
+        key="queue_rows",
+        denominator="one per development episode",
+        status=Status.REPORTED,
+    ),
+    MetricRow(
+        layer="Operator console",
+        metric="Investigation detail screens served",
+        manifest="console",
+        key="detail_screens",
+        denominator="one per development episode",
+        status=Status.REPORTED,
+    ),
+    MetricRow(
+        layer="Operator console",
+        metric="KPI tiles on the production strip",
+        manifest="console",
+        key="kpi_tiles",
+        denominator="decision 3's contextual strip",
+        status=Status.REPORTED,
+    ),
+    MetricRow(
+        layer="Operator console",
+        metric="Payload source strings checked",
+        manifest="console",
+        key="sources_checked",
+        denominator="across the queue, the header and every detail screen",
+        status=Status.REPORTED,
+        note="section 21.6 mark 1; every one resolves and names where its figure came from",
+    ),
+    MetricRow(
+        layer="Operator console",
+        metric="Mockup placeholder figures compared against",
+        manifest="console",
+        key="placeholder_figures_compared",
+        denominator="extracted from the design mockup at check time",
+        status=Status.REPORTED,
+        note="zero when the local-only mockup is absent, which the mark reports as vacuous",
+    ),
+    MetricRow(
+        layer="Operator console",
+        metric="Abstentions checked for their own screen state",
+        manifest="console",
+        key="abstentions_checked",
+        denominator="findings with `insufficient_evidence`, and only those",
+        status=Status.REPORTED,
+    ),
+    MetricRow(
+        layer="Operator console",
+        metric="API routes enumerated",
+        manifest="console",
+        key="routes",
+        denominator="read off the application, including the framework's own doc routes",
+        status=Status.REPORTED,
+        note="4 of them accept a method other than GET, and all 4 are review actions",
+    ),
+    MetricRow(
+        layer="Operator console",
+        metric="Engineering vocabulary on operator screens",
+        manifest="console",
+        key="engineering_words_on_operator_screens",
+        denominator="nine declared words, over every rendered operator payload",
+        status=Status.REPORTED,
+        note="reported and not gated; a ninth mark after the fact would be an amendment",
+    ),
+    *(
+        MetricRow(
+            layer="Operator console",
+            metric=f"Priority band `{band}`",
+            manifest="console",
+            key=f"priority_bands.{band}",
+            denominator="of 14 episodes",
+            status=Status.REPORTED,
+            note="a stated convention, not a measured ordering; ADR 0009 says what it cannot show",
+        )
+        for band in ("HIGH", "MEDIUM", "LOW")
+    ),
+    *(
+        MetricRow(
+            layer="Operator console",
+            metric=f"Priority term fires: {term.value}",
+            manifest="console",
+            key=f"priority_term_counts.{term.value}",
+            denominator="of 14 episodes",
+            status=Status.REPORTED,
+        )
+        for term in priority.Term
+    ),
+    MetricRow(
+        layer="Operator console",
+        metric=f"All {len(console_gates.GATE_NAMES)} section 21.6 gates pass",
+        manifest="console",
+        key="all_pass",
+        denominator="the console's payloads, routes and review log",
+        status=Status.GATED,
+    ),
+    *(
+        MetricRow(
+            layer="Operator console",
+            metric=f"Section 21.6 gate: {mark}",
+            manifest="console",
+            key=f"pass_marks.{mark}",
+            denominator="the console check run",
+            status=Status.GATED,
+        )
+        for mark in console_gates.GATE_NAMES
     ),
 )

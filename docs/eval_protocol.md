@@ -1,14 +1,19 @@
 # Evaluation protocol
 
-Version: v14
+Version: v15
 Date: 2026-10-08
 Status: pre-registered. Pushed before the work it judges.
-Amendments since v0: ten, recorded in section 13 and every one labelled post-inspection. Five of
+Amendments since v0: eleven, recorded in section 13 and every one labelled post-inspection. Five of
 them correct pass marks that could not fail, which is this project's recurring defect and is named as
 such in amendments 6, 7 and 8. Amendment 9 corrects a factual claim rather than a check.
 New in v7 to v11: sections 19 and 20 and the amendments correcting them. Amendment 7 records three more
 marks that could not fail, a pre-registered gate dropped with the count rewritten around it, five holes
 in the correction store, and the thresholds section 20 promised to state and did not.
+New in v15: amendment 11 records what the console published that no gate could see: 198 of 198
+drawer figures attributed to facts recording different numbers, a false calibration claim on every
+detail screen, a queue that asserted the review log was empty while never reading it, and three
+bounds that could not fail. It also records that section 8's calibration condition has never been
+evaluated for the model in use.
 New in v14: amendment 10 declares mark 1's exemption for a table of records, bounded by a row count
 the gate checks, and records the three figures section 21.1 forced into a manifest rather than letting
 the console derive them. One of those, the selected model's lower-tail rate, is 0.563 against a band
@@ -731,6 +736,88 @@ this document was silent on it until amendment 6. The rule now: an amendment tha
 which has just failed must state what the check was examining when it failed, why the failure was the
 check's rather than the project's, and what still audits the thing the check was supposed to audit. If
 it cannot, the finding stands and the project is in breach, not the check.
+
+### Amendment 11, v14 to v15: what the console published that no gate could see
+
+Date: 2026-11-08. Made **after** the console was built and served, labelled as such, prompted
+entirely by independent review. It corrects two false published claims, widens one pass mark,
+narrows another, and records a pre-registered clause that was never honoured.
+
+**The limit of mark 1, stated plainly, because this is the lesson.** Mark 1 asks whether a figure's
+source resolves. It does not ask whether the figure **came from** that source, and it cannot see a
+figure written into a string. Both gaps were exploited, by me, in the same phase that wrote the mark.
+
+**1. Every evidence drawer attributed its figures to facts recording different numbers.** The drawer
+published two window medians from the investigation manifest and attached **fact ledger ids** as
+their sources. `fact_000002` records a reference rate of 3,052.735 Sm3/d; the drawer published
+4,351.41 Sm3/d under its id, a different quantity from the same manifest row. `fact_000001` is a
+volume in Sm3; its id sat on a rate in Sm3/d. Review measured **198 of 198** fact-sourced leaves
+mis-attributed, across 66 drawers in all 14 investigations. Every source resolved, so mark 1 passed
+on all of them.
+
+The fix is structural rather than another gate. A ledger fact is now its own object carrying the
+ledger's value, so the two cannot be different numbers, and every other figure is sourced to the
+manifest key it came from. Mark 1's wording gains a clause: a source must name **where the figure
+came from**, and a figure sourced to a fact must carry that fact's value.
+
+**2. A false calibration claim on all fourteen detail screens, in the README and in the results
+table.** The expectation panel said "section 8's coverage bar is missed by two to four times on both
+qualifying wells". Three errors in one sentence. Section 8 bands the **lower-tail exceedance rate**
+and reports two-sided coverage without a pass mark, so there is no coverage bar. "Two to four times"
+belongs to the two **candidate** models, 0.302 and 0.387 against a nominal 0.10, not to two wells.
+And no per-well figure exists for the selected model at all.
+
+That last point is a disclosure rather than a wording fix, and it goes in section 8's record:
+**`condition_2_lower_tail` has never been evaluated for `naive-median28`.** The conditions are
+applied to candidates; this model is the fallback the protocol selects when no candidate passes;
+nothing runs the condition on a fallback. The model in use has not been through the calibration
+condition, its pooled lower-tail rate is **0.5632** at a 7-day horizon against a permitted 0.05 to
+0.20, and both facts are now on the screen where the band is drawn.
+
+**3. The queue never read the review log.** `review_state` was hardcoded, every row said "Not
+reviewed", and a KPI denominator **asserted** "none has been reviewed; the review log is empty".
+Review confirmed a finding through the API and all three statements went on standing. So the
+priority rule's review term could never fire, which makes it dead rather than inert, and ADR 0009's
+"the review term fires on nothing until someone uses this console" was false in a way the ADR did
+not intend: it fired on nothing afterwards too. Mark 8 could not catch it, because the harness fed
+the gate a hardcoded `"none"` rather than the payload's own state, so the gate agreed with the
+payload by construction on exactly the broken term.
+
+**4. Amendment 10's third bound was violated by the exemption's only user, and nothing checked it.**
+"Only a record qualifies, never a result." `ChartSeries` carries `expected`, `lower`, `upper` and
+`below_band`: the model's output and the detector's comparison against it, four of ten columns,
+across 1,883 rows.
+
+The bound is **narrowed rather than enforced**, and section 13 requires the justification. A chart of
+actuals with no expectation is not the chart an operator needs, and splitting the band into 1,090
+sourced figures is what the exemption exists to avoid. So: a derived column may live in a table when
+it is **declared** in `derived_columns` and comes from the same artifact as the records beside it,
+and the gate refuses a result-shaped column that is not declared. What still audits the thing is
+that the declaration is published in the payload type where a reader meets it, and that the gate now
+fails on an undeclared one, which it did not before.
+
+**5. Amendment 10's row-count bound could not fail on two classes of input.** A non-numeric count and
+a missing rows field both returned the same sentinel, so they cancelled: a table carrying three
+unsourced floats in a dict with a null count passed outright. And the row count was compared against
+the **first** list-shaped field, so a subclass declaring any other list first had its count checked
+against the wrong one, smuggling seven rows under a declared count of two. The sentinels are
+separated and the rows field is declared. Both were the Phase 3 sentinel lesson recurring.
+
+**6. Section 21.2 described a mechanism that was never built.** It says the mockup's figures "are
+enumerated in the test suite" and that "the built console's payloads and source are searched for each
+one". They are extracted at check time by shape, and only the payloads are searched. The reason is
+sound, and `docs/console_results.md` has been honest about it since it was written: the mockup is a
+local-only file and listing its contents in a tracked file would publish private material to make a
+test convenient. But section 13 says this document is never silently edited, and a code comment
+citing "amendment 11" for a change no amendment recorded is the gap this amendment closes. Section
+21.2 now says what the mark does.
+
+**7. Section 21.8's gate clause was false.** "The results table covers every figure the API serves."
+`console_run.json` is not among the manifests the section 19.3 coverage gate walks, so none of its
+figures has a row, and `/facts` and `/trace` serve 524 bare numeric leaves outside mark 1's scope
+entirely. The clause is corrected to what holds: the table covers every figure in the **five run
+manifests**, and mark 1 covers every figure in the **assembled payloads**. The two artifact routes
+serve the artifacts verbatim and are declared as doing so.
 
 ### Amendment 10, v13 to v14: mark 1's exemption for a table of records, declared rather than finessed
 
@@ -2263,8 +2350,14 @@ hashes, version names, episode dates, well results and NPT hours. **None of them
 console.** This is a gate and not a guideline, because a placeholder that survives into a published
 screenshot is indistinguishable from a result.
 
-Checked mechanically: the mockup's literal figures are enumerated in the test suite, and the built
-console's payloads and source are searched for each one. A match fails the build.
+Checked mechanically: the mark extracts the mockup's figures **at check time** by shape and
+searches the built console's payloads for each one. A match fails the build.
+
+Not enumerated in the test suite, which is what this section said until amendment 11. The mockup is a
+local-only file and listing its contents in a tracked file would publish private material to make a
+test convenient. The mark reports examining **nothing** when the mockup is absent, so a skipped check
+is not mistaken for a passed one, and what stands in a clone without it is mark 1, which makes an
+invented figure unconstructible rather than merely detectable.
 
 ### 21.3 Provenance, at the same standard as section 18.6
 
@@ -2316,7 +2409,11 @@ five phases is that a gate written as an expression in the script that produces 
 fail, and the correction is structural rather than a matter of care.
 
 1. **Every figure in every API payload resolves to a manifest key, a fact id, an event id, an
-   artifact file or a pre-registered rule.** 100 percent. A payload field that resolves to none of
+   artifact file or a pre-registered rule, and the source names where the figure came from.** 100
+   percent. The second clause is amendment 11's, and it is the half mark 1 was missing: a source
+   that resolves is not the same as a source the figure came from, and 198 of 198 fact-sourced
+   leaves were attributed to facts recording different quantities while every one of them resolved.
+   A figure sourced to a ledger fact must carry that fact's value. A payload field that resolves to none of
    those fails the build, which is the console's version of section 19.3's two directions: every
    served figure has a source, and every source the console claims is real. Amendment 10 adds the
    last three kinds and the one exemption: a **table of records** may be vouched for by one source
@@ -2334,8 +2431,10 @@ fail, and the correction is structural rather than a matter of care.
    revision, and "request more evidence" creates a new run. Checked by attempting each mutation.
 7. **The API is read-only outside the review log.** Checked by enumerating every route and asserting that
    no non-review route accepts a method other than GET.
-8. **The priority rule computed in the backend equals the rule as printed**, section 21.5, checked by
-   recomputing every row from the printed rule and comparing.
+8. **The priority rule computed in the backend equals the rule as printed**, section 21.5, checked
+   by recomputing every row from the printed rule and comparing, **using each row's own inputs**.
+   The last clause is amendment 11's: the harness fed the gate a hardcoded review state, so the gate
+   agreed with the payload by construction on the one term that was broken.
 
 ### 21.7 Deferred, with what would settle each
 
@@ -2352,6 +2451,12 @@ and section 19.8's rubric stays unexercised.
 
 ### 21.8 The Phase 6 gate
 
-All eight marks of 21.6 pass. The three curated cases render, including the abstention case. The hold-out
-is untouched, which section 19.2 checks. No figure on any screen is absent from a run manifest, and the
-results table covers every figure the API serves.
+All eight marks of 21.6 pass. The three curated cases render, including the abstention case. The
+hold-out is untouched, which section 19.2 checks.
+
+**What covers what**, corrected by amendment 11 because the previous sentence claimed more than
+holds. The results table covers every figure in the **five run manifests**, which section 19.3 gates
+in both directions. Mark 1 covers every figure in the **assembled payloads**, which is what the
+console's screens render. Two routes, `/facts` and `/trace`, serve a per-episode artifact verbatim so
+that a reader can walk a fact's lineage and an investigation's recorded steps; they are a copy of a
+file on disk rather than an assembled payload, and they are declared here as outside both.

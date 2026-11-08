@@ -27,6 +27,7 @@ from volve_ops.console.payloads import (
     Hypothesis,
     InvestigationDetail,
     Kpi,
+    LedgerFact,
     MatrixCell,
     Money,
     PriorityRule,
@@ -34,6 +35,7 @@ from volve_ops.console.payloads import (
     QueueRow,
     SeriesRow,
 )
+from volve_ops.console.review import ReviewLog
 from volve_ops.console.sources import ARTIFACT_PREFIX, RULE_PREFIX, Sourced
 from volve_ops.console.store import EpisodeArtifacts, RunStore, investigation_id
 
@@ -96,6 +98,15 @@ HYPOTHESIS_LABEL: Final[dict[str, str]] = {
     "H-field": "Field-wide or facility constraint",
 }
 
+#: Review states, operator-facing. The log's own vocabulary, which the queue column shows.
+REVIEW_STATE_LABEL: Final[dict[str, str]] = {
+    "none": "Not reviewed",
+    "awaiting_review": "Awaiting review",
+    "rerun_requested": "Re-run requested",
+    "confirmed": "Confirmed",
+    "dismissed": "Dismissed",
+}
+
 #: Status labels for a hypothesis, operator-facing.
 STATUS_LABEL: Final[dict[str, str]] = {
     "supported": "Supported",
@@ -110,11 +121,27 @@ def _period(onset: str, offset: str) -> str:
     return f"{onset} to {offset}"
 
 
-def queue(store: RunStore) -> Queue:
-    """The investigation queue and its KPI strip. Decisions 3 and 9."""
+def queue(store: RunStore, log: ReviewLog | None = None) -> Queue:
+    """The investigation queue and its KPI strip. Decisions 3 and 9.
+
+    **The review log is read, not assumed.** A first version hardcoded `review_state="none"` into
+    the scorer and `"Not reviewed"` into every row, and published a KPI whose denominator asserted
+    "none has been reviewed; the review log is empty". Review confirmed a finding through the API
+    and the queue went on saying all three. The priority rule's review term could therefore never
+    fire, which made one of its four terms dead rather than merely inert, and ADR 0009's "the review
+    term fires on nothing until someone uses this console" was false: it fired on nothing
+    afterwards too.
+    """
     rows = store.episodes()
     investigation = store.manifests()["investigation"]
     evaluation = store.evaluation()
+    reviews = log or ReviewLog()
+    states = {
+        investigation_id(str(row["well"]), str(row["onset"])): reviews.state_of(
+            investigation_id(str(row["well"]), str(row["onset"]))
+        )
+        for row in rows
+    }
     scored = [
         priority.score_episode(
             well=str(row["well"]),
@@ -123,7 +150,7 @@ def queue(store: RunStore) -> Queue:
             episode_days=int(row["episode_days"]),
             verdict=str(row["verdict"]),
             evidence_band=_band_for(evaluation, str(row["well"]), str(row["onset"])),
-            review_state="none",
+            review_state=states[investigation_id(str(row["well"]), str(row["onset"]))],
         )
         for row in rows
     ]
@@ -171,7 +198,10 @@ def queue(store: RunStore) -> Queue:
             assessment_label=labels.verdict_label(str(row["verdict"])),
             causal_level_label=labels.causal_level_label(row.get("highest_level")),
             evidence_strength=_band_for(evaluation, str(row["well"]), str(row["onset"])),
-            review_state="Not reviewed",
+            review_state=states[investigation_id(str(row["well"]), str(row["onset"]))],
+            review_state_label=REVIEW_STATE_LABEL.get(
+                states[investigation_id(str(row["well"]), str(row["onset"]))], "Not reviewed"
+            ),
             data_quality=("Degraded" if row["poorly_evidenced"] else "Complete"),
             priority=by_key[(str(row["well"]), str(row["onset"]))].priority.value,
             priority_score=Sourced(
@@ -204,15 +234,19 @@ def queue(store: RunStore) -> Queue:
             for name, count in counts.items()
         },
         caveat=(
-            "This ordering is a stated convention, not a measured result. Fourteen "
-            "episodes, one of them HIGH, cannot show an ordering is good. The review term fires on "
-            "nothing until someone uses this console, and the choice between this rule and a "
-            "blunter one changes no episode's band on this data. ADR 0009 records both."
+            "This ordering is a stated convention, not a measured result: fourteen episodes, one "
+            "of them HIGH, cannot show that an ordering is good. Two measurements go with it. The "
+            "choice between this rule and a blunter one changes no episode's band on this data, so "
+            "the data cannot tell them apart. But removing the fourth term altogether moves the "
+            "single HIGH episode to MEDIUM and leaves the queue with no HIGH case, so that term "
+            "decides the one promotion this rule makes. ADR 0009 records both, and section 21.5 "
+            "requires both wherever the rule is printed: the first alone reads as the term being "
+            "inert, which it is not."
         ),
     )
 
     return Queue(
-        kpis=_production_kpis(investigation),
+        kpis=_production_kpis(investigation, states),
         rows=queue_rows,
         rule=rule,
         pinned=tuple(
@@ -223,8 +257,11 @@ def queue(store: RunStore) -> Queue:
     )
 
 
-def _production_kpis(investigation: Mapping[str, Any]) -> tuple[Kpi, ...]:
+def _production_kpis(
+    investigation: Mapping[str, Any], states: Mapping[str, str]
+) -> tuple[Kpi, ...]:
     """Decision 3's Production strip. Period-correct language, and no money without a price."""
+    awaiting = sum(1 for state in states.values() if state not in {"confirmed", "dismissed"})
     return (
         Kpi(
             label="Open investigations",
@@ -237,11 +274,18 @@ def _production_kpis(investigation: Mapping[str, Any]) -> tuple[Kpi, ...]:
         Kpi(
             label="Awaiting review",
             figure=Sourced(
-                value=int(investigation["episodes"]),
-                source="investigation.episodes",
-                denominator="none has been reviewed; the review log is empty",
+                value=awaiting,
+                # The review log rather than the episode count. The first version published the
+                # episode count under a denominator asserting the log was empty, which stayed on
+                # the screen after a finding had been confirmed through the API.
+                source=f"{RULE_PREFIX}21.6 review log",
+                denominator="investigations with no confirmation or dismissal recorded",
             ),
-            note="No investigation has been reviewed yet, so every one is awaiting review.",
+            note=(
+                "Nothing has been reviewed yet."
+                if awaiting == len(states)
+                else f"{len(states) - awaiting} of {len(states)} have been settled."
+            ),
         ),
         Kpi(
             label="Cumulative rate shortfall",
@@ -437,7 +481,9 @@ def _coverage(finding: Mapping[str, Any]) -> EvidenceCoverage:
     return EvidenceCoverage(available=tuple(available), missing=tuple(missing))
 
 
-def _hypotheses(finding: Mapping[str, Any], fact_ids: frozenset[str]) -> tuple[Hypothesis, ...]:
+def _hypotheses(
+    finding: Mapping[str, Any], ledger: Sequence[Mapping[str, Any]]
+) -> tuple[Hypothesis, ...]:
     """The matrix. One cell per hypothesis and evidence family, each carrying its own object.
 
     A cell with nothing behind it is unconstructible, so a family a hypothesis never looked at is
@@ -464,7 +510,7 @@ def _hypotheses(finding: Mapping[str, Any], fact_ids: frozenset[str]) -> tuple[H
                 cells[family] = _report_cell(finding, hypothesis_id, index, documents)
             elif family == home:
                 cells[family] = _evidence_cell(
-                    finding, hypothesis_id, status, features, feature_name, rule, fact_ids
+                    finding, hypothesis_id, status, features, feature_name, rule, ledger
                 )
             else:
                 cells[family] = MatrixCell(
@@ -494,7 +540,7 @@ def _evidence_cell(
     features: Mapping[str, Any],
     feature_name: str,
     rule: str,
-    fact_ids: frozenset[str],
+    ledger: Sequence[Mapping[str, Any]],
 ) -> MatrixCell:
     """The cell in a hypothesis's own evidence family, carrying the figure that decided it."""
     value = features.get(feature_name)
@@ -506,7 +552,7 @@ def _evidence_cell(
     else:
         verdict, label = "neutral", STATUS_LABEL.get(status, status)
     fact = (
-        _fact_evidence(finding, hypothesis_id, feature_name, value, fact_ids)
+        _fact_evidence(finding, hypothesis_id, feature_name, value, ledger)
         if value is not None
         else None
     )
@@ -596,28 +642,41 @@ def _fact_evidence(
     hypothesis_id: str,
     feature_name: str,
     value: Any,
-    fact_ids: frozenset[str],
-) -> FactEvidence | None:
+    ledger: Sequence[Mapping[str, Any]],
+) -> FactEvidence:
     """The drawer for the figure that decided a cell.
 
-    The figure is the hypothesis's own strength feature, which section 18.2's bundle computed from
-    the two windows. It is sourced to the finding's shortfall fact when the ledger defines one, and
-    the drawer prints the two window medians beside it so a reader can see what moved.
+    **Every figure here is sourced to the key it actually came from.** The first version attached
+    ledger fact ids to the two window medians, which the ledger does not record: `fact_000002` holds
+    a reference rate of 3,052.735 Sm3/d and the drawer published 4,351.41 under its id, a different
+    quantity from the same manifest row, and `fact_000001` is a volume in Sm3 whose id sat on a rate
+    in Sm3/d. All 198 fact-sourced leaves were wrong.
+
+    Mark 1 passed over every one of them, because it asks whether a source resolves and not whether
+    the figure came from it. The ledger facts are now listed separately, each carrying the value the
+    ledger records, so a reader can see the lineage without the drawer claiming the ledger said
+    something it did not.
     """
-    anchor = str(finding.get("shortfall_fact_id") or "")
-    source = anchor if anchor in fact_ids else f"{RULE_PREFIX}18.2 diagnostic bundle"
+    index = int(finding["row_index"])
     return FactEvidence(
-        fact_id=anchor or f"{hypothesis_id}:{feature_name}",
+        reference=f"{hypothesis_id}:{feature_name}",
         metric=feature_name.replace("_", " "),
+        value=Sourced(
+            value=float(value),
+            source=f"{ARTIFACT_PREFIX}{finding['artifact_slug']}.finding.json",
+            denominator=(
+                f"{hypothesis_id}'s strength feature, from the section 18.2 diagnostic bundle"
+            ),
+        ),
         baseline_value=Sourced(
             value=finding.get("baseline_median_rate_sm3_per_day"),
-            source=str(finding.get("expected_volume_fact_id") or source),
+            source=f"investigation.findings.{index}.baseline_median_rate_sm3_per_day",
             unit="Sm3/d",
             denominator="median rate over the governing reference window",
         ),
         episode_value=Sourced(
             value=finding.get("episode_median_rate_sm3_per_day"),
-            source=str(finding.get("actual_volume_fact_id") or source),
+            source=f"investigation.findings.{index}.episode_median_rate_sm3_per_day",
             unit="Sm3/d",
             denominator="median rate over the episode's valid producing days",
         ),
@@ -625,18 +684,25 @@ def _fact_evidence(
         episode_window=_period(str(finding["episode_onset"]), str(finding["episode_offset"])),
         source_table="production daily, through the section 18.2 diagnostic bundle",
         transformation=(
-            f"{feature_name.replace('_', ' ')} = {float(value):.4g}, comparing the episode window "
-            "against the governing reference window"
+            f"{feature_name.replace('_', ' ')}, comparing the episode window against the "
+            "governing reference window"
         ),
-        input_records=Sourced(
-            value=None,
-            source=source,
-            denominator="walk the fact's lineage in the facts artifact",
-        ),
-        derived_facts=tuple(
-            str(finding[key])
-            for key in ("actual_volume_fact_id", "expected_volume_fact_id", "shortfall_fact_id")
-            if finding.get(key)
+        ledger_facts=tuple(
+            LedgerFact(
+                fact_id=str(fact["id"]),
+                metric=str(fact["metric"]),
+                kind=str(fact.get("kind", "measured")),
+                value=Sourced(
+                    value=float(fact["value"]),
+                    source=str(fact["id"]),
+                    unit=str(fact.get("unit") or ""),
+                    denominator=(
+                        "as the provenance ledger records it; its lineage is in the facts "
+                        "artifact"
+                    ),
+                ),
+            )
+            for fact in ledger
         ),
     )
 
@@ -644,10 +710,18 @@ def _fact_evidence(
 def expectation_panel(store: RunStore) -> ExpectationPanel:
     """Decision 8: how the expected line was built, so an operator need not trust it blindly.
 
-    Every figure is the expectation study's own published result. The WAPE is the selected model's,
-    and the interval coverage is the figure that **failed** its pre-registered bar: section 8's
-    calibration mark is not met, by two to four times, and the panel says so where the line is
-    drawn rather than in a document nobody opens.
+    Every figure is the expectation study's own published result, and the second one is the figure a
+    reader of a band most needs: how often the band is wrong on the side the detector uses.
+
+    **What this panel may not say**, because an earlier version said all three. Section 8 bands the
+    **lower-tail exceedance rate** at 0.05 to 0.20; two-sided coverage is explicitly reported
+    without a pass mark, so there is no "section 8 coverage bar" to miss. The "two to four times"
+    figure in `docs/expectation_results.md` belongs to the two **candidate** models, 0.302 and
+    0.387 against a nominal 0.10, not to two wells and not to the model in use. And no per-well
+    figure exists for the selected model at all: section 8's conditions are applied to candidates,
+    `naive-median28` is the protocol's fallback when none passes, so `condition_2_lower_tail` is
+    never evaluated for it. The panel states the pooled figure it does have and says which
+    condition the model in use has not been through.
     """
     expectation = store.manifests()["expectation"]
     chosen = str(expectation.get("selected_model", "naive-median28"))
@@ -665,18 +739,22 @@ def expectation_panel(store: RunStore) -> ExpectationPanel:
             unit="fraction",
             denominator="7-day horizon, development valid producing days",
         ),
-        interval_coverage=Sourced(
+        lower_tail_rate=Sourced(
             value=expectation.get("lower_tail_rate", {}).get("7"),
             source="expectation.lower_tail_rate.7",
-            unit="fraction of evaluated days below the lower bound",
+            unit="of prediction rows fall below the lower bound",
             denominator=(
-                "7-day horizon; section 8 accepts 0.05 to 0.20, so this is the mark that fails"
+                "7-day horizon, pooled over development valid producing days; section 8 permits "
+                "0.05 to 0.20"
             ),
         ),
         note=(
-            "Deterministic and fitted before any investigation runs. The interval does not "
-            "calibrate: section 8's coverage bar is missed by two to four times on both qualifying "
-            "wells, which is why the band is shown as a band and no probability is attached to it."
+            "Deterministic and fitted before any investigation runs. The lower edge of this band "
+            "is the edge the detector compares against, and it is badly placed: 0.56 of prediction "
+            "rows fall below it where section 8 permits at most 0.20. That is why the band is "
+            "shown as a band with no probability attached. Section 8's calibration condition has "
+            "never been evaluated for this model: the conditions are applied to candidates, and "
+            "naive-median28 is the fallback the protocol selects when no candidate passes."
         ),
     )
 
@@ -686,6 +764,14 @@ def detail(store: RunStore, wanted: str) -> InvestigationDetail:
     row = store.by_id(wanted)
     artifacts = store.artifacts_for(str(row["well"]), str(row["onset"]))
     finding = dict(artifacts.finding)
+    # The manifest row's index and the artifact's own name, so every figure the drawer publishes can
+    # be sourced to the key it came from rather than to a ledger id that records something else.
+    finding["row_index"] = next(
+        index
+        for index, candidate in enumerate(store.episodes())
+        if investigation_id(str(candidate["well"]), str(candidate["onset"])) == wanted
+    )
+    finding["artifact_slug"] = artifacts.investigation_id
     finding["baseline_median_rate_sm3_per_day"] = row.get("baseline_median_rate_sm3_per_day")
     finding["episode_median_rate_sm3_per_day"] = row.get("episode_median_rate_sm3_per_day")
     finding["baseline_window"] = _period(
@@ -704,7 +790,7 @@ def detail(store: RunStore, wanted: str) -> InvestigationDetail:
         recommended_next_check=str(finding.get("recommended_next_check", "")),
         chart=_chart(artifacts, finding),
         expectation=expectation_panel(store),
-        hypotheses=_hypotheses(finding, artifacts.fact_ids),
+        hypotheses=_hypotheses(finding, artifacts.facts),
         evidence_families=EVIDENCE_FAMILIES,
         coverage=_coverage(finding),
         review_disclaimer=labels.REVIEW_DISCLAIMER,

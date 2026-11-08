@@ -43,6 +43,7 @@ export interface QueueRow {
   causal_level_label: string;
   evidence_strength: string;
   review_state: string;
+  review_state_label: string;
   data_quality: string;
   priority: "HIGH" | "MEDIUM" | "LOW";
   priority_score: Sourced;
@@ -164,7 +165,7 @@ export interface ExpectationPanel {
   reference_window: string;
   regime: string;
   backtest_wape: Sourced;
-  interval_coverage: Sourced;
+  lower_tail_rate: Sourced;
   note: string;
 }
 

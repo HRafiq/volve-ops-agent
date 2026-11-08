@@ -10,14 +10,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from volve_ops.console import assemble, gates, priority
+from volve_ops.console import gates as console_gates
 from volve_ops.console.payloads import ChartSeries, EvidenceCoverage, Money
 from volve_ops.console.review import Action, ReviewLog, ReviewRecord, ReviewRefused
-from volve_ops.console.sources import Sourced
+from volve_ops.console.sources import Sourced, SourcedTable, sources_in, tables_in
+from volve_ops.console.store import RunStore
 from volve_ops.domain.activity import activity_dates_by_well
 from volve_ops.domain.day_class import DayClass
 from volve_ops.domain.episodes import (
@@ -31,6 +34,8 @@ from volve_ops.domain.expectation import NaiveMedian28
 from volve_ops.domain.production_service import load_volve_production
 from volve_ops.domain.regimes import stable_reference_windows
 from volve_ops.domain.splits import derive_split, development_only
+from volve_ops.evaluation.rows import ROWS
+from volve_ops.evaluation.table import MANIFESTS, locate
 
 MANIFEST = Path("data/cache/investigation_run.json")
 EVALUATION = Path("data/cache/evaluation_run.json")
@@ -546,3 +551,209 @@ class TestTheConsoleGatesOnTheRealRun:
         }
         rendered["queue"] = queue.model_dump_json()
         assert gates.operator_screens_avoid_engineering_words(rendered) == []
+
+
+class TestWhatTheThirdReviewFound:
+    """Each blocking finding of the Phase 6 review, as a case that fails without its fix.
+
+    Every one of these passed a gate before. Mark 1 asks whether a source resolves, not whether the
+    figure came from it, and it cannot see a figure written into a string; amendment 11 records
+    both limits. The cases below are the ones that got through.
+    """
+
+    @pytest.mark.skipif(not MANIFEST.exists(), reason="needs cached runs")
+    def test_every_drawer_figure_equals_what_its_own_source_records(self) -> None:
+        """198 of 198 were wrong, and every source resolved.
+
+        The drawer attached ledger fact ids to two window medians the ledger does not record:
+        `fact_000002` holds a reference rate of 3,052.735 Sm3/d and the drawer published 4,351.41
+        under its id, a different quantity from the same manifest row.
+        """
+        store = RunStore()
+        manifests = store.manifests()
+        checked = 0
+        for row in assemble.queue(store).rows:
+            detail = assemble.detail(store, row.investigation_id)
+            artifacts = store.artifacts_for(detail.well, detail.period.split(" to ")[0])
+            ledger = {f["id"]: f for f in artifacts.facts}
+            for hypothesis in detail.hypotheses:
+                for cell in hypothesis.cells.values():
+                    if cell.fact is None:
+                        continue
+                    for figure in (cell.fact.baseline_value, cell.fact.episode_value):
+                        checked += 1
+                        name, _, key = figure.source.partition(".")
+                        value, found = locate(manifests[name], key)
+                        assert found, figure.source
+                        assert value == figure.value, (figure.source, value, figure.value)
+                    for fact in cell.fact.ledger_facts:
+                        checked += 1
+                        assert ledger[fact.fact_id]["value"] == fact.value.value, fact.fact_id
+        assert checked > 300
+
+    @pytest.mark.skipif(not MANIFEST.exists(), reason="needs cached runs")
+    def test_the_expectation_panel_does_not_claim_a_coverage_bar(self) -> None:
+        """Section 8 bands the lower-tail rate and reports coverage without a pass mark.
+
+        The panel said "section 8's coverage bar is missed by two to four times on both qualifying
+        wells", which was wrong three ways: wrong quantity, wrong population (two candidate models,
+        not two wells), and the selected model has never been evaluated against the condition.
+        """
+        panel = assemble.expectation_panel(RunStore())
+        assert "coverage bar" not in panel.note
+        assert "qualifying wells" not in panel.note
+        assert "two to four times" not in panel.note
+        assert "never been evaluated for this model" in panel.note
+        assert panel.lower_tail_rate.value is not None
+
+    def test_the_queue_reads_the_review_log(self, tmp_path: Path) -> None:
+        """It hardcoded the state and published a KPI asserting the log was empty."""
+        store = RunStore()
+        log = ReviewLog(tmp_path / "review.jsonl")
+        before = assemble.queue(store, log)
+        target = before.rows[0]
+        assert target.review_state == "none"
+        log.append(
+            target.investigation_id,
+            Action.REQUEST_MORE_EVIDENCE,
+            actor="a reviewer",
+            investigator_version="investigator-v0",
+            protocol_version="v15",
+        )
+        after = assemble.queue(store, log)
+        moved = next(r for r in after.rows if r.investigation_id == target.investigation_id)
+        assert moved.review_state == "rerun_requested"
+        assert moved.priority_score.value == int(target.priority_score.value or 0) + 1
+        counts = after.rule.term_counts[priority.Term.REVIEW_PENDING.value]
+        assert counts.value == 1
+
+    def test_the_queue_caveat_carries_both_of_adr_0009s_measurements(self) -> None:
+        """Section 21.5 requires both wherever the rule is printed.
+
+        The first alone reads as the term being inert, which it is not: removing it leaves the
+        queue with no HIGH case at all.
+        """
+        caveat = assemble.queue(RunStore()).rule.caveat
+        assert "no episode's band" in caveat
+        assert "no HIGH case" in caveat
+
+    def test_a_table_with_no_usable_row_count_is_refused(self) -> None:
+        """Two sentinels cancelled: a null count and a missing rows field both gave -1."""
+
+        class NullCount(SourcedTable):
+            model_config = ConfigDict(frozen=True, extra="forbid")
+            numbers: dict[str, float]
+
+        table = NullCount(
+            source="rule:test",
+            row_count=Sourced(value=None, source="rule:test"),
+            numbers={"a": 1.0},
+        )
+        assert table.rows_mismatch() is not None
+        outcome = gates.figures_resolve(
+            {"attack": table}, {}, fact_ids=frozenset(), artifacts=Path("/nonexistent")
+        )
+        assert not outcome.passed
+        assert any("no usable row count" in line for line in outcome.detail)
+
+    def test_the_row_count_is_checked_against_the_declared_rows_field(self) -> None:
+        """It was checked against the first list-shaped field, whichever that happened to be."""
+
+        class Decoy(SourcedTable):
+            model_config = ConfigDict(frozen=True, extra="forbid")
+            rows_field: ClassVar[str] = "rows"
+            decoys: tuple[int, ...]
+            rows: tuple[int, ...]
+
+        table = Decoy(
+            source="rule:test",
+            row_count=Sourced(value=2, source="rule:test"),
+            decoys=(1, 2),
+            rows=(1, 2, 3, 4, 5, 6, 7),
+        )
+        assert table.actual_rows() == 7
+        assert "claims 2 rows and carries 7" in str(table.rows_mismatch())
+
+    def test_an_undeclared_result_column_is_refused(self) -> None:
+        """Amendment 10's third bound, which nothing checked until review found it violated."""
+
+        class ResultRow(BaseModel):
+            date: str
+            shortfall: float
+
+        class Smuggled(SourcedTable):
+            model_config = ConfigDict(frozen=True, extra="forbid")
+            rows: tuple[ResultRow, ...]
+
+        outcome = gates.figures_resolve(
+            {
+                "attack": Smuggled(
+                    source="rule:test",
+                    row_count=Sourced(value=1, source="rule:test"),
+                    rows=(ResultRow(date="d", shortfall=9.0),),
+                )
+            },
+            {},
+            fact_ids=frozenset(),
+            artifacts=Path("/nonexistent"),
+        )
+        assert not outcome.passed
+        assert any("undeclared derived columns" in line for line in outcome.detail)
+
+    def test_the_chart_declares_the_four_columns_that_are_results(self) -> None:
+        """Declared rather than removed, and amendment 11 says why."""
+        assert ChartSeries.derived_columns == {"expected", "lower", "upper", "below_band"}
+
+    def test_a_lying_table_nested_in_another_table_is_still_seen(self) -> None:
+        """`tables_in` returned early on a table, so an inner one was invisible."""
+
+        class Inner(SourcedTable):
+            model_config = ConfigDict(frozen=True, extra="forbid")
+            rows: tuple[int, ...]
+
+        class Outer(SourcedTable):
+            model_config = ConfigDict(frozen=True, extra="forbid")
+            rows: tuple[Inner, ...]
+
+        inner = Inner(
+            source="rule:test", row_count=Sourced(value=99, source="rule:test"), rows=(1, 2)
+        )
+        outer = Outer(
+            source="rule:test", row_count=Sourced(value=1, source="rule:test"), rows=(inner,)
+        )
+        assert len(tables_in(outer)) == 2
+        outcome = gates.figures_resolve(
+            {"attack": outer}, {}, fact_ids=frozenset(), artifacts=Path("/nonexistent")
+        )
+        assert not outcome.passed
+        assert any("claims 99 rows and carries 2" in line for line in outcome.detail)
+
+    def test_an_unresolvable_source_inside_a_tables_rows_is_still_seen(self) -> None:
+        """`sources_in` returned only the table's own two sources."""
+
+        class WithSourced(SourcedTable):
+            model_config = ConfigDict(frozen=True, extra="forbid")
+            rows: tuple[Sourced, ...]
+
+        table = WithSourced(
+            source="rule:test",
+            row_count=Sourced(value=1, source="rule:test"),
+            rows=(Sourced(value=1.0, source="investigation.no_such_key"),),
+        )
+        assert "investigation.no_such_key" in sources_in(table)
+        outcome = gates.figures_resolve(
+            {"attack": table},
+            {"investigation": {"episodes": 14}},
+            fact_ids=frozenset(),
+            artifacts=Path("/nonexistent"),
+        )
+        assert not outcome.passed
+
+    def test_the_console_manifest_is_under_the_coverage_gate(self) -> None:
+        """Section 21.8 claimed the results table covered every figure the API serves."""
+        assert "console" in MANIFESTS
+        covered = {r.key for r in ROWS if r.manifest == "console" and r.key}
+        assert "queue_rows" in covered
+        assert "all_pass" in covered
+        for name in console_gates.GATE_NAMES:
+            assert f"pass_marks.{name}" in covered, name

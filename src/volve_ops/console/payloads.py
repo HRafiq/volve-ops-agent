@@ -19,7 +19,7 @@ blank cell in an evidence matrix is the most natural way to lose that distinctio
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -71,21 +71,50 @@ class Absence(BaseModel):
     outcome: Literal["none_found", "reason_not_documented"]
 
 
-class FactEvidence(BaseModel):
-    """The evidence drawer for a fact, from the console design's decision 7."""
+class LedgerFact(BaseModel):
+    """One fact from the provenance ledger, with the value the ledger records.
+
+    Its own value, which is the whole point. A first version of the drawer attached ledger ids to
+    figures taken from somewhere else: `fact_000002` records a reference rate of 3,052.735 Sm3/d and
+    the drawer published 4,351.41 Sm3/d under its id, a different quantity from the same manifest
+    row. Independent review found all 198 fact-sourced leaves mis-attributed, 100 percent.
+
+    Mark 1 could not see it, because the source resolved. That is the limit of "every figure
+    resolves to a source" as a check: it asks whether the source exists, not whether the figure came
+    from it. The fix is structural rather than another gate: a ledger fact now carries the ledger's
+    value, so the two cannot be different numbers.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     fact_id: str
     metric: str
+    value: Sourced
+    kind: str
+
+
+class FactEvidence(BaseModel):
+    """The evidence drawer for a figure, from the console design's decision 7."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reference: str
+    """What identifies this evidence. Not a ledger id unless the ledger defines it.
+
+    For a hypothesis cell this is `<hypothesis>:<feature>`, because the figure that decided the cell
+    is a strength feature the section 18.2 bundle computed and the ledger holds no fact for it.
+    Labelling it with a ledger id was how the mis-attribution started.
+    """
+
+    metric: str
+    value: Sourced
     baseline_value: Sourced
     episode_value: Sourced
     baseline_window: str
     episode_window: str
     source_table: str
     transformation: str
-    input_records: Sourced
-    derived_facts: tuple[str, ...] = ()
+    ledger_facts: tuple[LedgerFact, ...] = ()
 
 
 class DocumentEvidence(BaseModel):
@@ -168,7 +197,16 @@ class ExpectationPanel(BaseModel):
     reference_window: str
     regime: str
     backtest_wape: Sourced
-    interval_coverage: Sourced
+
+    lower_tail_rate: Sourced
+    """How often the band is wrong on the side the detector uses.
+
+    Named for what it is. It was `interval_coverage`, which is a different quantity: section 8 bands
+    the lower-tail exceedance rate and reports two-sided coverage without a pass mark. The frontend
+    labelled it correctly while the payload field did not, which is the kind of disagreement that
+    survives until someone reads both.
+    """
+
     note: str
 
 
@@ -199,7 +237,23 @@ class ChartSeries(SourcedTable):
     A `SourcedTable`, which is mark 1's declared exemption: 109 days of ten channels is 1,090
     numbers from one artifact, and a `Sourced` around each would repeat one answer a thousand times.
     `row_count` is what bounds the exemption, and the gate checks it against the rows actually here.
+
+    **Four of the ten columns are results, not records**, and amendment 10's third bound says only
+    a record may live in a table. `expected`, `lower` and `upper` are the output of the model
+    section 7 selected, and `below_band` is the detector's comparison against it. Independent
+    review found the bound violated by the exemption's only user, with nothing checking it.
+
+    They are declared rather than removed, because a chart of actuals with no expectation is not the
+    chart an operator needs and splitting them into 1,090 sourced figures is what the exemption
+    exists to avoid. What the declaration buys is that the gate can see them: `derived_columns` is
+    published, and amendment 11 narrows the bound to say a derived column must be declared and must
+    come from the same artifact as the records beside it.
     """
+
+    rows_field: ClassVar[str] = "rows"
+    derived_columns: ClassVar[frozenset[str]] = frozenset(
+        {"expected", "lower", "upper", "below_band"}
+    )
 
     rows: tuple[SeriesRow, ...]
     episode_window: str
@@ -223,7 +277,17 @@ class QueueRow(BaseModel):
     assessment_label: str
     causal_level_label: str
     evidence_strength: str
+
     review_state: str
+    """The log's own state, which is what the priority rule consumed.
+
+    Carried raw alongside its label, the same way `assessment` and `assessment_label` are, because
+    section 21.6 mark 8 recomputes each row's score from the printed rule and needs the value the
+    rule was given. The harness previously fed the gate a hardcoded "none", so the gate agreed with
+    the payload by construction on exactly the term that was broken.
+    """
+
+    review_state_label: str
     data_quality: str
     priority: str
     priority_score: Sourced

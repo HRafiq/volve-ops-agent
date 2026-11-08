@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, ClassVar, Final
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -72,17 +72,52 @@ class SourcedTable(BaseModel):
     source: str
     row_count: Sourced
 
+    #: Which field holds the rows. Declared rather than discovered, because `actual_rows` used to
+    #: return the length of the **first** list-shaped field it met: a subclass declaring any other
+    #: list before `rows` had its count checked against the wrong one, and 7 rows went through under
+    #: a declared count of 2.
+    rows_field: ClassVar[str] = "rows"
+
+    #: Fields a table may carry that are **records** rather than results. Amendment 10's third bound
+    #: is the one nothing was checking: a daily rate is what the source says happened, and a
+    #: shortfall, a share, a count or a score is a figure this project computed. A subclass declares
+    #: which of its row fields are derived, and `derived_columns` is what the gate reads.
+    derived_columns: ClassVar[frozenset[str]] = frozenset()
+
     def declared_rows(self) -> int:
+        """The count the table publishes, or -1 when it publishes none.
+
+        The sentinel is why `rows_mismatch` compares against `actual_rows` rather than letting two
+        -1s cancel. A null `row_count` and a missing rows field both gave -1, so a table carrying
+        unsourced floats in a dict with a null count passed the gate outright.
+        """
         value = self.row_count.value
-        return int(value) if isinstance(value, int | float) else -1
+        return int(value) if isinstance(value, int | float) and not isinstance(value, bool) else -1
 
     def actual_rows(self) -> int:
-        for name, value in self:
-            if name in {"source", "row_count"}:
-                continue
-            if isinstance(value, tuple | list):
-                return len(value)
-        return -1
+        rows = getattr(self, self.rows_field, None)
+        return len(rows) if isinstance(rows, tuple | list) else -1
+
+    def rows_mismatch(self) -> str | None:
+        """Why this table's count cannot be trusted, or None when it can.
+
+        Three ways to fail, and the first two were both passes before: a count that is not a number,
+        a table with no rows field, and a count that disagrees with the rows present.
+        """
+        declared, actual = self.declared_rows(), self.actual_rows()
+        if declared < 0:
+            return (
+                f"publishes no usable row count ({self.row_count.value!r}); the count is what "
+                "bounds amendment 10's exemption, so a table without one is not exempt"
+            )
+        if actual < 0:
+            return (
+                f"declares its rows in {self.rows_field!r} and carries no such sequence; "
+                "a table that vouches for rows it does not have is the failure the bound exists for"
+            )
+        if declared != actual:
+            return f"claims {declared} rows and carries {actual}"
+        return None
 
 
 class Sourced(BaseModel):
@@ -173,12 +208,20 @@ def unsourced_figures(payload: Any, path: str = "") -> list[str]:
 
 
 def tables_in(payload: Any) -> list[SourcedTable]:
-    """Every `SourcedTable` in a payload, for the gate that checks their counts."""
+    """Every `SourcedTable` in a payload, for the gate that checks their counts.
+
+    Recurses **into** a table's rows rather than stopping at it. Returning early meant a table
+    nested inside another table's rows was invisible to the gate, so a lying inner table could be
+    smuggled past the bound by the outer one vouching for it.
+    """
     found: list[SourcedTable] = []
     if isinstance(payload, Sourced):
         return found
     if isinstance(payload, SourcedTable):
-        return [payload]
+        found.append(payload)
+        for _, value in payload:
+            found.extend(tables_in(value))
+        return found
     if isinstance(payload, BaseModel):
         for _, value in payload:
             found.extend(tables_in(value))
@@ -202,7 +245,14 @@ def sources_in(payload: Any) -> list[str]:
     if isinstance(payload, Sourced):
         return [payload.source]
     if isinstance(payload, SourcedTable):
-        return [payload.source, payload.row_count.source]
+        # The table's own two sources, **and** anything sourced inside its rows. Returning only the
+        # first two meant a `Sourced` with an unresolvable source inside a row was invisible to
+        # mark 1: the exemption is from per-cell sourcing, not from checking what is there.
+        found = [payload.source, payload.row_count.source]
+        for name, value in payload:
+            if name not in {"source", "row_count"}:
+                found.extend(sources_in(value))
+        return found
     if isinstance(payload, BaseModel):
         for _, value in payload:
             found.extend(sources_in(value))

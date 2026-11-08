@@ -108,9 +108,9 @@ export function Detail({
             <dd style={{ margin: 0 }}>
               <Figure figure={detail.expectation.backtest_wape} />
             </dd>
-            <dt style={{ color: "var(--steel-600)" }}>Lower-tail rate</dt>
+            <dt style={{ color: "var(--steel-600)" }}>Lower-tail rate, 7 days</dt>
             <dd style={{ margin: 0 }}>
-              <Figure figure={detail.expectation.interval_coverage} />{" "}
+              <Figure figure={detail.expectation.lower_tail_rate} />{" "}
               <span style={{ color: "var(--contradicts)" }}>
                 against a permitted 0.05 to 0.20
               </span>

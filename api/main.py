@@ -104,10 +104,15 @@ def header(store: StoreDep) -> Header:
 
 
 @app.get("/api/production/queue")
-def queue(store: StoreDep) -> Queue:
-    """The investigation queue, its KPI strip and the priority rule printed under it."""
+def queue(store: StoreDep, log: LogDep) -> Queue:
+    """The investigation queue, its KPI strip and the priority rule printed under it.
+
+    The log is a dependency here because the queue reads it: a review recorded through this API
+    has to reach the queue's review column, its "awaiting review" tile and the priority rule's
+    review term. The first version took no log and asserted on every request that none existed.
+    """
     try:
-        return assemble.queue(store)
+        return assemble.queue(store, log)
     except ArtifactMissing as exc:
         raise _not_found(exc) from exc
 
