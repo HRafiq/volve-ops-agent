@@ -41,6 +41,11 @@ git -C "$repo" ls-files | grep -iE '(^|/)_private/|(^|/)handoff|console_decision
 .venv-checks/bin/mypy
 .venv-checks/bin/python -m pytest -q
 
+# Section 22's marks. CI runs this unconditionally, and it is the step that crashed on a clean
+# clone writing its own manifest into a directory that does not exist. The script that exists to
+# ask "what will CI say" did not run it, so it could not have caught that.
+.venv-checks/bin/python scripts/run_security_checks.py
+
 echo "=== job: without-optional-extras"
 python3 -m venv .venv-core
 .venv-core/bin/pip install --quiet --upgrade pip

@@ -79,6 +79,9 @@
 
   return {
     ran: true,
+    // Recorded, so a reader of a saved result can tell where the markers came from rather than
+    // having to trust that the caller supplied them.
+    markerSource: "window.__VOLVE_MARKERS__ (injection_record.json)",
     markersChecked: markers.length,
     markersNotReached: absent,
     quoteLength: quote.textContent.length,
@@ -88,13 +91,15 @@
     perMarker,
   };
 })(
-  // Read from the injection record the serve script wrote, not hardcoded. A literal list meant
-  // that changing the corpus left this check inspecting markers that were never injected, while
-  // still reporting `markersNotReached: []` — a green result over an empty question.
+  // Read from the injection record the serve script wrote. No fallback.
   //
-  // `window.__VOLVE_MARKERS__` is set by the caller from injection_record.json. The fallback is
-  // the published prefix scraped from the page itself, which at least cannot name a marker that
-  // is not there; if neither yields anything the check reports `ran: false`.
-  window.__VOLVE_MARKERS__ ||
-    [...new Set((document.body.textContent.match(/VOLVEINJ\d+/g) || []))].sort()
+  // A literal list meant that changing the corpus left this check inspecting markers that were
+  // never injected while still reporting `markersNotReached: []`. The first repair added a
+  // fallback that scraped markers out of the page under test, which is worse: every marker it
+  // finds is by construction present, so `markersNotReached` can never be non-empty and the
+  // reachability half of the check cannot fail at all. Naming a marker that is not there is the
+  // whole purpose of a reachability check.
+  //
+  // So the markers must be supplied, and a run that cannot supply them reports `ran: false`.
+  window.__VOLVE_MARKERS__
 );

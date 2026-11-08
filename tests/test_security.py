@@ -795,3 +795,125 @@ class TestTheReviewStateConjunctCanFire:
             if r.invariant == "grounding_and_gating"
         ]
         assert [r.outcome for r in results] == [Outcome.HELD]
+
+
+class TestClassThreeOverManifestPaths:
+    """Section 22.6 class 3 on the System Health screen, whose figures name manifest keys.
+
+    These run on synthetic manifests and need no cached dataset, which is the point. The health
+    checks lived only in `tests/test_health_payload.py`, which skips without `data/cache/`, and in
+    a harness step that skips for the same reason. So mark 11's value half ran in neither the test
+    suite nor CI, and `run_security_checks.py` carried a comment saying it ran on every push.
+    """
+
+    def test_the_walk_reaches_leaves_inside_lists(self) -> None:
+        # The defect this class exists for. The first walk handled mappings and scalars only, so
+        # it collected 221 of 768 leaves and every figure sourced through a list was skipped as
+        # "not something we hold" rather than compared. On the health screen that was every
+        # derived figure and none of the literal reads: it could see only what could not be wrong.
+        from volve_ops.security.provenance_failures import manifest_values
+
+        values = manifest_values(
+            {"ablation": {"rows": [{"model": "a", "opened": 14}, {"model": "b", "opened": 11}]}}
+        )
+        assert values["ablation.rows.0.opened"] == 14.0
+        assert values["ablation.rows.1.opened"] == 11.0
+
+    def test_booleans_are_collected_so_a_flipped_flag_is_a_contradiction(self) -> None:
+        from volve_ops.security.provenance_failures import manifest_values
+
+        values = manifest_values({"m": {"changed": True, "other": False}})
+        assert values == {"m.changed": 1.0, "m.other": 0.0}
+
+    def test_a_figure_contradicting_its_manifest_key_is_caught(self) -> None:
+        from volve_ops.console.sources import Sourced
+        from volve_ops.security.provenance_failures import contradictions_in_health
+
+        manifests = {"ablation": {"calibration": {"bands": {"high": 7}}}}
+        screen = {"row": Sourced(value=7000.0, source="ablation.calibration.bands.high", unit="")}
+        found = contradictions_in_health(screen, manifests)
+        assert len(found) == 1
+        assert found[0].published == 7000.0
+        assert found[0].recorded == 7.0
+
+    def test_a_figure_inside_a_list_is_caught(self) -> None:
+        from volve_ops.console.sources import Sourced
+        from volve_ops.security.provenance_failures import contradictions_in_health
+
+        manifests = {"ablation": {"rows": [{"opened": 14}]}}
+        screen = {"row": Sourced(value=1014.0, source="ablation.rows.0.opened", unit="")}
+        assert len(contradictions_in_health(screen, manifests)) == 1
+
+    def test_a_flipped_boolean_is_caught(self) -> None:
+        from volve_ops.console.sources import Sourced
+        from volve_ops.security.provenance_failures import contradictions_in_health
+
+        manifests = {"ablation": {"rows": [{"level_changed": False}]}}
+        screen = {"row": Sourced(value=True, source="ablation.rows.0.level_changed", unit="")}
+        assert len(contradictions_in_health(screen, manifests)) == 1
+
+    def test_a_matching_figure_is_not_flagged(self) -> None:
+        # Without this the tests above would pass against a check that flags everything.
+        from volve_ops.console.sources import Sourced
+        from volve_ops.security.provenance_failures import contradictions_in_health
+
+        manifests = {"ablation": {"rows": [{"opened": 14}]}}
+        screen = {"row": Sourced(value=14.0, source="ablation.rows.0.opened", unit="")}
+        assert contradictions_in_health(screen, manifests) == ()
+
+    def test_a_figure_sourced_to_a_container_is_not_compared(self) -> None:
+        """Stated as a limit rather than left to be discovered.
+
+        A source naming a list or a mapping has no value to compare against, so class 3 passes it
+        over. That is why every derived figure on the health screen now names an indexed leaf: a
+        container source is a source mark 1 accepts and this check cannot see.
+        """
+        from volve_ops.console.sources import Sourced
+        from volve_ops.security.provenance_failures import contradictions_in_health
+
+        manifests = {"ablation": {"rows": [{"opened": 14}]}}
+        screen = {"row": Sourced(value=999.0, source="ablation.rows", unit="")}
+        assert contradictions_in_health(screen, manifests) == ()
+
+
+class TestTheHealthHalfReportsWhetherItRan:
+    """A single `class_3_ran` covering both halves said a check had run when half had not."""
+
+    def test_it_reports_not_run_without_the_section_22_manifests(self, tmp_path: Path) -> None:
+        import json
+
+        from volve_ops.console.store import RunStore
+        from volve_ops.security.provenance_failures import health_contradictions
+
+        (tmp_path / "investigations").mkdir()
+        (tmp_path / "investigation_run.json").write_text(
+            json.dumps({"protocol_version": "v17", "findings": []}), encoding="utf-8"
+        )
+        found, health_ran = health_contradictions(
+            RunStore(cache=tmp_path, traces=tmp_path / "investigations")
+        )
+        assert found == ()
+        assert health_ran is False
+
+    def test_a_failure_in_the_health_half_is_not_swallowed(self, tmp_path: Path) -> None:
+        """The suppress ate a real class-3 condition it was written alongside.
+
+        `_episodes_opened_by_selected` raises `ArtifactMissing` when the selected model has no row
+        in the ablation manifest, which is a figure sourced to something that does not exist. The
+        same handler that let the per-episode half run without the section 22 manifests was
+        catching it and reporting the run clean.
+        """
+        import json
+
+        from volve_ops.console.store import RunStore
+        from volve_ops.security.provenance_failures import health_contradictions
+
+        (tmp_path / "investigations").mkdir()
+        (tmp_path / "investigation_run.json").write_text(
+            json.dumps({"protocol_version": "v17", "findings": []}), encoding="utf-8"
+        )
+        for name in ("security_run.json", "ablation_run.json"):
+            (tmp_path / name).write_text(json.dumps({"broken": True}), encoding="utf-8")
+
+        with pytest.raises(Exception, match=r"."):
+            health_contradictions(RunStore(cache=tmp_path, traces=tmp_path / "investigations"))

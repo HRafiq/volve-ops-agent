@@ -20,6 +20,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from volve_ops.console.assemble import CONSOLE_PROTOCOL_VERSION
 from volve_ops.console.limits import NOT_APPLICABLE, declared_limits
 from volve_ops.console.store import RunStore
 from volve_ops.security import suite
@@ -29,7 +30,11 @@ from volve_ops.security.claims import files_scanned as claim_files
 from volve_ops.security.claims import scan as claim_scan
 from volve_ops.security.invariants import ALL_INVARIANTS, Status
 from volve_ops.security.payloads import ALL_PAYLOADS, InjectionClass, payloads_of
-from volve_ops.security.provenance_failures import FAILURE_CLASSES, contradictions_in_console
+from volve_ops.security.provenance_failures import (
+    FAILURE_CLASSES,
+    contradictions_in_console,
+    health_contradictions,
+)
 from volve_ops.security.sinks import FORBIDDEN_SINKS, files_scanned, scan
 
 
@@ -90,8 +95,13 @@ def main(argv: list[str] | None = None) -> int:
     #
     # Both read artifacts the harnesses write, and `data/` is not committed, so on a runner there
     # is nothing for them to read. They report a skip and record `ran: false`; neither is ever
-    # folded into a pass. The checks themselves run on every push through
-    # tests/test_provenance_failures.py and tests/test_health_payload.py, which make each fail.
+    # folded into a pass.
+    #
+    # What runs on every push, with no dataset, is `TestClassThreeOverManifestPaths` in
+    # tests/test_security.py: it builds synthetic manifests and makes the value check fail six
+    # ways. That matters because the earlier claim here — that the checks run through
+    # tests/test_health_payload.py — was false: that whole module skips without `data/cache/`, so
+    # mark 11's value half ran in neither the harness nor the tests.
     store = RunStore(cache=args.cache, traces=args.cache / "investigations")
     have_artifacts = (args.cache / "investigation_run.json").exists() and (
         args.cache / "investigations"
@@ -100,16 +110,23 @@ def main(argv: list[str] | None = None) -> int:
     print("\nmark 8: provenance failures")
     contradictions: tuple[Any, ...] = ()
     class_3_ran = False
+    health_half_ran = False
     if not have_artifacts:
         print("  cached run artifacts absent. Skipped, not passed.")
     else:
         try:
-            contradictions = contradictions_in_console(store)
+            per_episode = contradictions_in_console(store)
+            health_found, health_half_ran = health_contradictions(store)
+            contradictions = (*per_episode, *health_found)
             class_3_ran = True
         except Exception as exc:
             print(f"  ! could not read the console payloads: {exc}")
             failures.append(f"mark 8: class 3 could not run: {exc}")
     if class_3_ran:
+        # Reported separately. The per-episode half runs without the section 22 manifests and the
+        # health half cannot, so one flag covering both said a check had run when half of it had
+        # been skipped — which is what a first-ever run always looks like.
+        print(f"  health screen walked: {health_half_ran}")
         print(f"  class 3, figures contradicting their records: {len(contradictions)}")
         if contradictions:
             failures.append(f"mark 8: {len(contradictions)} figure(s) contradict their records")
@@ -157,7 +174,9 @@ def main(argv: list[str] | None = None) -> int:
     if not (args.cache / "ablation_run.json").exists():
         print("  ablation manifest absent. Skipped, not passed.")
     else:
-        ablation = json.loads((args.cache / "ablation_run.json").read_text(encoding="utf-8"))
+        ablation: dict[str, Any] = json.loads(
+            (args.cache / "ablation_run.json").read_text(encoding="utf-8")
+        )
         ablation_ran = True
         for name in ("expectation", "retrieval", "calibration", "cost_and_latency"):
             if name not in ablation:
@@ -178,15 +197,36 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  ! {name} reported nothing")
             else:
                 print(f"  {name}: reported")
-        # The retrieval population is the figure amendment 12 records as having been wrong in four
-        # places, so it is checked against the arms the manifest actually carries.
-        retrieval = ablation.get("retrieval", {})
-        if retrieval.get("episodes_with_documents") != len(retrieval.get("rows", [])):
+        # The retrieval population is the figure amendment 12 records as having been wrong in
+        # four places. Checking it against `len(rows)` is what the first version of this gate did,
+        # and it is `len(x) == len(x)`: the harness writes both from the same list, so the check
+        # would have passed on the buggy manifest it was written to catch.
+        #
+        # What can actually fail: the harness publishes a document count for **every** episode it
+        # swept, including the ones it opened no arm for, so the population is reconciled against
+        # the whole sweep rather than against the survivors.
+        retrieval: dict[str, Any] = ablation.get("retrieval", {})
+        document_counts: list[dict[str, Any]] | None = retrieval.get("episode_document_counts")
+        if document_counts is None:
             failures.append(
-                "mark 9: the retrieval ablation's published population does not equal the number "
-                "of arms it reports"
+                "mark 9: the retrieval ablation publishes no per-episode document count, so its "
+                "population cannot be reconciled against the episodes it swept"
             )
-            print("  ! retrieval population disagrees with its own rows")
+            print("  ! no per-episode document counts")
+        else:
+            expected = sum(1 for c in document_counts if int(c["documents_in_window"]) > 0)
+            published = retrieval.get("episodes_with_documents")
+            if expected != published:
+                failures.append(
+                    f"mark 9: the retrieval population is {published} but {expected} of the "
+                    "episodes swept have an in-window document"
+                )
+                print(f"  ! population {published} vs {expected}")
+            if len(document_counts) != retrieval.get("episodes_total"):
+                failures.append(
+                    "mark 9: the retrieval document counts do not cover every episode swept"
+                )
+                print("  ! document counts do not cover the sweep")
 
     # --- mark 13: no claim of an operator safety case -----------------------------------------
     print("\nmark 13: overclaims")
@@ -206,7 +246,11 @@ def main(argv: list[str] | None = None) -> int:
     manifest: dict[str, Any] = {
         "generated": dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
         "commit_sha": _commit(),
-        "protocol_version": "v16",
+        # Read from the document, never restated. A constant here put "protocol v16" on the
+        # health screen while the console header read v17 from the same document: two screens of
+        # one console disagreeing about which protocol they answer to, which is the conflation
+        # amendment 9's lesson and assemble.CONSOLE_PROTOCOL_VERSION both exist to prevent.
+        "protocol_version": CONSOLE_PROTOCOL_VERSION,
         "injection": {
             **counts,
             "payloads": len(ALL_PAYLOADS),
@@ -234,6 +278,7 @@ def main(argv: list[str] | None = None) -> int:
         "provenance_failures": {
             "classes": len(FAILURE_CLASSES),
             "class_3_ran": class_3_ran,
+            "class_3_health_screen_walked": health_half_ran,
             "class_3_contradictions": len(contradictions) if class_3_ran else None,
             "detail": [str(c) for c in contradictions[:20]],
             "asserted_in": "tests/test_provenance_failures.py",
@@ -259,6 +304,7 @@ def main(argv: list[str] | None = None) -> int:
             name
             for name, ran in (
                 ("mark 8 class 3", class_3_ran),
+                ("mark 8 class 3 over the health screen", health_half_ran),
                 ("mark 9 ablations", ablation_ran),
                 ("mark 11 health figures", health_ran),
             )

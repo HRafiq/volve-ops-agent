@@ -24,7 +24,7 @@ honestly. Several did, and this README says which.
 The hold-out has never been scored and never been looked at. Phase 4's leakage audit exists to prove
 that mechanically rather than assert it, and it gates the build.
 
-159 tracked files, 703 tests, ruff and mypy strict clean. No model is called by any layer yet: every
+181 tracked files, 909 tests, ruff and mypy strict clean. No model is called by any layer yet: every
 component runs deterministically, which is what makes it testable.
 
 ## What the data refused to support

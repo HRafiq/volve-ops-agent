@@ -767,8 +767,24 @@ one, and nothing would fire.
 
 This is the project's failure and not the mark's: mark 11 says "resolves", which is what it checks,
 and mark 8 names the stronger question. What was missing is that nothing ran the stronger question
-over this screen. Class 3 now resolves manifest-path sources against their manifest value and runs
-over the health payload as well as the per-episode ones.
+over this screen.
+
+**The first repair did not reach it either, and a second review round found that too.** Class 3 was
+pointed at the health payload, but its walk over the manifests handled mappings and scalars and not
+lists, so it collected 221 of the 768 numeric leaves and compared nothing whose source ran through a
+list. On that screen it could see the twenty-six figures read straight out of a manifest key and
+none of the seven derived ones, which is to say it could see only the figures that could not be
+wrong. Worse, every figure the repair itself added was in the blind half. Corrupting a band count to
+7,000 and the selected model's episode count to 1,014 left mark 8, mark 11 and both test files
+reporting clean.
+
+What stands now: the walk covers lists with the index as a path segment and records booleans as 0
+and 1, so a flipped flag is a contradiction; every derived figure on the screen names the indexed
+leaf it came from rather than the container, because a source naming a container is one mark 1
+accepts and class 3 cannot compare; and six tests build synthetic manifests and make the value check
+fail, so it runs on every push without a dataset. That last point was its own hole: the health
+checks lived only in a module that skips without `data/cache/` and in a harness step that skips for
+the same reason, so this check ran in neither.
 
 Review also found the gap already being used. The comparison row "Episodes opened by the selected
 model" hardcoded the model name and carried a `next(..., 0)` default, so the moment the selected
@@ -793,9 +809,21 @@ through a browser against a served console rather than in the test suite or in C
 a regression. The weakening is real and this amendment records it rather than leaving it in a
 footnote. What still audits it: mark 2 forbids every unescaped-markup sink in the frontend source
 and runs on every push, which is the property a regression would have to break first; and the DOM
-check now reads its markers from the run's own injection record rather than a hardcoded list, so a
-corpus change can no longer leave it inspecting markers that were never injected while reporting
-that none went unreached.
+check reads its markers from the run's own injection record rather than a hardcoded list.
+
+The first repair of that marker list added a fallback that scraped markers out of the page under
+test, which is worse than the list it replaced: every marker found that way is present by
+construction, so the reachability half of the check could not fail at all. There is no fallback now.
+A run that cannot supply the markers reports itself as not having run, and the result records where
+its markers came from.
+
+**The rate limiter's repair was itself incomplete**, which the second round measured. Replacing the
+whole-map scan with one entry per client made the ordinary case O(1), but at the tracking cap every
+new client still ran a sweep that found nothing stale to delete: 1.5 milliseconds per request during
+a flood of distinct addresses, worse than the implementation it replaced and in exactly the case its
+own docstring gave as the reason for replacing it. The sweep now runs once per window rather than
+once per request, and the measured cost at the cap is 0.9 microseconds. "O(1)" was the wrong word
+for what the first repair achieved.
 
 **Mark 9 gates nothing.** Section 22.4's preamble says every mark fails the build when it fails. The
 ablation manifest is read by the console and, for key existence, by mark 11; nothing asserts that
@@ -813,11 +841,24 @@ ablation which moves nothing is reported as moving nothing, and dropping it is t
 mark forbids. The gate is now documents available in the episode's evidence window, and the episode
 that moves nothing is reported as moving nothing.
 
-**Two published figures were wrong**, both in `docs/security_results.md`, and one repeated in the
-README. The overclaim gate's file count was given as 128 against an artifact in the same repository
+Mark 9's first gate for this could not have caught it. It compared the published population against
+the number of arms the manifest carries, and the harness writes both from the same list, so it was
+`len(x) == len(x)` and would have passed on the buggy manifest it was written for. The harness now
+publishes a document count for every episode it swept, including the ones that open no arm, and the
+gate reconciles the population against the whole sweep.
+
+**Four published figures were wrong**, three in `docs/security_results.md` and two in the README,
+and the second review round found two of them after the first sweep had corrected the other two. The overclaim gate's file count was given as 128 against an artifact in the same repository
 recording 132, because the gate's roots were widened to include `SECURITY.md` after the sentence was
 written. And "884 characters of hostile text" is the length of the whole quote: 844 hostile
-characters preceded by a 39-character benign span and a space. Both are corrected.
+characters preceded by a 39-character benign span and a space.
+
+The second round found two more in the same document: the health gate's source count, given as 28
+against 35 examined, and a latency table quoting 0.26 and 1.89 milliseconds against a manifest
+recording 0.20 and 1.57. Both were figures regenerated by every run and fixed in prose, which
+guarantees drift, so neither is quoted in a document any more; the screen renders them from the
+manifest. The README's repository figures were two phases stale at 159 files and 703 tests against
+181 and 909. All are corrected.
 
 ### Amendment 11, v14 to v15: what the console published that no gate could see
 

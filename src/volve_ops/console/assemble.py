@@ -895,16 +895,25 @@ def detail(store: RunStore, wanted: str) -> InvestigationDetail:
 # --------------------------------------------------------------------------------------------
 
 
-def _episodes_opened_by_selected(expectation: Mapping[str, Any], selected: str) -> float:
-    """The selected model's episode count, or a refusal.
+def _episodes_opened_by_selected(
+    expectation: Mapping[str, Any], selected: str
+) -> tuple[float, str]:
+    """The selected model's episode count and the source naming the leaf it came from.
 
     No default. A missing row means the ablation and the expectation run disagree about which
     model is selected, and publishing a zero for that is worse than refusing to render the
     screen: a reader cannot tell a real zero from an absent row.
+
+    The source names the indexed leaf rather than the list. A figure sourced to a container is a
+    figure class 3 cannot compare, which is how every derived figure on this screen came to be
+    uncomparable while mark 11 reported them all resolving.
     """
-    for row in expectation["rows"]:
+    for index, row in enumerate(expectation["rows"]):
         if row["model"] == selected:
-            return float(row["episodes_opened"])
+            return (
+                float(row["episodes_opened"]),
+                f"ablation.expectation.rows.{index}.episodes_opened",
+            )
     raise ArtifactMissing(
         f"the ablation manifest has no row for the selected model {selected!r}; it holds "
         f"{[r['model'] for r in expectation['rows']]}. Re-run scripts/run_ablations.py."
@@ -941,6 +950,9 @@ def system_health(store: RunStore) -> SystemHealth:
     retrieval = ablation["retrieval"]
     latency = ablation["cost_and_latency"]
     calibration = ablation["calibration"]
+    selected_episodes, selected_episodes_source = _episodes_opened_by_selected(
+        expectation, selected_model
+    )
 
     injection_rows = tuple(
         _health_row(label, injection[key], f"security.injection.{key}", note=note)
@@ -985,8 +997,8 @@ def system_health(store: RunStore) -> SystemHealth:
                 # to a manifest row that no longer existed. That is the figure from nowhere mark
                 # 12 forbids in the delta column, committed into the current column instead.
                 "Episodes opened by the selected model",
-                _episodes_opened_by_selected(expectation, selected_model),
-                "ablation.expectation.rows",
+                selected_episodes,
+                selected_episodes_source,
             ),
             (
                 "End-to-end p95, seconds",
@@ -1075,8 +1087,8 @@ def system_health(store: RunStore) -> SystemHealth:
         expectation_ablation=ExpectationAblation(
             source="ablation.expectation.rows",
             row_count=Sourced(
-                value=len(expectation["rows"]),
-                source="ablation.expectation.rows",
+                value=expectation["model_count"],
+                source="ablation.expectation.model_count",
                 unit="",
                 denominator="expectation models compared",
             ),
@@ -1100,13 +1112,17 @@ def system_health(store: RunStore) -> SystemHealth:
             ),
             *(
                 _health_row(
-                    f"{row['well']} {row['onset']}: causal level",
-                    1 if row["level_changed"] else 0,
-                    "ablation.retrieval.rows",
+                    f"{row['well']} {row['onset']}: causal level changed",
+                    # The manifest's own boolean, at its own leaf. The first version published
+                    # `1 if row["level_changed"] else 0`, which is the console computing a figure
+                    # and sourcing it to a list, so section 21.1 and class 3 were both bypassed
+                    # in one line.
+                    row["level_changed"],
+                    f"ablation.retrieval.rows.{index}.level_changed",
                     note=f"{row['highest_level_with']} with the document, "
                     f"{row['highest_level_without']} without it",
                 )
-                for row in retrieval["rows"]
+                for index, row in enumerate(retrieval["rows"])
             ),
         ),
         retrieval_note=str(retrieval["note"]),
@@ -1133,7 +1149,7 @@ def system_health(store: RunStore) -> SystemHealth:
                 _health_row(
                     f"Evidence-derived band: {band}",
                     count,
-                    "ablation.calibration.evidence_derived_bands",
+                    f"ablation.calibration.evidence_derived_bands.{band}",
                 )
                 for band, count in sorted(calibration["evidence_derived_bands"].items())
             ),

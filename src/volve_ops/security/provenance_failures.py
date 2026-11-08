@@ -17,12 +17,11 @@ weaker property than supporting, and the difference was invisible for an entire 
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-from volve_ops.console.store import ArtifactMissing, RunStore
+from volve_ops.console.store import RunStore
 from volve_ops.investigation.schemas import Finding
 from volve_ops.investigation.validator import CitableDocument, GateResult, check
 from volve_ops.provenance.facts import FactLedger
@@ -185,7 +184,9 @@ def figures_contradicting_their_records(
     def walk(node: object, path: str, payload_name: str) -> None:
         if isinstance(node, Sourced):
             recorded = fact_values.get(node.source)
-            if recorded is not None and isinstance(node.value, int | float):
+            # `bool` before `int|float`: a boolean is an int in Python, and a published flag
+            # should be compared against the 1.0/0.0 the manifest walk records for it.
+            if recorded is not None and isinstance(node.value, bool | int | float):
                 published = float(node.value)
                 if not _close(published, recorded):
                     found.append(
@@ -231,9 +232,16 @@ def manifest_values(manifests: Mapping[str, Mapping[str, Any]]) -> dict[str, flo
     recorded what the weaker question misses: 198 of 198 drawer figures attributed to facts
     recording different numbers, every source resolving, every check passing.
 
-    Class 3 asked the stronger question of fact ids only, so it never looked at the System Health
-    workspace, whose figures are sourced to manifest paths. A figure there could publish any
-    number at all under a key holding a different one. This is what lets it look.
+    **Lists are walked, with the index as a segment.** The first version of this walk handled
+    mappings and scalars and nothing else, so it collected 221 of the 768 numeric leaves in the
+    seven manifests, and every figure sourced to a path running through a list was skipped as
+    "not a fact we hold" rather than compared. On the health screen that was all seven derived
+    figures and none of the literal reads: the check could see only the figures that could not be
+    wrong. Independent review found it in the commit that introduced it, which makes this the
+    third time this project has shipped an existence check where it needed a value check.
+
+    Booleans are collected as 0.0 and 1.0 so a flipped flag is a contradiction rather than an
+    uncompared value. `bool` is a subclass of `int`, so the order of these branches matters.
     """
     found: dict[str, float] = {}
 
@@ -242,7 +250,12 @@ def manifest_values(manifests: Mapping[str, Mapping[str, Any]]) -> dict[str, flo
             for key, value in node.items():
                 walk(value, f"{prefix}.{key}" if prefix else str(key))
             return
+        if isinstance(node, list | tuple):
+            for index, value in enumerate(node):
+                walk(value, f"{prefix}.{index}")
+            return
         if isinstance(node, bool):
+            found[prefix] = 1.0 if node else 0.0
             return
         if isinstance(node, int | float):
             found[prefix] = float(node)
@@ -251,8 +264,9 @@ def manifest_values(manifests: Mapping[str, Mapping[str, Any]]) -> dict[str, flo
         walk(manifest, name)
     # One known gap, stated rather than left to be discovered: a manifest key whose own name
     # contains a dot produces a path this walk cannot distinguish from a nested one. `locate`,
-    # which `resolve_source` uses, handles that case. No such key exists in the five manifests or
-    # the two section 22 runs today, and a figure sourced to one would simply not be compared.
+    # which `resolve_source` uses, handles that case. Fifteen such keys exist today and all hold
+    # booleans under `pass_marks`; a figure sourced to one would be compared against the wrong
+    # node or not at all.
     return found
 
 
@@ -284,16 +298,31 @@ def contradictions_in_console(store: RunStore) -> tuple[Contradiction, ...]:
             figures_contradicting_their_records({row.investigation_id: payload}, fact_values)
         )
 
-    # The health workspace, whose figures name manifest keys rather than fact ids. Left out of
-    # the first version, which is how mark 11 came to be an existence check on the one screen
-    # section 22.4 wrote a mark to protect.
-    # Narrowed to ArtifactMissing: the section 22 manifests may not have been written yet, and
-    # this function is also the per-episode class-3 check, which must still run when they have
-    # not been. A bare `except Exception` here would have swallowed a real failure of the health
-    # check and reported zero contradictions, which is the shape of defect this module is about.
-    # `run_security_checks.py` reports the health check's own ran/skipped state separately.
-    with contextlib.suppress(ArtifactMissing):
-        found.extend(
-            contradictions_in_health(assemble.system_health(store), store.health_manifests())
-        )
+    # The health screen is NOT walked here. It is a separate question with a separate answer, in
+    # `contradictions_in_console_and_health`, because whether it can be walked depends on files
+    # this function must still run without.
     return tuple(found)
+
+
+def health_contradictions(store: RunStore) -> tuple[tuple[Contradiction, ...], bool]:
+    """Class 3 over the System Health screen, and whether it could run at all.
+
+    Its own function with its own flag, rather than a second half of the per-episode check. The
+    first version appended it inside `contradictions_in_console` under a
+    `contextlib.suppress(ArtifactMissing)`, so the per-episode half could still run without the
+    section 22 manifests. That hid two real failures: a first-ever run, where no prior
+    `security_run.json` exists, reported one `class_3_ran: true` covering a half that had been
+    skipped; and `_episodes_opened_by_selected` raising `ArtifactMissing` when the selected model
+    has no row in the ablation manifest, which is itself a figure sourced to something that does
+    not exist and was being eaten by the same handler.
+
+    Whether this can run is a question about files, asked here. Anything raised after that is a
+    failure and reaches the caller.
+    """
+    from volve_ops.console import assemble
+
+    for name in ("security_run.json", "ablation_run.json"):
+        if not (store.cache / name).exists():
+            return (), False
+    found = contradictions_in_health(assemble.system_health(store), store.health_manifests())
+    return found, True

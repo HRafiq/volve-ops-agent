@@ -19,12 +19,14 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import subprocess
 import time
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
+from volve_ops.console.assemble import CONSOLE_PROTOCOL_VERSION
 from volve_ops.domain.activity import activity_dates_by_well
 from volve_ops.domain.backtest import HORIZONS, run_backtest
 from volve_ops.domain.day_class import DayClass
@@ -60,6 +62,15 @@ COST_NOT_APPLICABLE: Final[dict[str, str]] = {
         "investigation costs here is compute time, which is measured and reported above."
     ),
 }
+
+
+def _commit() -> str:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "unknown"
 
 
 def documents_in_window(episode: Any, events: Sequence[Any]) -> list[Any]:
@@ -146,6 +157,18 @@ def main(argv: list[str] | None = None) -> int:
 
     episodes = [
         e for w in sorted(usable) for e in sweep_well(w, usable[w], windows[w], NaiveMedian28())
+    ]
+    # Every episode swept, with how many documents its window holds, including the ones that open
+    # no arm. Published so mark 9 can reconcile the population against the whole sweep rather than
+    # against the survivors: the figure amendment 12 records as wrong in four places was wrong
+    # precisely because the survivors were all that anything could see.
+    episode_document_counts = [
+        {
+            "well": e.well,
+            "onset": e.onset.isoformat(),
+            "documents_in_window": len(documents_in_window(e, events)),
+        }
+        for e in episodes
     ]
     retrieval_rows = []
     for episode in episodes:
@@ -308,10 +331,17 @@ def main(argv: list[str] | None = None) -> int:
 
     manifest: dict[str, Any] = {
         "generated": dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
-        "protocol_version": "v16",
+        # Recorded like every other manifest in this project. Its absence here meant nothing in
+        # the file would let a reader notice it had been written by an older script.
+        "commit_sha": _commit(),
+        "protocol_version": CONSOLE_PROTOCOL_VERSION,
         "development_only": True,
         "expectation": {
             "rows": expectation_rows,
+            # Published so the console's table can source its row count to a manifest key rather
+            # than counting the list itself. Section 21.1: the console renders and does not
+            # compute, and `len(rows)` in the assembler is computing.
+            "model_count": len(expectation_rows),
             "note": (
                 "episodes_opened is the measurement a WAPE cannot make: a model that expects too "
                 "much manufactures investigations for a human to read."
@@ -321,6 +351,7 @@ def main(argv: list[str] | None = None) -> int:
             "rows": retrieval_rows,
             "episodes_total": len(episodes),
             "episodes_with_documents": len(retrieval_rows),
+            "episode_document_counts": episode_document_counts,
             "episodes_where_nothing_moved": len(moved_nothing),
             "note": (
                 "ADR 0008: most episodes have no in-window document, so the ablation population "
