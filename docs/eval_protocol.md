@@ -1,11 +1,16 @@
 # Evaluation protocol
 
-Version: v16
+Version: v17
 Date: 2026-11-08
 Status: pre-registered. Pushed before the work it judges.
-Amendments since v0: eleven, recorded in section 13 and every one labelled post-inspection. Five of
+Amendments since v0: twelve, recorded in section 13 and every one labelled post-inspection. Five of
 them correct pass marks that could not fail, which is this project's recurring defect and is named as
 such in amendments 6, 7 and 8. Amendment 9 corrects a factual claim rather than a check.
+New in v17: amendment 12 records what Phase 7 did not deliver as section 22 wrote it. Mark 11
+was an existence check on the one screen this section added a mark to protect, and the gap was
+already in use: a hardcoded model name with a zero default would have published a figure from
+nowhere the moment the selection moved. The calibration ablation was declined rather than run, and
+is now run. The retrieval ablation published a count of one for a population of two, in four places.
 New in v16: section 22 pre-registers phase 7, the health, security and failure experiments. It
 classifies three of the design brief's seven injection invariants as vacuous in a system that calls no
 model, and says why reporting a vacuous check as a passed one is the defect this project keeps finding.
@@ -741,6 +746,78 @@ this document was silent on it until amendment 6. The rule now: an amendment tha
 which has just failed must state what the check was examining when it failed, why the failure was the
 check's rather than the project's, and what still audits the thing the check was supposed to audit. If
 it cannot, the finding stands and the project is in breach, not the check.
+
+### Amendment 12, v16 to v17: what Phase 7 did not deliver as written, and one mark that was an existence check
+
+Post-inspection. Independent review of Phase 7 against section 22 found four marks delivered in a
+weaker form than this section promised, and one that could not see the defect it was written for.
+Section 13 requires an amendment to say what the check was examining when it failed, why the
+failure was the check's rather than the project's, and what still audits the thing it was supposed
+to audit. Three of these are the project's failure, not the check's, and are recorded as such.
+
+**Mark 11 was an existence check on the screen this section wrote a mark to protect.** It requires
+every number on the System Health workspace to resolve to a manifest or artifact, and `resolve_source`
+answers that for a dotted manifest path by asking whether the key exists. It never compared the
+published figure with the value at that key. Section 22.6 class 3 exists precisely because a source
+that resolves is weaker than a source that supports the figure, and amendment 11 recorded 198 of 198
+drawer figures attributed to facts recording different numbers with every source resolving. But the
+class 3 checker compared **fact ids only** and was never pointed at the health payload, whose figures
+name manifest paths. A health figure could publish any number at all under a key holding a different
+one, and nothing would fire.
+
+This is the project's failure and not the mark's: mark 11 says "resolves", which is what it checks,
+and mark 8 names the stronger question. What was missing is that nothing ran the stronger question
+over this screen. Class 3 now resolves manifest-path sources against their manifest value and runs
+over the health payload as well as the per-episode ones.
+
+Review also found the gap already being used. The comparison row "Episodes opened by the selected
+model" hardcoded the model name and carried a `next(..., 0)` default, so the moment the selected
+model changed it would publish **0** under that label, sourced to a manifest row that no longer
+existed. That is the figure from nowhere mark 12 forbids in the delta column, committed into the
+current column instead. The selected model is now read from the expectation manifest and a missing
+row refuses to render rather than defaulting.
+
+**Section 22.7.3's calibration ablation was declined rather than run.** It pre-registered
+"evidence-derived confidence against a flat prior, scored the same way". What shipped was a
+not-applicable declaration whose reason explained that there is no raw model self-report to compare
+against, which declines a comparison this section never asked for. The flat prior is a degenerate
+baseline that assigns every finding the corpus mean, and it was implementable throughout. It is now
+run: the evidence-derived score places 14 findings in 3 bands with a spread of 0.580, where a flat
+prior places all 14 in `moderate`. The result is published with what it cannot show, which is that
+there is no ground truth for whether a band was right and that four of the five features are derived
+from inputs to the verdict.
+
+**Mark 3 is checked by hand and gates nothing.** The mark says hostile text must reach the screen as
+text and that the check is made against the rendered output. It is, and it passes, but it runs
+through a browser against a served console rather than in the test suite or in CI, so nothing stops
+a regression. The weakening is real and this amendment records it rather than leaving it in a
+footnote. What still audits it: mark 2 forbids every unescaped-markup sink in the frontend source
+and runs on every push, which is the property a regression would have to break first; and the DOM
+check now reads its markers from the run's own injection record rather than a hardcoded list, so a
+corpus change can no longer leave it inspecting markers that were never injected while reporting
+that none went unreached.
+
+**Mark 9 gates nothing.** Section 22.4's preamble says every mark fails the build when it fails. The
+ablation manifest is read by the console and, for key existence, by mark 11; nothing asserts that
+each ablation reported a delta or was reported as failed rather than dropped. That omission let a
+real defect through, below.
+
+**Section 22.7.2's retrieval ablation measured a different population from the one it published.**
+The harness skipped an episode when the with-documents arm cited no span, under a comment saying the
+episode had no document to take away. Those are different claims: an episode can have in-window
+documents that retrieval reached and could not cite. One of the two episodes that have documents
+cites none, so it was dropped, and the surviving count of **one** was published under the label
+"episodes with any in-window document" in the ablation manifest, on the health tab, in
+`docs/security_results.md` and in the README. The true figure is **two**. Mark 9 is explicit that an
+ablation which moves nothing is reported as moving nothing, and dropping it is the one thing that
+mark forbids. The gate is now documents available in the episode's evidence window, and the episode
+that moves nothing is reported as moving nothing.
+
+**Two published figures were wrong**, both in `docs/security_results.md`, and one repeated in the
+README. The overclaim gate's file count was given as 128 against an artifact in the same repository
+recording 132, because the gate's roots were widened to include `SECURITY.md` after the sentence was
+written. And "884 characters of hostile text" is the length of the whole quote: 844 hostile
+characters preceded by a 39-character benign span and a space. Both are corrected.
 
 ### Amendment 11, v14 to v15: what the console published that no gate could see
 

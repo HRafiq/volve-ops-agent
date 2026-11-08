@@ -20,6 +20,7 @@ import argparse
 import datetime as dt
 import json
 import time
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
@@ -33,9 +34,9 @@ from volve_ops.domain.production_service import load_volve_production
 from volve_ops.domain.regimes import stable_reference_windows
 from volve_ops.domain.splits import derive_split, development_only
 from volve_ops.domain.well_naming import well_of
-from volve_ops.evaluation.evidence import score_finding
+from volve_ops.evaluation.evidence import HIGH_BAND, MODERATE_BAND, score_finding
 from volve_ops.extraction.store import EventStore
-from volve_ops.investigation.controller import investigate
+from volve_ops.investigation.controller import EVIDENCE_WINDOW_DAYS, investigate
 from volve_ops.investigation.diagnostics import build_bundle
 from volve_ops.investigation.validator import CitableDocument
 from volve_ops.provenance.facts import FactLedger
@@ -59,6 +60,21 @@ COST_NOT_APPLICABLE: Final[dict[str, str]] = {
         "investigation costs here is compute time, which is measured and reported above."
     ),
 }
+
+
+def documents_in_window(episode: Any, events: Sequence[Any]) -> list[Any]:
+    """Events whose report date falls inside the episode's evidence window, for its own well.
+
+    The controller's window and well normalisation, so this counts what retrieval could reach
+    rather than what it chose to cite.
+    """
+    low = episode.onset - dt.timedelta(days=EVIDENCE_WINDOW_DAYS)
+    high = episode.offset + dt.timedelta(days=EVIDENCE_WINDOW_DAYS)
+    return [
+        event
+        for event in events
+        if well_of(event.well) == well_of(episode.well) and low <= event.report_date <= high
+    ]
 
 
 def _episodes_opened_by(
@@ -141,8 +157,19 @@ def main(argv: list[str] | None = None) -> int:
             for r in (*h.supporting, *h.contradicting)
             if r.span is not None
         )
-        if cited == 0:
-            continue  # nothing to ablate: the episode had no document to take away
+        # The gate is **documents available in the window**, not spans the controller happened to
+        # cite. The first version skipped on `cited == 0` with a comment saying the episode had no
+        # document to take away, which is a different claim: an episode can have in-window
+        # documents that retrieval found and could not cite. One of the two episodes that have
+        # documents cites none, so it was dropped, and the surviving count was published under the
+        # label "episodes with any in-window document" in the manifest, on the health tab, in the
+        # results document and in the README. All four said one. It is two.
+        #
+        # Section 22.4 mark 9 is explicit that an ablation which moves nothing is reported as
+        # moving nothing. Dropping it is the one thing that mark forbids.
+        in_window = documents_in_window(episode, events)
+        if not in_window:
+            continue
         without = investigate(episode, bundle, empty_index, {}, FactLedger())
         a, b = with_docs.finding, without.finding
         band_with = score_finding(a, bundle).band if a else None
@@ -151,6 +178,7 @@ def main(argv: list[str] | None = None) -> int:
             "well": episode.well,
             "onset": episode.onset.isoformat(),
             "spans_cited": cited,
+            "documents_in_window": len(in_window),
             "verdict_with": str(a.verdict) if a else None,
             "verdict_without": str(b.verdict) if b else None,
             "evidence_band_with": str(band_with) if band_with else None,
@@ -179,7 +207,65 @@ def main(argv: list[str] | None = None) -> int:
             f"      band    {row['evidence_band_with']} -> {row['evidence_band_without']}\n"
             f"      level   {row['highest_level_with']} -> {row['highest_level_without']}"
         )
+    moved_nothing = [
+        r
+        for r in retrieval_rows
+        if not any(r[k] for k in ("verdict_changed", "band_changed", "level_changed"))
+    ]
     print(f"  episodes with any in-window document: {len(retrieval_rows)} of {len(episodes)}")
+    print(f"  of those, ablation moved nothing on: {len(moved_nothing)}")
+
+    # --- ablation 3: calibration (F8) ---------------------------------------------------------
+    # Section 22.7.3 pre-registered "evidence-derived confidence against a flat prior, scored the
+    # same way". A first version declared this not applicable on the grounds that there is no raw
+    # model self-report to compare against, which declines a comparison the pre-registration did
+    # not ask for. The flat prior is a degenerate baseline that assigns every finding the corpus
+    # mean, and both arms are banded by the same section 19.4 thresholds.
+    #
+    # What this can and cannot show is stated with the result. It is **not** a calibration
+    # measurement in the strict sense: there is no ground truth for whether a band was right, so
+    # nothing here says the evidence-derived band is well calibrated. What it measures is whether
+    # the score carries information at all, which a constant cannot. And four of its five features
+    # are derived from inputs to the verdict, which `EvidenceScore.circular_features` names and
+    # which bounds how much the spread is worth.
+    print("\nablation 3: calibration")
+    scores = []
+    for episode in episodes:
+        bundle = build_bundle(episode.well, episode.onset, episode.offset, usable)
+        run = investigate(episode, bundle, index, documents, FactLedger())
+        if run.finding is not None:
+            scores.append(score_finding(run.finding, bundle))
+
+    evidence_bands = Counter(str(s.band) for s in scores)
+    flat_score = sum(s.score for s in scores) / len(scores) if scores else 0.0
+    flat_band = (
+        "high" if flat_score >= HIGH_BAND else "moderate" if flat_score >= MODERATE_BAND else "low"
+    )
+    spread = max((s.score for s in scores), default=0.0) - min(
+        (s.score for s in scores), default=0.0
+    )
+    print(f"  evidence-derived bands: {dict(evidence_bands)}")
+    print(f"  flat prior at the corpus mean {flat_score:.4f}: all {len(scores)} in {flat_band!r}")
+    print(f"  score spread: {spread:.4f}")
+
+    calibration: dict[str, Any] = {
+        "available": True,
+        "findings_scored": len(scores),
+        "evidence_derived_bands": dict(evidence_bands),
+        "flat_prior_score": flat_score,
+        "flat_prior_band": flat_band,
+        "flat_prior_bands": {flat_band: len(scores)},
+        "score_spread": spread,
+        "circular_features": list(scores[0].circular_features) if scores else [],
+        "note": (
+            "A flat prior assigns every finding the corpus mean, so it places all of them in one "
+            "band by construction and the comparison measures whether the evidence score carries "
+            "information rather than whether it is well calibrated. There is no ground truth here "
+            "for whether a band was right, so nothing in this row supports a calibration claim. "
+            "Four of the five features are derived from inputs to the verdict, which bounds what "
+            "the spread is worth."
+        ),
+    }
 
     # --- ablation 4: cost and latency (F13) ---------------------------------------------------
     print("\nablation 4: cost and latency")
@@ -199,6 +285,12 @@ def main(argv: list[str] | None = None) -> int:
         stages.append(len(run.trace.steps))
 
     def percentiles(values: list[float]) -> tuple[float, float]:
+        """Median and the 95th-percentile order statistic.
+
+        At n=14 the second index is 13, the maximum. That is what a 95th percentile of fourteen
+        samples is, and the manifest records the sample count beside the figure so a reader can
+        see it rather than inferring a smoothness that is not there.
+        """
         ordered = sorted(values)
         return (
             ordered[len(ordered) // 2],
@@ -229,22 +321,14 @@ def main(argv: list[str] | None = None) -> int:
             "rows": retrieval_rows,
             "episodes_total": len(episodes),
             "episodes_with_documents": len(retrieval_rows),
+            "episodes_where_nothing_moved": len(moved_nothing),
             "note": (
                 "ADR 0008: most episodes have no in-window document, so the ablation population "
                 "is the minority that do. An ablation over this few episodes measures these "
                 "episodes and is not evidence about retrieval in general."
             ),
         },
-        "calibration": {
-            "available": False,
-            "reason": (
-                "Confidence here is evidence-derived by construction: the band comes from "
-                "score_finding over the diagnostic bundle, and there is no model self-report to "
-                "compare it against. Failure F8 contrasts raw model confidence with a calibrated "
-                "one, and the first of those does not exist in this system. Declared rather than "
-                "filled with a comparison of a number against itself."
-            ),
-        },
+        "calibration": calibration,
         "cost_and_latency": {
             "investigations": len(controller_times),
             "controller_p50_seconds": p50,
@@ -258,7 +342,9 @@ def main(argv: list[str] | None = None) -> int:
             "note": (
                 "Two timers. The controller runs over a bundle that is already built, and "
                 "building it is what touches the production history, so a controller-only figure "
-                "is one no caller could observe. Neither includes loading the workbook."
+                "is one no caller could observe. Neither includes loading the workbook. At 14 "
+                "samples the 95th-percentile order statistic is the maximum, which is what a p95 "
+                "of fourteen is; the count is published beside it."
             ),
             "not_applicable": COST_NOT_APPLICABLE,
         },

@@ -21,7 +21,6 @@ demo bound whose purpose is to stop a loop, not to shape traffic precisely.
 from __future__ import annotations
 
 import time
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -37,11 +36,23 @@ UNKNOWN_CLIENT: Final[str] = "unknown"
 
 @dataclass
 class FixedWindowLimiter:
-    """Counts requests per client per window, and refuses over the limit."""
+    """Counts requests per client per window, and refuses over the limit.
+
+    One entry per client, holding that client's current window and its count. The first version
+    keyed on `(client, window)` and swept for stale keys by scanning the **whole** map on every
+    request, deleting only the current client's old entries. A client that made one request and
+    left kept its key for ever, and the per-request cost grew linearly with every address ever
+    seen: 12 microseconds at a thousand clients, 235 at twenty thousand.
+
+    That made the middleware the amplifier the bound exists to prevent. A caller cannot exhaust
+    its own rate, but a million distinct source addresses would have every request paying
+    milliseconds of CPU before routing, and the map would never shrink.
+    """
 
     limit: int = MAX_REQUESTS_PER_MINUTE
     window_seconds: int = RATE_WINDOW_SECONDS
-    _counts: dict[tuple[str, int], int] = field(default_factory=lambda: defaultdict(int))
+    max_tracked_clients: int = 100_000
+    _state: dict[str, tuple[int, int]] = field(default_factory=dict)
 
     def _window(self, now: float) -> int:
         return int(now // self.window_seconds)
@@ -50,22 +61,35 @@ class FixedWindowLimiter:
         """Record one request. Returns whether it is allowed and how many remain."""
         moment = time.monotonic() if now is None else now
         window = self._window(moment)
-        key = (client, window)
-        self._counts[key] += 1
-        used = self._counts[key]
-        # Old windows are dropped when a new one starts for that client, which keeps the map
-        # bounded by the number of distinct clients rather than by time.
-        for stale in [k for k in self._counts if k[0] == client and k[1] != window]:
-            del self._counts[stale]
+        stored_window, count = self._state.get(client, (window, 0))
+        used = count + 1 if stored_window == window else 1
+
+        # A cap, because one entry per client is bounded by the number of clients and that is
+        # not a bound. What this bounds is growth **across** windows: entries from a window that
+        # has passed are swept when a new client arrives at the cap. Within a single window the
+        # map still holds one entry per distinct caller seen in that window, which is the real
+        # ceiling and is stated rather than implied. The sweep is O(n) and runs only at the cap.
+        if client not in self._state and len(self._state) >= self.max_tracked_clients:
+            self._evict_stale(window)
+
+        self._state[client] = (window, used)
         return used <= self.limit, max(0, self.limit - used)
+
+    def _evict_stale(self, window: int) -> None:
+        for client in [c for c, (w, _) in self._state.items() if w != window]:
+            del self._state[client]
 
     def retry_after(self, *, now: float | None = None) -> int:
         """Seconds until the current window ends."""
         moment = time.monotonic() if now is None else now
         return max(1, int(self.window_seconds - (moment % self.window_seconds)))
 
+    def tracked_clients(self) -> int:
+        """How many clients the limiter is holding state for. Published so the cap is checkable."""
+        return len(self._state)
+
     def reset(self) -> None:
-        self._counts.clear()
+        self._state.clear()
 
 
 #: The two buckets. Assets get a higher rate because one page load fetches several files.

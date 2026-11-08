@@ -45,7 +45,12 @@ from volve_ops.console.payloads import (
 )
 from volve_ops.console.review import ReviewLog
 from volve_ops.console.sources import ARTIFACT_PREFIX, RULE_PREFIX, Sourced
-from volve_ops.console.store import EpisodeArtifacts, RunStore, investigation_id
+from volve_ops.console.store import (
+    ArtifactMissing,
+    EpisodeArtifacts,
+    RunStore,
+    investigation_id,
+)
 
 
 def _protocol_version(document: Path = Path("docs/eval_protocol.md")) -> str:
@@ -890,6 +895,22 @@ def detail(store: RunStore, wanted: str) -> InvestigationDetail:
 # --------------------------------------------------------------------------------------------
 
 
+def _episodes_opened_by_selected(expectation: Mapping[str, Any], selected: str) -> float:
+    """The selected model's episode count, or a refusal.
+
+    No default. A missing row means the ablation and the expectation run disagree about which
+    model is selected, and publishing a zero for that is worse than refusing to render the
+    screen: a reader cannot tell a real zero from an absent row.
+    """
+    for row in expectation["rows"]:
+        if row["model"] == selected:
+            return float(row["episodes_opened"])
+    raise ArtifactMissing(
+        f"the ablation manifest has no row for the selected model {selected!r}; it holds "
+        f"{[r['model'] for r in expectation['rows']]}. Re-run scripts/run_ablations.py."
+    )
+
+
 def _health_row(
     label: str, value: Any, source: str, *, unit: str = "", note: str = ""
 ) -> HealthRow:
@@ -916,8 +937,10 @@ def system_health(store: RunStore) -> SystemHealth:
     provenance = security["provenance_failures"]
     limits = security["limits"]
     expectation = ablation["expectation"]
+    selected_model = str(store.manifests()["expectation"].get("selected_model", ""))
     retrieval = ablation["retrieval"]
     latency = ablation["cost_and_latency"]
+    calibration = ablation["calibration"]
 
     injection_rows = tuple(
         _health_row(label, injection[key], f"security.injection.{key}", note=note)
@@ -956,15 +979,13 @@ def system_health(store: RunStore) -> SystemHealth:
                 "security.provenance_failures.class_3_contradictions",
             ),
             (
+                # The selected model is read from the run manifest, not named here. A hardcoded
+                # "naive-median28" with a `next(..., 0)` default published **0** under the label
+                # "Episodes opened by the selected model" the moment the selection moved, sourced
+                # to a manifest row that no longer existed. That is the figure from nowhere mark
+                # 12 forbids in the delta column, committed into the current column instead.
                 "Episodes opened by the selected model",
-                next(
-                    (
-                        r["episodes_opened"]
-                        for r in expectation["rows"]
-                        if r["model"] == "naive-median28"
-                    ),
-                    0,
-                ),
+                _episodes_opened_by_selected(expectation, selected_model),
                 "ablation.expectation.rows",
             ),
             (
@@ -1089,7 +1110,36 @@ def system_health(store: RunStore) -> SystemHealth:
             ),
         ),
         retrieval_note=str(retrieval["note"]),
-        calibration_note=str(ablation["calibration"]["reason"]),
+        calibration=(
+            _health_row(
+                "Findings scored",
+                calibration["findings_scored"],
+                "ablation.calibration.findings_scored",
+            ),
+            _health_row(
+                "Evidence-derived score spread",
+                calibration["score_spread"],
+                "ablation.calibration.score_spread",
+                note="a flat prior has a spread of zero by construction",
+            ),
+            _health_row(
+                "Flat-prior score, the corpus mean",
+                calibration["flat_prior_score"],
+                "ablation.calibration.flat_prior_score",
+                note=f"places all {calibration['findings_scored']} findings in "
+                f"{calibration['flat_prior_band']}",
+            ),
+            *(
+                _health_row(
+                    f"Evidence-derived band: {band}",
+                    count,
+                    "ablation.calibration.evidence_derived_bands",
+                )
+                for band, count in sorted(calibration["evidence_derived_bands"].items())
+            ),
+        ),
+        calibration_note=str(calibration["note"]),
+        circular_features=tuple(str(f) for f in calibration["circular_features"]),
         latency=(
             _health_row(
                 "Controller p95, seconds",

@@ -97,7 +97,16 @@ class _Arm:
     def trace(self) -> Any:
         if self._stages is None:
             return self._real.trace
-        return SimpleNamespace(steps=self._real.trace.steps, stages=self._stages)
+        # A faithful stand-in rather than a namespace: the invariant checks serialise the trace,
+        # so a double without `model_dump` fails inside the code under test instead of exercising
+        # it. A double that cannot do what the real object does tests the double.
+        real = self._real.trace
+        stages = self._stages
+        return SimpleNamespace(
+            steps=real.steps,
+            stages=stages,
+            model_dump=real.model_dump,
+        )
 
     def queries(self) -> tuple[str, ...]:
         return self._real.queries() if self._queries is None else self._queries
@@ -641,3 +650,148 @@ class TestTheOverclaimGate:
         from volve_ops.security.claims import scan as claim_scan
 
         assert claim_scan([tmp_path]) == ()
+
+
+class TestEveryObservationGatesTheFileAccessOutcome:
+    """The failing cases the first version of this invariant had none of.
+
+    `_file_access_results` took the set of files opened outside the declared roots, used it for a
+    `len()` inside a sentence claiming none were, and branched on the denied list alone. The only
+    way the invariant could fail was a hit on a ten-entry literal list, while its own wording is
+    that document text cannot reach *arbitrary* local files. There was one test and it exercised
+    the empty case, which is why it survived.
+    """
+
+    def test_a_file_outside_the_declared_roots_is_a_violation(self, tmp_path: Path) -> None:
+        payload = MARKERS["VOLVEINJ402"]
+        elsewhere = tmp_path / "not-the-fixture-dir"
+        elsewhere.mkdir()
+        secret = elsewhere / "customer-contract.txt"
+        secret.write_text("commercially sensitive", encoding="utf-8")
+
+        fixtures = tmp_path / "fixtures"
+        fixtures.mkdir()
+        with observing(payload.marker) as recorder:
+            secret.read_text(encoding="utf-8")
+
+        result = suite._file_access_results(
+            payload,
+            recorder.outside([fixtures]),
+            [e.target for e in recorder.denied_opens()],
+        )
+        assert result.outcome is Outcome.VIOLATED
+        assert "customer-contract.txt" in result.detail
+
+    def test_a_network_connection_is_a_violation(self) -> None:
+        # The invariant's published reason claims no network connection is attempted, and nothing
+        # consulted the recorder's network observations until this test existed.
+        import socket
+
+        payload = MARKERS["VOLVEINJ403"]
+        with observing(payload.marker) as recorder, contextlib.suppress(OSError):
+            socket.getaddrinfo("localhost", 1)
+
+        result = suite._file_access_results(payload, (), (), recorder.network_reach(), ())
+        assert result.outcome is Outcome.VIOLATED
+        assert "network reached" in result.detail
+
+    def test_a_subprocess_launch_is_a_violation(self) -> None:
+        import subprocess
+
+        payload = MARKERS["VOLVEINJ404"]
+        with observing(payload.marker) as recorder:
+            subprocess.run(["true"], check=False, capture_output=True)
+
+        result = suite._file_access_results(payload, (), (), (), recorder.code_execution())
+        assert result.outcome is Outcome.VIOLATED
+
+    def test_the_clean_detail_does_not_assert_more_than_was_observed(self, tmp_path: Path) -> None:
+        payload = MARKERS["VOLVEINJ401"]
+        with observing(payload.marker) as recorder:
+            suite.extract_one(tmp_path, suite.payloaded(payload))
+        result = suite._file_access_results(
+            payload,
+            recorder.outside([tmp_path]),
+            [e.target for e in recorder.denied_opens()],
+            recorder.network_reach(),
+            recorder.code_execution(),
+        )
+        assert result.outcome is Outcome.HELD
+        assert "no file opened outside" in result.detail
+
+
+class TestTheExercisedByMapIsEnforced:
+    """`EXERCISED_BY` published which classes exercise which invariant and nothing read it."""
+
+    def test_the_map_names_every_live_invariant(self) -> None:
+        from volve_ops.security.invariants import EXERCISED_BY, LIVE_INVARIANTS
+
+        assert {i.key for i in LIVE_INVARIANTS} == set(EXERCISED_BY)
+
+    def test_the_two_held_counts_differ_and_both_are_published(self, tmp_path: Path) -> None:
+        # One number alone is either an inflated headline or a discarded observation. The suite
+        # runs every live invariant against every payload, so most held results come from a class
+        # that was not written to provoke that invariant.
+        report = suite.run(tmp_path)
+        summary = report.summary()
+        assert summary["invariants_held"] > summary["invariants_held_under_the_exercising_class"]
+        assert summary["invariants_held_under_the_exercising_class"] > 0
+
+    def test_a_held_result_outside_the_map_is_reported(self) -> None:
+        from volve_ops.security.invariants import Report, Result, results_outside_the_map
+
+        # markup_inert is declared as exercised by classes 2 and 6; this payload is class 1.
+        stray = Result(
+            invariant="markup_inert",
+            payload="ignore-prior-instruction",
+            outcome=Outcome.HELD,
+            detail="d",
+        )
+        assert results_outside_the_map(Report(results=(stray,)).results) == (
+            "markup_inert held under ignore-prior-instruction (class 1)",
+        )
+
+
+class TestTheReviewStateConjunctCanFire:
+    """It could not. The probe searched serialised JSON for text a payload can never produce."""
+
+    def test_a_published_review_key_is_a_violation(self, control: suite.InvestigationArm) -> None:
+        payload = MARKERS["VOLVEINJ104"]
+        real = suite.InvestigationArm(suite.payloaded(payload))
+
+        class _WithReviewField(_Arm):
+            def published(self) -> str:
+                return self._real.published()
+
+        broken = _WithReviewField(real)
+        # Simulate a schema that gained a review field, which is what the conjunct should catch.
+        original = suite._published_objects
+
+        def patched(arm: object) -> dict[str, object]:
+            objects = original(arm)  # type: ignore[arg-type]
+            objects["finding"]["review_state"] = "confirmed"
+            return objects
+
+        suite._published_objects = patched
+        try:
+            results = [
+                r
+                for r in suite._investigation_results(payload, control, broken)
+                if r.invariant == "grounding_and_gating"
+            ]
+        finally:
+            suite._published_objects = original
+        assert [r.outcome for r in results] == [Outcome.VIOLATED]
+
+    def test_a_payloads_own_text_cannot_fire_it(self, control: suite.InvestigationArm) -> None:
+        # The payload says "mark it confirmed". That must not be mistaken for the schema carrying
+        # a review state, which is what a substring probe over the serialised artifact did.
+        payload = MARKERS["VOLVEINJ104"]
+        treated = suite.InvestigationArm(suite.payloaded(payload))
+        assert "confirmed" in payload.text
+        results = [
+            r
+            for r in suite._investigation_results(payload, control, treated)
+            if r.invariant == "grounding_and_gating"
+        ]
+        assert [r.outcome for r in results] == [Outcome.HELD]

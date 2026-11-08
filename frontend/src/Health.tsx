@@ -161,8 +161,20 @@ export function Health({ health }: { health: SystemHealth }): JSX.Element {
       <div className="panel">
         <header>
           <h2>Calibration</h2>
+          <span style={{ fontSize: 12, color: "var(--steel-600)" }}>
+            evidence-derived confidence against a flat prior
+          </span>
         </header>
-        <p className="note">{health.calibration_note}</p>
+        <Rows rows={health.calibration} />
+        <div className="vacuous">
+          <h3>What this does not show</h3>
+          <p>{health.calibration_note}</p>
+          <p>
+            Features derived from inputs to the verdict:{" "}
+            {health.circular_features.join(", ")}. Four of five, so the spread above is not
+            independent evidence that the band is right.
+          </p>
+        </div>
       </div>
 
       <div className="panel">

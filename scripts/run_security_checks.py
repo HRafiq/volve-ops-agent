@@ -146,10 +146,58 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  ! could not assemble the health payload: {exc}")
             failures.append(f"mark 11: {exc}")
 
+    # --- mark 9: every ablation reported something -------------------------------------------
+    #
+    # Section 22.4's preamble says every mark fails the build when it fails, and this one gated
+    # nothing: the ablation manifest was read by the console and, for key existence, by mark 11.
+    # Amendment 12 records what that let through — an ablation that silently dropped half its
+    # population and published the survivor's count under the other population's label.
+    print("\nmark 9: ablations")
+    ablation_ran = False
+    if not (args.cache / "ablation_run.json").exists():
+        print("  ablation manifest absent. Skipped, not passed.")
+    else:
+        ablation = json.loads((args.cache / "ablation_run.json").read_text(encoding="utf-8"))
+        ablation_ran = True
+        for name in ("expectation", "retrieval", "calibration", "cost_and_latency"):
+            if name not in ablation:
+                failures.append(f"mark 9: the {name} ablation is absent from the manifest")
+                print(f"  ! {name} absent")
+                continue
+            section = ablation[name]
+            # An ablation reports rows, or it declares itself unavailable with a reason. Silence
+            # is the one thing mark 9 forbids, because a dropped arm and an arm that moved
+            # nothing look identical in a manifest that carries neither.
+            reported = (
+                bool(section.get("rows"))
+                or section.get("available") is True
+                or bool(section.get("investigations"))
+            )
+            if not reported and not section.get("reason"):
+                failures.append(f"mark 9: the {name} ablation reported nothing and gave no reason")
+                print(f"  ! {name} reported nothing")
+            else:
+                print(f"  {name}: reported")
+        # The retrieval population is the figure amendment 12 records as having been wrong in four
+        # places, so it is checked against the arms the manifest actually carries.
+        retrieval = ablation.get("retrieval", {})
+        if retrieval.get("episodes_with_documents") != len(retrieval.get("rows", [])):
+            failures.append(
+                "mark 9: the retrieval ablation's published population does not equal the number "
+                "of arms it reports"
+            )
+            print("  ! retrieval population disagrees with its own rows")
+
     # --- mark 13: no claim of an operator safety case -----------------------------------------
     print("\nmark 13: overclaims")
     claims = claim_scan()
-    print(f"  {len(claims)} claim(s) in {claim_files()} files")
+    claim_file_count = claim_files()
+    print(f"  {len(claims)} claim(s) in {claim_file_count} files")
+    if not claim_file_count:
+        # The guard mark 2 has and this mark did not. Zero claims over zero files is not a pass,
+        # and section 21.2 records what happens when a mark that examined nothing is read as one
+        # that passed.
+        failures.append("mark 13: the overclaim gate read no files at all")
     if claims:
         failures.append(f"mark 13: {len(claims)} overclaim(s)")
         for claim in claims:
@@ -198,13 +246,31 @@ def main(argv: list[str] | None = None) -> int:
         },
         "overclaims": {
             "found": len(claims),
-            "files_scanned": claim_files(),
+            "files_scanned": claim_file_count,
             "patterns": [name for name, _ in CLAIM_PATTERNS],
-            "passed": not claims,
+            "passed": not claims and bool(claim_file_count),
         },
-        "passed": not failures,
+        # Named for what it is. A bare `passed` beside a sub-block reporting `passed: false`
+        # because it was skipped will be read at face value by the next reader or the next gate,
+        # so the roll-up says only that the marks it could check here passed, and lists the ones
+        # it could not. A skipped mark is never folded into either.
+        "passed_checked_here": not failures,
+        "skipped": [
+            name
+            for name, ran in (
+                ("mark 8 class 3", class_3_ran),
+                ("mark 9 ablations", ablation_ran),
+                ("mark 11 health figures", health_ran),
+            )
+            if not ran
+        ],
         "failures": failures,
     }
+    # `data/` is gitignored, so a clean clone has no cache directory to write into. Every other
+    # harness in this repository guards its write; this one did not, and it is the only section 22
+    # step CI runs unconditionally, so it failed on a runner after printing a pass for every mark
+    # it had checked.
+    args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"\nsecurity manifest written to {args.out}")
 

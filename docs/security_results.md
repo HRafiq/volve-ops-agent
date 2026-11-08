@@ -38,10 +38,18 @@ retrieve, investigate, compose, render.
 | | |
 |---|---:|
 | invariants held | 228 |
+| of those, under the payload class written to attack that invariant | **71** |
 | invariants violated | **0** |
 | fixtures that never reached their consumer | **0** |
 | invariants declared vacuous, not counted as preserved | 3 |
 | live invariants never exercised | 0 |
+
+Two held counts, not one. The suite runs every live invariant against every payload, so most held
+results come from a class that was not written to provoke that invariant: a markup payload leaves
+the stage sequence alone, and so would an empty document. Those observations are real and they are
+not evidence that the invariant was tested. The gap between 228 and 71 is the useful part, and
+publishing only the first would have been an inflated headline. `EXERCISED_BY` declared which
+classes exercise which invariant and nothing consulted it until independent review asked.
 
 ### A fixture that never arrives has not been tested
 
@@ -64,8 +72,8 @@ would have reported sixteen security failures that were nothing of the kind.
 
 ### What the browser does with it
 
-Checked against the rendered DOM, not against the assembler. The console quotes **884 characters**
-of hostile text in its evidence drawer with:
+Checked against the rendered DOM, not against the assembler. The console quotes **844 characters** of hostile text, inside an 884-character
+blockquote whose first 39 characters are the episode's own benign span, with:
 
 - zero child elements inside the quote, so nothing was parsed as markup;
 - every marker in a text node, none in an attribute;
@@ -177,11 +185,18 @@ the 18 are real.
 
 ### Retrieval
 
-One of fourteen development episodes has any in-window document, which ADR 0008 predicted. An
-ablation over one episode measures one episode, and the population is published with the result
+Two of fourteen development episodes have any in-window document, which ADR 0008 predicted. An
+ablation over two episodes measures two episodes, and the population is published with the result
 rather than left for a reader to find.
 
-On that episode, 15/9-F-14 from 2012-01-31, removing the document:
+The population was published as **one** until independent review found it. The harness skipped an
+episode when the with-documents arm cited no span, under a comment saying the episode had no
+document to take away. Those are different claims, and the second of the two episodes has four
+in-window documents and cites none of them. Amendment 12 records it. On that episode nothing moves,
+which mark 9 requires be reported rather than dropped: it is `insufficient_evidence` with and
+without, and removing documents it could not cite changes nothing.
+
+On the first, 15/9-F-14 from 2012-01-31, removing the document:
 
 | | with the document | without |
 |---|---|---|
@@ -194,10 +209,21 @@ version of this script printed the verdict alone and the run read as a null resu
 
 ### Calibration
 
-Declared unavailable, with the reason. Failure F8 contrasts raw model confidence against a
-calibrated one. Confidence here is evidence-derived by construction and there is no model
-self-report to compare it against, so the row would have been a comparison of a number against
-itself.
+| | |
+|---|---|
+| evidence-derived bands over 14 findings | 7 high, 5 moderate, 2 low |
+| flat prior at the corpus mean 0.653 | all 14 in moderate |
+| evidence-derived score spread | 0.580 |
+
+A flat prior places every finding in one band by construction, so what this measures is whether the
+evidence score carries information, not whether it is well calibrated. **There is no ground truth
+here for whether a band was right**, and four of the five features are derived from inputs to the
+verdict, which bounds what the spread is worth.
+
+A first version declined this ablation as not applicable, on the grounds that there is no raw model
+self-report to compare against. Section 22.7.3 never asked for one: it pre-registered the
+evidence-derived score against a flat prior, which was implementable throughout. Amendment 12
+records it.
 
 ### Cost and latency
 
@@ -230,7 +256,7 @@ exists to prevent.
 
 ## Overclaims
 
-A gate over 128 files finds 0. It matches claim shapes rather than the bare phrase, because the
+A gate over 132 files finds 0. It matches claim shapes rather than the bare phrase, because the
 protocol section forbidding the claim contains the words. Like the sink gate it has no exception
 list, so the project's prose has to be written around it: the first run flagged a sentence in the
 gate's own docstring, which was reworded rather than excepted.
@@ -245,8 +271,8 @@ nothing in this project should be read as claiming otherwise.
 - **Most of the injection brief stays untested**, because the component it is written for does not
   exist here. Three invariants are vacuous and are reported that way. They become live the moment a
   model-backed stage is added.
-- **The retrieval ablation is one episode.** It is a demonstration that the measurement works, not
-  evidence about retrieval in general.
+- **The retrieval ablation is two episodes**, one of which moves nothing. It demonstrates that the
+  measurement works; it is not evidence about retrieval in general.
 - **The rate limiter is per process** and keyed by peer address. Behind a proxy every client shares
   one bucket.
 - **Correction-store leakage** (F11) is still vacuous: the store is empty, so section 19.2's fourth

@@ -21,6 +21,10 @@
   if (!quote) {
     return { ran: false, reason: "no blockquote on screen: open an evidence cell with a document span" };
   }
+  if (!markers || markers.length === 0) {
+    // A check over no markers passes every assertion it makes. Reported as not run.
+    return { ran: false, reason: "no markers to look for: pass window.__VOLVE_MARKERS__ from injection_record.json" };
+  }
 
   const textNodesCarrying = (root, marker) => {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -84,7 +88,13 @@
     perMarker,
   };
 })(
-  Array.from({ length: 8 }, (_, i) => `VOLVEINJ${201 + i}`).concat(
-    Array.from({ length: 8 }, (_, i) => `VOLVEINJ${601 + i}`)
-  )
+  // Read from the injection record the serve script wrote, not hardcoded. A literal list meant
+  // that changing the corpus left this check inspecting markers that were never injected, while
+  // still reporting `markersNotReached: []` — a green result over an empty question.
+  //
+  // `window.__VOLVE_MARKERS__` is set by the caller from injection_record.json. The fallback is
+  // the published prefix scraped from the page itself, which at least cannot name a marker that
+  // is not there; if neither yields anything the check reports `ran: false`.
+  window.__VOLVE_MARKERS__ ||
+    [...new Set((document.body.textContent.match(/VOLVEINJ\d+/g) || []))].sort()
 );

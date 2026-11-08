@@ -485,7 +485,15 @@ class SystemHealth(BaseModel):
     expectation_ablation: ExpectationAblation
     retrieval_ablation: tuple[HealthRow, ...]
     retrieval_note: str
+    calibration: tuple[HealthRow, ...]
     calibration_note: str
+    circular_features: tuple[str, ...]
+    """The evidence-score features derived from inputs to the verdict.
+
+    Published beside the calibration rows because four of the five are circular, which is what
+    bounds how much the score's spread is worth. `EvidenceScore.circular_features` names them and
+    says the band should never be read without them.
+    """
     latency: tuple[HealthRow, ...]
 
     comparison: tuple[ComparisonRow, ...]

@@ -151,8 +151,9 @@ mention.
 | Figure | Value |
 |---|---|
 | Invariants held / violated / fixtures that never arrived | 228 / **0** / **0** |
+| Of those held, under the class written to attack that invariant | 71 |
 | Invariants declared vacuous, not counted as preserved | 3 of 7 |
-| Hostile characters rendered in the evidence drawer, as inert text | 884 |
+| Hostile characters rendered in the evidence drawer, as inert text | 844 |
 | Unescaped-markup sinks in the console | 0, after removing the one that existed |
 | Attack fixtures refused by the ingest hardening | 21 of 21 |
 | Published figures contradicting the record they cite | 0 |
@@ -181,9 +182,10 @@ is also the one that opens the most investigations.
 | choke-scaled | **18** | **0.0984** |
 
 Accuracy and investigation volume move in opposite directions here, which is the measurement a WAPE
-table cannot make. Removing the in-window document from the one episode that has one drops the
-finding from `documented_root_cause` to `proximate_driver` while the verdict and evidence band hold,
-which is exactly what the retrieval stage exists to lift. [Details](docs/security_results.md), and
+table cannot make. Two of fourteen episodes have an in-window document. Removing it from the first
+drops the finding from `documented_root_cause` to `proximate_driver` while the verdict and evidence
+band hold, which is exactly what the retrieval stage exists to lift; on the second nothing moves,
+and that is reported rather than dropped. [Details](docs/security_results.md), and
 [SECURITY.md](SECURITY.md) for the trust boundaries and the known limitations.
 
 ## The three things I learned

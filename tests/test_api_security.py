@@ -133,14 +133,22 @@ class TestNoRouteLeavesTheStore:
                     _call(client, method, template.format(id=bad_id))
 
         assert recorder.denied_opens() == (), [e.target for e in recorder.denied_opens()]
-        escaped = recorder.outside([store_root, Path.cwd()])
+        # The store and the package's own source, not the whole working directory. Allowing
+        # `Path.cwd()` meant any file under the repository counted as "inside the store", so a
+        # traversal that read an arbitrary repository file would have passed this assertion.
+        allowed = [store_root, Path(__file__).resolve().parent.parent / "src"]
+        escaped = recorder.outside(allowed)
         assert escaped == (), [e.target for e in escaped]
 
     def test_the_lookup_is_an_exact_match_against_published_rows(self, client: TestClient) -> None:
         # The id in a URL is compared with ids derived from manifest rows; the path is then built
         # from the row. This is why traversal cannot reach the reader, and it is asserted here so
         # that replacing the lookup with a path join would fail a test rather than pass review.
-        assert client.get("/api/investigations/15_9-F-12_2008-08-22").status_code in {404, 500}
+        # The row exists in the synthetic manifest but its artifacts do not, so the lookup
+        # succeeds and the read fails: a 404 from ArtifactMissing. Accepting 500 here, as the
+        # first version did, would have let a server error pass the test that is described as
+        # proving exact-match resolution.
+        assert client.get("/api/investigations/15_9-F-12_2008-08-22").status_code == 404
         assert client.get("/api/investigations/15_9-F-12_2008-08-23").status_code == 404
 
 

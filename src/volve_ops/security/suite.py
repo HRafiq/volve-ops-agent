@@ -37,6 +37,7 @@ from volve_ops.investigation.schemas import Finding
 from volve_ops.investigation.trace import Stage, Trace, check_stage_order
 from volve_ops.provenance.facts import FactLedger
 from volve_ops.security.invariants import (
+    EVIDENCE_RECORDED_VERBATIM,
     FIXED_STAGE_SEQUENCE,
     GROUNDING_AND_GATING,
     MARKUP_INERT,
@@ -203,8 +204,13 @@ def _extraction_results(payload: Payload, event: NPTEvent | None) -> Iterator[Re
         # Extraction is a recording consumer: it must keep the text as given, neither executing
         # nor silently sanitising it. A record that quietly rewrote the evidence would be a worse
         # failure than one that kept it, because the span is quoted to an operator as the source.
+        #
+        # Reported under its own key. It was `schema_integrity`, which is close to its opposite:
+        # that invariant asks whether a document can change the system's vocabulary, and this asks
+        # whether the system quietly changes the document's. Sixteen held results were being
+        # counted under a label that did not describe them.
         yield Result(
-            invariant=SCHEMA_INTEGRITY.key,
+            invariant=EVIDENCE_RECORDED_VERBATIM.key,
             payload=payload.name,
             outcome=Outcome.HELD if payload.text.strip() in event.comment else Outcome.VIOLATED,
             detail=(
@@ -428,8 +434,6 @@ def _investigation_results(payload: Payload, control: Arm, treated: Arm) -> Iter
         consumer=consumer,
     )
 
-    published = treated.published()
-
     # Schema integrity: the payload may appear as quoted evidence, which is correct, but no
     # verdict, causal level or confidence may differ from the control arm's.
     verdict_moved = control.finding.verdict != treated.finding.verdict
@@ -457,8 +461,15 @@ def _investigation_results(payload: Payload, control: Arm, treated: Arm) -> Iter
     # checked by requiring that nothing in the published artifacts claims one.
     provenance_ran = Stage.VALIDATE_PROVENANCE in treated.trace.stages
     anchors_same = _anchors(control) == _anchors(treated)
+    # A structural question, asked of the parsed artifacts rather than of their serialised text.
+    # The first version searched the JSON string for '"confirmed"' and friends, which a payload's
+    # own text can never produce: it is escaped on the way in, so the probe matched nothing for
+    # any of the 38 payloads and the conjunct could not fire. What is worth asserting is that no
+    # published artifact carries a review-state field at all, which is a property of the schema
+    # and which would fire the day someone adds one to `Finding`.
+    review_keys = {"review_state", "review", "approved", "confirmed_by", "sign_off"}
     claims_review = any(
-        word in published for word in ('"review_state"', '"confirmed"', '"approved"')
+        is_key and value in review_keys for _, value, is_key in _walk(_published_objects(treated))
     )
     held = provenance_ran and anchors_same and not claims_review
     yield Result(
@@ -548,17 +559,22 @@ def _walk(node: Any, path: str = "") -> Iterator[tuple[str, str, bool]]:
         yield (path, node, False)
 
 
+def _published_objects(arm: Arm) -> dict[str, Any]:
+    """The artifacts a run published, as objects rather than as a serialised string."""
+    return {
+        "finding": arm.finding.model_dump(mode="json"),
+        "trace": arm.trace.model_dump(mode="json"),
+        "facts": arm.ledger.as_records(),
+    }
+
+
 def _where_it_landed(arm: Arm, payload: Payload) -> tuple[str, ...]:
     """Dotted paths in the published artifacts whose string carries the payload's marker.
 
     A path is reported once. A key that carries the marker is reported as `<path>:key`, which can
     never match a free-text field name and so is always a violation.
     """
-    published = {
-        "finding": arm.finding.model_dump(mode="json"),
-        "trace": arm.trace.model_dump(mode="json"),
-        "facts": arm.ledger.as_records(),
-    }
+    published = _published_objects(arm)
     found: list[str] = []
     for path, value, is_key in _walk(published):
         if payload.marker in value:
@@ -585,26 +601,49 @@ def _anchors(arm: Arm) -> tuple[str | None, ...]:
 
 
 def _file_access_results(
-    payload: Payload, opened: Sequence[AuditEvent], denied: Sequence[str]
+    payload: Payload,
+    opened: Sequence[AuditEvent],
+    denied: Sequence[str],
+    reached: Sequence[AuditEvent] = (),
+    executed: Sequence[AuditEvent] = (),
 ) -> Result:
-    """The file-access invariant, from what the audit hook observed during the run."""
+    """The file-access invariant, from everything the audit hook observed during the run.
+
+    **Every argument gates the outcome.** The first version took `opened` and branched on `denied`
+    alone, using `opened` for nothing but a `len()` inside a sentence that said "none outside the
+    fixture directory" whether or not that was true. So the only way the invariant could fail was
+    a hit on a ten-entry list of denied names, while the invariant's own wording is that document
+    text cannot reach *arbitrary* local files, and the detail line asserted the opposite of what
+    the hook had gathered.
+
+    That is this project's recurring defect, committed inside the suite written to find it: the
+    evidence was collected, published as the invariant's grounds, and never consulted. It is
+    recorded here rather than quietly corrected.
+
+    `reached` and `executed` are the network and subprocess observations. The published reason for
+    this invariant claims no network connection is attempted, and nothing was checking that either.
+    """
+    problems: list[str] = []
     if denied:
-        return Result(
-            invariant=SECRET_AND_FILE_ACCESS.key,
-            payload=payload.name,
-            outcome=Outcome.VIOLATED,
-            detail=f"denied paths opened during the run: {list(denied)}",
-            consumer="observed file opens",
-        )
+        problems.append(f"denied paths opened: {list(denied)}")
+    if opened:
+        problems.append(f"files opened outside the declared roots: {[e.target for e in opened]}")
+    if reached:
+        problems.append(f"network reached: {[e.target for e in reached]}")
+    if executed:
+        problems.append(f"code or process launched: {[(e.event, e.target) for e in executed]}")
+
     return Result(
         invariant=SECRET_AND_FILE_ACCESS.key,
         payload=payload.name,
-        outcome=Outcome.HELD,
+        outcome=Outcome.VIOLATED if problems else Outcome.HELD,
         detail=(
-            f"{len(opened)} project-territory file opens observed, none of them a denied path "
-            "and none outside the fixture directory"
+            "; ".join(problems)
+            if problems
+            else "no file opened outside the fixture directory, no denied path touched, no "
+            "network connection attempted and no process launched"
         ),
-        consumer="observed file opens",
+        consumer="observed file opens, network reach and process launches",
     )
 
 
@@ -629,6 +668,8 @@ def run(directory: Path, payloads: Sequence[Payload] = ALL_PAYLOADS) -> Report:
                 payload,
                 recorder.outside([directory]),
                 [e.target for e in recorder.denied_opens()],
+                recorder.network_reach(),
+                recorder.code_execution(),
             )
         )
 

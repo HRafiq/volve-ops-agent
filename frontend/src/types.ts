@@ -273,7 +273,9 @@ export interface SystemHealth {
   expectation_ablation: ExpectationAblation;
   retrieval_ablation: HealthRow[];
   retrieval_note: string;
+  calibration: HealthRow[];
   calibration_note: string;
+  circular_features: string[];
   latency: HealthRow[];
   comparison: ComparisonRow[];
   comparison_note: string;

@@ -17,11 +17,12 @@ weaker property than supporting, and the difference was invisible for an entire 
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
-from volve_ops.console.store import RunStore
+from volve_ops.console.store import ArtifactMissing, RunStore
 from volve_ops.investigation.schemas import Finding
 from volve_ops.investigation.validator import CitableDocument, GateResult, check
 from volve_ops.provenance.facts import FactLedger
@@ -222,6 +223,48 @@ def _close(published: float, recorded: float) -> bool:
     return abs(published - recorded) <= VALUE_TOLERANCE * scale
 
 
+def manifest_values(manifests: Mapping[str, Mapping[str, Any]]) -> dict[str, float]:
+    """Every numeric leaf in every manifest, keyed by the source string that names it.
+
+    Mark 1 and mark 11 both ask whether a source **resolves**, which for a dotted manifest path
+    means only that the key exists. That is the weaker of the two questions, and amendment 11
+    recorded what the weaker question misses: 198 of 198 drawer figures attributed to facts
+    recording different numbers, every source resolving, every check passing.
+
+    Class 3 asked the stronger question of fact ids only, so it never looked at the System Health
+    workspace, whose figures are sourced to manifest paths. A figure there could publish any
+    number at all under a key holding a different one. This is what lets it look.
+    """
+    found: dict[str, float] = {}
+
+    def walk(node: Any, prefix: str) -> None:
+        if isinstance(node, Mapping):
+            for key, value in node.items():
+                walk(value, f"{prefix}.{key}" if prefix else str(key))
+            return
+        if isinstance(node, bool):
+            return
+        if isinstance(node, int | float):
+            found[prefix] = float(node)
+
+    for name, manifest in manifests.items():
+        walk(manifest, name)
+    # One known gap, stated rather than left to be discovered: a manifest key whose own name
+    # contains a dot produces a path this walk cannot distinguish from a nested one. `locate`,
+    # which `resolve_source` uses, handles that case. No such key exists in the five manifests or
+    # the two section 22 runs today, and a figure sourced to one would simply not be compared.
+    return found
+
+
+def contradictions_in_health(
+    health: object, manifests: Mapping[str, Mapping[str, Any]]
+) -> tuple[Contradiction, ...]:
+    """Class 3 over the System Health workspace, against the manifests its figures name."""
+    return figures_contradicting_their_records(
+        {"system_health": health}, manifest_values(manifests)
+    )
+
+
 def contradictions_in_console(store: RunStore) -> tuple[Contradiction, ...]:
     """Class 3 over the whole console, with each payload judged against its own episode's facts.
 
@@ -239,5 +282,18 @@ def contradictions_in_console(store: RunStore) -> tuple[Contradiction, ...]:
         payload = assemble.detail(store, row.investigation_id)
         found.extend(
             figures_contradicting_their_records({row.investigation_id: payload}, fact_values)
+        )
+
+    # The health workspace, whose figures name manifest keys rather than fact ids. Left out of
+    # the first version, which is how mark 11 came to be an existence check on the one screen
+    # section 22.4 wrote a mark to protect.
+    # Narrowed to ArtifactMissing: the section 22 manifests may not have been written yet, and
+    # this function is also the per-episode class-3 check, which must still run when they have
+    # not been. A bare `except Exception` here would have swallowed a real failure of the health
+    # check and reported zero contradictions, which is the shape of defect this module is about.
+    # `run_security_checks.py` reports the health check's own ran/skipped state separately.
+    with contextlib.suppress(ArtifactMissing):
+        found.extend(
+            contradictions_in_health(assemble.system_health(store), store.health_manifests())
         )
     return tuple(found)

@@ -102,8 +102,24 @@ class TestTheScreenReportsWhatItCannotDo:
         for item in health.not_applicable:
             assert len(item.reason) > 20
 
-    def test_the_calibration_ablation_says_why_it_is_absent(self, health) -> None:  # type: ignore[no-untyped-def]
-        assert "does not exist in this system" in health.calibration_note
+    def test_the_calibration_ablation_runs_and_states_its_limits(self, health) -> None:  # type: ignore[no-untyped-def]
+        """It was declared not applicable and is now run; amendment 12 records why.
+
+        What matters on the screen is that the result arrives with what it cannot show. A spread
+        between an evidence-derived score and a flat prior says the score carries information; it
+        says nothing about whether any band was right, and four of five features are circular.
+        """
+        assert health.calibration, "the calibration ablation reports no rows"
+        assert "no ground truth" in health.calibration_note
+        assert len(health.circular_features) == 4
+
+    def test_the_flat_prior_is_a_real_comparison_arm(self, health) -> None:  # type: ignore[no-untyped-def]
+        labels = {row.label for row in health.calibration}
+        assert any("Flat-prior" in label for label in labels)
+        assert any("spread" in label for label in labels)
+        # Bands must be published per band rather than as one number, or a screen cannot show
+        # that the evidence score spreads findings where a flat prior cannot.
+        assert sum("Evidence-derived band" in label for label in labels) >= 2
 
     def test_the_retrieval_note_reports_its_population(self, health) -> None:  # type: ignore[no-untyped-def]
         assert "minority" in health.retrieval_note or "ADR 0008" in health.retrieval_note

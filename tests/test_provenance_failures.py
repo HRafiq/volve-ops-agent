@@ -56,16 +56,42 @@ def _class(number: int):  # type: ignore[no-untyped-def]
 
 class TestTheInvestigationGateBlocksSixOfThem:
     def test_1_a_derived_figure_with_no_lineage(self, arm: suite.InvestigationArm) -> None:
-        # The fact exists, so this is not class 2. Its lineage is what is broken: the ledger is
-        # replaced with one that holds the derived fact and not the measurement under it.
+        """A derived fact whose input is no longer in the ledger: a chain reaching no measurement.
+
+        The first version emptied the ledger entirely, so every anchor was missing,
+        `fact_not_in_ledger` fired, and the test asserted only `outcome.blocked`. That is class 2
+        wearing class 1's name: `broken_lineage`, the rule this class exists to demonstrate, never
+        fired at all. Independent review caught it.
+
+        Building it needs a derived fact, and this run's three anchors are all measured, which is
+        itself worth knowing: nothing the finding anchors to is computed from anything else, so
+        class 1 cannot arise from the current controller and has to be constructed.
+        """
         from volve_ops.provenance.facts import FactLedger
 
-        empty = FactLedger()
-        outcome = run_at_the_gate(_class(1), arm.finding, empty, _documents())
-        assert outcome.blocked
-        # With an empty ledger every anchor is missing, so both rules are available here. The
-        # class is defined by the attempt, and the gate stopping it is what mark 8 asks.
-        assert {"fact_not_in_ledger"} & set(outcome.rules_fired)
+        ledger = FactLedger()
+        measured = ledger.record("episode_actual_volume", 1000.0, "Sm3", source="workbook")
+        derived = ledger.derive(
+            "episode_cumulative_rate_shortfall",
+            "Sm3",
+            formula="actual minus expected",
+            inputs=[measured],
+            compute=lambda a: a * 0.5,
+        )
+        # The input is removed; the derived fact keeps citing it. The chain now reaches nothing.
+        del ledger._facts[measured.id]
+
+        broken = arm.finding.model_copy(
+            update={
+                "actual_volume_fact_id": derived.id,
+                "expected_volume_fact_id": derived.id,
+                "shortfall_fact_id": derived.id,
+                "shortfall_value_fact_id": None,
+            }
+        )
+        outcome = run_at_the_gate(_class(1), broken, ledger, _documents())
+        assert outcome.blocked, outcome.detail
+        assert outcome.blocked_by_the_expected_rule, (outcome.rules_fired, outcome.detail)
 
     def test_2_a_source_that_does_not_resolve(self, arm: suite.InvestigationArm) -> None:
         broken = arm.finding.model_copy(update={"shortfall_fact_id": "fact_999999"})
