@@ -196,8 +196,8 @@ export function Health({ health }: { health: SystemHealth }): JSX.Element {
           <p>{health.calibration_note}</p>
           <p>
             Features derived from inputs to the verdict:{" "}
-            {health.circular_features.join(", ")}. {health.circular_features.length} of the
-            five, so the spread above is not independent evidence that the band is right.
+            {health.circular_features.join(", ")}. Most of the evidence score&rsquo;s features,
+            so the spread above is not independent evidence that the band is right.
           </p>
         </div>
       </div>

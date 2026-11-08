@@ -26,6 +26,35 @@ DEFAULT_CACHE: Final[Path] = Path("data/cache")
 DEFAULT_TRACES: Final[Path] = Path("data/cache/investigations")
 
 
+#: Every manifest the System Health screen reads, by filename. Declared once, in the module that
+#: knows what the store opens, because this set had been spelled out in four places and three of
+#: them were wrong: the section 22 gate guarded two of eight and exited 1 on a partial cache where
+#: "skipped, not passed" is the documented behaviour, `test_health_payload.py` guarded two and
+#: errored on eleven tests, `test_console.py` guarded one and failed fifteen. The fourth was
+#: correct and was copied from one of the wrong ones.
+#:
+#: A caller that wants to know whether it can assemble the screen asks `missing_manifests`. A
+#: caller that wants to assemble it anyway gets `ArtifactMissing`, which is still the right answer
+#: for a screen nobody can build.
+#:
+#: The first version of this tuple was wrong by one. It was derived by reading the code, and the
+#: code opens `evaluation_run.json` through the queue, which no reading had caught across five
+#: review rounds. `tests/test_security.py` now asserts this list against what the health path
+#: **observes itself opening**, through the audit hook phase 7 built for a different purpose, so
+#: the declaration is checked against behaviour rather than against someone's reading of it.
+HEALTH_MANIFESTS: Final[tuple[str, ...]] = (
+    *sorted(MANIFESTS.values()),
+    "evaluation_run.json",
+    "security_run.json",
+    "ablation_run.json",
+)
+
+
+def missing_manifests(cache: Path = DEFAULT_CACHE) -> tuple[str, ...]:
+    """Which of `HEALTH_MANIFESTS` are absent, so a caller can skip rather than fail."""
+    return tuple(name for name in HEALTH_MANIFESTS if not (cache / name).exists())
+
+
 class ArtifactMissing(Exception):
     """An artifact the console needs was not written. Nothing is served without it."""
 

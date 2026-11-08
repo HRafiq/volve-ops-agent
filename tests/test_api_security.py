@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -264,3 +265,79 @@ class TestTheApiStaysReadOnly:
         assert all(path.startswith("/api/review/") for path, _ in mutating), mutating
         assert {m for _, m in mutating} == {"POST"}
         assert len(mutating) == 4
+
+
+class TestTheForwardingHeaderRuleItself:
+    """Unit tests over `client_key`, because the live tests cannot carry this.
+
+    `tests/test_rate_limit_live.py` drives a real uvicorn, which is the only way to falsify a
+    claim about deployment, and it has one blind spot that measurement found: uvicorn rewrites the
+    peer from `x-forwarded-for` **only**, so for every other header the peer stays 127.0.0.1 and
+    `allowed <= limit` holds whether this project's rule exists or not. Four of the seven live
+    tests passed with the rule deleted entirely, and reducing `FORWARDING_HEADERS` from seven
+    names to one left all 921 tests green.
+
+    So the live suite proves uvicorn's behaviour and these prove the project's. Both are needed:
+    neither alone can tell a working rule from an absent one.
+    """
+
+    #: Written out here, not read from the implementation. A parametrize over
+    #: `rate_limit.FORWARDING_HEADERS` is a test that adapts to the thing it tests: deleting six
+    #: of the seven names leaves it green with six fewer cases. That is the defect this whole
+    #: review has been about, and it appeared in the test written to catch it, caught by
+    #: mutating the list and watching nothing fail.
+    EXPECTED_HEADERS: ClassVar[tuple[str, ...]] = (
+        "cf-connecting-ip",
+        "forwarded",
+        "true-client-ip",
+        "x-client-ip",
+        "x-cluster-client-ip",
+        "x-forwarded-for",
+        "x-real-ip",
+    )
+
+    def test_the_declared_set_is_exactly_the_expected_set(self) -> None:
+        assert sorted(rate_limit.FORWARDING_HEADERS) == sorted(self.EXPECTED_HEADERS)
+
+    @pytest.mark.parametrize("header", EXPECTED_HEADERS)
+    def test_every_expected_header_collapses_the_key(self, header: str) -> None:
+        assert rate_limit.forwarding_header_present([header]) is True
+        assert rate_limit.client_key("10.1.2.3", True) == rate_limit.FORWARDED_CLIENT
+
+    @pytest.mark.parametrize("header", EXPECTED_HEADERS)
+    def test_each_header_is_matched_case_insensitively(self, header: str) -> None:
+        assert rate_limit.forwarding_header_present([header.upper()]) is True
+        assert rate_limit.forwarding_header_present([header.title()]) is True
+
+    def test_a_request_with_no_forwarding_header_keys_on_its_peer(self) -> None:
+        # The other half. A rule that collapsed everything would pass every test above and would
+        # throttle every caller into one bucket, which is a denial of service, not a bound.
+        assert rate_limit.forwarding_header_present(["accept", "user-agent", "host"]) is False
+        assert rate_limit.client_key("10.1.2.3", False) == "10.1.2.3"
+
+    def test_distinct_peers_without_headers_get_distinct_keys(self) -> None:
+        assert rate_limit.client_key("10.0.0.1", False) != rate_limit.client_key("10.0.0.2", False)
+
+    def test_every_forwarded_caller_shares_one_key(self) -> None:
+        # The documented trade: behind a proxy everything is throttled together, which fails
+        # closed. The first repair matched the peer against the header and failed open.
+        assert rate_limit.client_key("10.0.0.1", True) == rate_limit.client_key("10.0.0.2", True)
+
+    def test_a_missing_peer_is_its_own_key_not_a_crash(self) -> None:
+        assert rate_limit.client_key(None, False) == rate_limit.UNKNOWN_CLIENT
+        assert rate_limit.client_key("", False) == rate_limit.UNKNOWN_CLIENT
+
+    def test_the_header_uvicorn_actually_rewrites_from_is_declared(self) -> None:
+        """The one that must never be dropped.
+
+        uvicorn's ProxyHeadersMiddleware rewrites `scope["client"]` from `x-forwarded-for`. If
+        that name left the list the bound would be keyable by any caller again, which is the
+        defect two review rounds were spent on.
+        """
+        assert "x-forwarded-for" in rate_limit.FORWARDING_HEADERS
+
+    def test_the_declared_names_are_lowercase_and_unique(self) -> None:
+        # The lookup lowercases what it is given; a capitalised entry here would never match.
+        names = rate_limit.FORWARDING_HEADERS
+        assert all(name == name.lower() for name in names), names
+        assert len(set(names)) == len(names)

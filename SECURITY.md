@@ -65,7 +65,12 @@ These are stated because a security document that lists only defences is a marke
 - **Run it with `scripts/serve_console.py`, not bare uvicorn.** uvicorn defaults
   `proxy_headers=True` with `forwarded_allow_ips="127.0.0.1"`, which on loopback lets any caller
   set the address this process sees. The application defends itself as above; the script removes
-  the ambiguity. Behind a real reverse proxy, configure uvicorn with that proxy's address instead.
+  the ambiguity.
+- **Running behind a real reverse proxy is not supported.** Every client would share one bucket,
+  because the limiter cannot tell a trustworthy hop from an invented one. Doing it properly means
+  keying on the address before a named trusted hop, and nothing here measures whether that is
+  right for a given proxy, so it is deferred rather than half-built. An earlier version shipped a
+  `--trust-proxy-headers` flag that did not do what its help text said; it has been removed.
 - **The audit hook witnesses, it does not sandbox.** It records file opens, network connections,
   subprocess launches and dynamic compilation during a run. Nothing in it prevents any of them.
 - **Three of the design brief's seven injection invariants are vacuous here** and are reported as

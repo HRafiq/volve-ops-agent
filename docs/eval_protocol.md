@@ -821,13 +821,30 @@ watched the health half of class 3, whose denominator is fixed by the screen's o
 reach zero; the half that can is the per-episode one, which is the half whose vacuity was the
 reported defect. An empty queue still reported clean over nothing. Both halves publish a
 denominator now and both are guarded. The new test for the payload-side walk guarded on one of the
-eight manifests the health screen reads, so a cache holding only that one turned a skip into a hard
+manifests the health screen reads, so a cache holding only that one turned a skip into a hard
 failure — and that is the state `scripts/check_like_ci.sh` leaves its own checkout in, so the
-project's CI-simulating script went red; the correct guard was already in the file next door. The
+project's CI-simulating script went red.
+
+That repair was made by copying the guard from the file next door, and this amendment said so as
+if the source were correct. It was not: that guard named two, another named one, and **the shipped
+gate named two of nine and exited 1 on five of them where "skipped, not passed" is its documented
+behaviour**. The set is now declared once, in the module that owns the store, and the first version
+of that declaration was still short by one — the queue opens `evaluation_run.json`, which no
+reading of the call graph had caught in five rounds. It is checked against what the health path
+**observes itself opening**, using the audit hook section 22.4 mark 4 built for a different
+purpose, so the declaration is tested against behaviour rather than against someone's reading. The
 repair that stopped rendering an ablation outcome as pass or FAIL dropped the value column
 entirely, taking with it the retrieval population figure this amendment makes its centrepiece. And
 the README's file and test counts went stale again in the same commit that corrected two other
 figures three lines away.
+
+A fifth pass found two more of the same kind: the overclaim gate's file count, stale for the third
+time, and a `--trust-proxy-headers` flag whose help text described behaviour it did not produce.
+The flag moved `scope["client"]`, which the presence rule ignores, so trusting a proxy restored
+nothing and two genuinely distinct clients behind one still shared a bucket. It is removed rather
+than documented, and running behind a reverse proxy is recorded as unsupported. Figures that move
+whenever a file is added are no longer quoted in prose at all; they are in the manifests, which is
+the only place a figure that changes every run can be right.
 
 **Four things this amendment did not record until a third pass.** Section 22.5 requires the attack
 fixtures to be "committed"; they are generated in memory by builder functions, which a reader can
@@ -878,9 +895,18 @@ the match did not fire, and the attacker's rotating string became the key again:
 300. Matching an address against a header is a parsing problem with a long tail — comma forms,
 ports, IPv6 brackets, duplicate lines, RFC 7239's `Forwarded`, and whatever the next middleware
 does. The rule is now presence rather than matching: **any forwarding header at all, and the request
-is keyed into one shared bucket.** One boolean, no tail. Seven attack shapes are tested against a
-real uvicorn, and `scripts/serve_console.py` — named in the module's docstring for a round before it
-existed — runs the server with proxy headers off.
+is keyed into one shared bucket.** One boolean, no tail. Attack shapes are tested against a real uvicorn, and
+`scripts/serve_console.py` — named in the module's docstring for a round before it existed — runs
+the server with proxy headers off.
+
+A fifth pass measured those tests and found four of the seven could not fail: uvicorn rewrites the
+peer from `x-forwarded-for` alone, so for every other header the peer stays loopback and the bound
+holds whether this project's rule exists or not. Deleting six of the seven declared header names
+left all 921 tests green. The live suite proves uvicorn's behaviour; a unit suite over
+`forwarding_header_present` and `client_key` proves the project's, with the expected names written
+out rather than read from the implementation, because a parametrize over the list under test
+shrinks quietly when the list does. Both are needed and neither alone distinguishes a working rule
+from an absent one.
 
 **Mark 9 gates nothing.** Section 22.4's preamble says every mark fails the build when it fails. The
 ablation manifest is read by the console and, for key existence, by mark 11; nothing asserts that

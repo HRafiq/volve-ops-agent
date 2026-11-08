@@ -22,7 +22,7 @@ from typing import Any
 
 from volve_ops.console.assemble import CONSOLE_PROTOCOL_VERSION
 from volve_ops.console.limits import NOT_APPLICABLE, declared_limits
-from volve_ops.console.store import RunStore
+from volve_ops.console.store import RunStore, missing_manifests
 from volve_ops.security import suite
 from volve_ops.security.attacks import ARCHIVE_ATTACKS, PARSES_CORRECTLY, XML_ATTACKS
 from volve_ops.security.claims import CLAIM_PATTERNS
@@ -103,9 +103,10 @@ def main(argv: list[str] | None = None) -> int:
     # tests/test_health_payload.py — was false: that whole module skips without `data/cache/`, so
     # mark 11's value half ran in neither the harness nor the tests.
     store = RunStore(cache=args.cache, traces=args.cache / "investigations")
-    have_artifacts = (args.cache / "investigation_run.json").exists() and (
-        args.cache / "investigations"
-    ).is_dir()
+    # Every manifest the health screen reads, from the one place that declares them. Guarding two
+    # of eight meant removing any of the other five turned a documented skip into exit 1.
+    absent = missing_manifests(args.cache)
+    have_artifacts = not absent and (args.cache / "investigations").is_dir()
 
     print("\nmark 8: provenance failures")
     contradictions: tuple[Any, ...] = ()
@@ -114,7 +115,10 @@ def main(argv: list[str] | None = None) -> int:
     health_compared = 0
     episode_compared = 0
     if not have_artifacts:
-        print("  cached run artifacts absent. Skipped, not passed.")
+        print(
+            f"  cached run artifacts absent ({', '.join(absent) or 'no investigations/'}). "
+            "Skipped, not passed."
+        )
     else:
         try:
             episode_result = contradictions_in_console(store)
@@ -161,12 +165,8 @@ def main(argv: list[str] | None = None) -> int:
     # crashing. That is a real limitation and it is stated rather than hidden: **marks 8-health
     # and 11 validate the screen built from the previous run's manifest**, not from the one this
     # run is about to write. A second run checks what the first produced.
-    if (
-        not have_artifacts
-        or not (args.cache / "ablation_run.json").exists()
-        or not (args.cache / "security_run.json").exists()
-    ):
-        print("  section 22 manifests absent. Skipped, not passed.")
+    if not have_artifacts:
+        print("  manifests the health screen reads are absent. Skipped, not passed.")
         print("  (this mark reads the manifest a previous run wrote; re-run to check this one)")
     else:
         try:

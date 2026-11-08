@@ -280,7 +280,9 @@ exists to prevent.
 
 ## Overclaims
 
-A gate over 132 files finds 0. It matches claim shapes rather than the bare phrase, because the
+A gate over the project's own prose finds 0. The file count is in `security_run.json` and not
+quoted here: it moves whenever a document or a script is added, and this sentence has now gone
+stale twice for exactly that reason, at 128 and again at 132. It matches claim shapes rather than the bare phrase, because the
 protocol section forbidding the claim contains the words. Like the sink gate it has no exception
 list, so the project's prose has to be written around it: the first run flagged a sentence in the
 gate's own docstring, which was reworded rather than excepted.

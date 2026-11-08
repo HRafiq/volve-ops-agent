@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 
+from volve_ops.console.store import ArtifactMissing
 from volve_ops.extraction.npt import extract_from_report
 from volve_ops.investigation.schemas import CausalLevel, Finding, Verdict
 from volve_ops.investigation.trace import Stage
@@ -901,32 +902,47 @@ class TestTheHealthHalfReportsWhetherItRan:
 
         `_episodes_opened_by_selected` raises `ArtifactMissing` when the selected model has no row
         in the ablation manifest, which is a figure sourced to something that does not exist. The
-        same handler that let the per-episode half run without the section 22 manifests was
-        catching it and reporting the run clean.
+        handler that let the per-episode half run without the section 22 manifests was catching it
+        and reporting the run clean.
+
+        Every manifest must be present for this to be the condition under test: a cache that is
+        merely incomplete is a skip, which is a different answer and the one the earlier version
+        of this test was accidentally getting.
         """
         import json
+        import shutil
 
-        from volve_ops.console.store import RunStore
+        from volve_ops.console.store import RunStore, missing_manifests
         from volve_ops.security.provenance_failures import health_contradictions
 
-        (tmp_path / "investigations").mkdir()
-        (tmp_path / "investigation_run.json").write_text(
-            json.dumps({"protocol_version": "v17", "findings": []}), encoding="utf-8"
-        )
-        for name in ("security_run.json", "ablation_run.json"):
-            (tmp_path / name).write_text(json.dumps({"broken": True}), encoding="utf-8")
+        if missing_manifests():
+            pytest.skip("this needs a complete cache to break one manifest inside it")
+        cache = tmp_path / "cache"
+        shutil.copytree("data/cache", cache)
 
-        with pytest.raises(Exception, match=r"."):
-            health_contradictions(RunStore(cache=tmp_path, traces=tmp_path / "investigations"))
+        # A selected model the ablation manifest has no row for: present, complete, and wrong.
+        ablation = json.loads((cache / "ablation_run.json").read_text(encoding="utf-8"))
+        for row in ablation["expectation"]["rows"]:
+            row["model"] = f"{row['model']}-renamed"
+        (cache / "ablation_run.json").write_text(json.dumps(ablation), encoding="utf-8")
+
+        assert missing_manifests(cache) == ()
+        with pytest.raises(ArtifactMissing, match="no row for the selected model"):
+            health_contradictions(RunStore(cache=cache, traces=cache / "investigations"))
 
 
 class TestThePayloadSideWalkIsPinnedToo:
     """Round 2 found the manifest side of the comparison blind to lists. This is the other side.
 
     `manifest_values` descends lists in the manifest; `figures_contradicting_their_records`
-    descends them in the **payload**. Six tests pin the first. Removing the payload-side descent
-    dropped the health screen from 33 figures compared to 1 and the whole suite still passed,
-    because every one of those six builds a flat dict payload and every real payload is tuples.
+    descends them in the **payload**. The class above pins the first. Removing the payload-side
+    descent dropped the health screen to a single figure compared and the whole suite still
+    passed, because every test in that class builds a flat dict payload and every real payload is
+    tuples.
+
+    Counts are deliberately not written here. The same two numbers were corrected in protocol
+    amendment 12 and left stale in this docstring twenty lines away, which is what a figure fixed
+    in prose does.
     """
 
     def test_a_figure_inside_a_tuple_is_compared(self) -> None:
@@ -973,26 +989,13 @@ class TestThePayloadSideWalkIsPinnedToo:
         the one that would notice the payload walk losing a container type the others do not use.
         """
         from volve_ops.console import assemble
-        from volve_ops.console.store import RunStore
+
+        # Every manifest `system_health` reads, from the one place that declares them.
+        from volve_ops.console.store import RunStore, missing_manifests
         from volve_ops.security.provenance_failures import compare_figures, manifest_values
 
-        # Every manifest `system_health` reads, not just the one that happens to be checked
-        # first. Guarding on `security_run.json` alone turned a skip into a hard failure for
-        # anyone who had run the security gate but not the ablations — which is the state
-        # `scripts/check_like_ci.sh` leaves its own checkout in, so the project's CI-simulating
-        # script went red. tests/test_health_payload.py already had the right guard.
-        required = (
-            "security_run.json",
-            "ablation_run.json",
-            "investigation_run.json",
-            "run_manifest.json",
-            "extraction_run.json",
-            "label_scoring_run.json",
-            "postmortem_run.json",
-            "console_run.json",
-        )
-        if not all(Path("data/cache", name).exists() for name in required):
-            pytest.skip("not every manifest the health screen reads has been written")
+        if missing_manifests():
+            pytest.skip(f"not written: {', '.join(missing_manifests())}")
         store = RunStore()
         result = compare_figures(
             {"system_health": assemble.system_health(store)},
@@ -1007,3 +1010,152 @@ class TestThePayloadSideWalkIsPinnedToo:
         result = compare_figures({"empty": {}}, {"m.a": 1.0})
         assert result.compared == 0
         assert result.vacuous is True
+
+
+class TestTheGateGuardsCanFail:
+    """Marks 8 and 9's guards, exercised where they can actually run.
+
+    Both live in `scripts/run_security_checks.py` and both skip on every CI runner, because
+    `data/` is not committed. That is the sentence this file already uses about mark 11's value
+    half, and round 3 solved it there by building synthetic manifests. The move was not repeated
+    for the guards rounds 3 and 4 added, so the central non-security repair of each round lived
+    only where it could not run.
+
+    Mark 9 reads one manifest and is tested synthetically, so it runs anywhere. Marks 8 and 11
+    assemble the whole console and need the real cache, so those cases copy it and skip without
+    it — an honest split rather than a stub that resembles the thing loosely enough to pass.
+    """
+
+    @staticmethod
+    def _run(cache: Path) -> int:
+        # Imported by bare module name off `scripts/`, the pattern test_verify_manifest.py uses.
+        # `from scripts.run_security_checks import ...` makes mypy see one file under two module
+        # names, because `scripts` is on its `files` list and on sys.path.
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+        from run_security_checks import main
+
+        return main(["--cache", str(cache), "--out", str(cache / "security_run.json")])
+
+    @staticmethod
+    def _real_cache(tmp_path: Path) -> Path:
+        import shutil
+
+        from volve_ops.console.store import missing_manifests
+
+        if missing_manifests():
+            pytest.skip("these cases assemble the console; they need the real manifests")
+        cache = tmp_path / "cache"
+        shutil.copytree("data/cache", cache)
+        return cache
+
+    def test_mark_9_fails_when_the_population_disagrees_with_the_sweep(
+        self, tmp_path: Path
+    ) -> None:
+        """The exact defect amendment 12 records: a dropped episode, a published survivor count."""
+        import json
+
+        cache = self._real_cache(tmp_path)
+        manifest = json.loads((cache / "ablation_run.json").read_text(encoding="utf-8"))
+        manifest["retrieval"]["episodes_with_documents"] = 1
+        (cache / "ablation_run.json").write_text(json.dumps(manifest), encoding="utf-8")
+        assert self._run(cache) == 1
+
+    def test_mark_9_fails_when_the_counts_do_not_cover_the_sweep(self, tmp_path: Path) -> None:
+        import json
+
+        cache = self._real_cache(tmp_path)
+        manifest = json.loads((cache / "ablation_run.json").read_text(encoding="utf-8"))
+        manifest["retrieval"]["episode_document_counts"] = []
+        (cache / "ablation_run.json").write_text(json.dumps(manifest), encoding="utf-8")
+        assert self._run(cache) == 1
+
+    def test_mark_9_fails_when_an_ablation_is_absent(self, tmp_path: Path) -> None:
+        import json
+
+        cache = self._real_cache(tmp_path)
+        manifest = json.loads((cache / "ablation_run.json").read_text(encoding="utf-8"))
+        del manifest["calibration"]
+        (cache / "ablation_run.json").write_text(json.dumps(manifest), encoding="utf-8")
+        assert self._run(cache) == 1
+
+    def test_mark_8_fails_on_an_empty_queue(self, tmp_path: Path) -> None:
+        """Round 4's repair: the per-episode half is the half that can compare nothing."""
+        import json
+
+        cache = self._real_cache(tmp_path)
+        manifest = json.loads((cache / "investigation_run.json").read_text(encoding="utf-8"))
+        manifest["findings"] = []
+        (cache / "investigation_run.json").write_text(json.dumps(manifest), encoding="utf-8")
+        assert self._run(cache) == 1
+
+    @pytest.mark.parametrize(
+        "absent",
+        [
+            "run_manifest.json",
+            "extraction_run.json",
+            "label_scoring_run.json",
+            "postmortem_run.json",
+            "console_run.json",
+            "evaluation_run.json",
+        ],
+    )
+    def test_a_partial_cache_skips_rather_than_failing(self, tmp_path: Path, absent: str) -> None:
+        """Round 5's finding: a manifest the screen reads being absent is a skip, not a failure.
+
+        This is the gate's documented behaviour on a runner, and it exited 1 for five of the eight
+        manifests it had not named, which is the state `check_like_ci.sh` leaves its checkout in.
+        """
+        cache = self._real_cache(tmp_path)
+        (cache / absent).unlink()
+        assert self._run(cache) == 0
+
+    def test_the_unmodified_cache_passes(self, tmp_path: Path) -> None:
+        """Without this every case above would pass against a gate that fails on everything."""
+        cache = self._real_cache(tmp_path)
+        assert self._run(cache) == 0
+
+
+class TestTheDeclaredManifestSetMatchesWhatIsOpened:
+    """`HEALTH_MANIFESTS` is checked against observation, not against a reading of the code.
+
+    Four of the five review rounds of this phase turned on a guard that named a subset of what
+    something actually reads: the gate named two of eight, one test file named two, another named
+    one, and the list written to end that was itself short by one, because the queue opens
+    `evaluation_run.json` and no amount of reading the call graph had noticed.
+
+    The audit hook built for section 22.4 mark 4 answers this directly. It was written to observe
+    what a run opens while resisting an injected payload; the same observation settles what the
+    health screen depends on.
+    """
+
+    def test_the_declared_set_is_exactly_what_the_health_path_opens(self) -> None:
+        from volve_ops.console.store import HEALTH_MANIFESTS, RunStore, missing_manifests
+        from volve_ops.security.observation import observing
+        from volve_ops.security.provenance_failures import (
+            contradictions_in_console,
+            health_contradictions,
+        )
+
+        if missing_manifests():
+            pytest.skip("this observes a real assembly; it needs the manifests present")
+
+        with observing("manifest-census") as recorder:
+            contradictions_in_console(RunStore())
+            health_contradictions(RunStore())
+
+        opened = {
+            Path(event.target).name
+            for event in recorder.events
+            if event.is_file_open and Path(event.target).name.endswith(".json")
+        }
+        # Only the manifests, not the per-episode artifacts, which are addressed by episode id
+        # rather than by a fixed name and are guarded by the store's own ArtifactMissing.
+        manifests = {
+            name for name in opened if name.endswith("_run.json") or name == "run_manifest.json"
+        }
+        assert manifests == set(HEALTH_MANIFESTS), {
+            "opened but not declared": sorted(manifests - set(HEALTH_MANIFESTS)),
+            "declared but not opened": sorted(set(HEALTH_MANIFESTS) - manifests),
+        }

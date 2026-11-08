@@ -21,7 +21,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-from volve_ops.console.store import RunStore
+from volve_ops.console.store import RunStore, missing_manifests
 from volve_ops.investigation.schemas import Finding
 from volve_ops.investigation.validator import CitableDocument, GateResult, check
 from volve_ops.provenance.facts import FactLedger
@@ -363,9 +363,8 @@ def health_contradictions(store: RunStore) -> tuple[ComparisonResult, bool]:
     """
     from volve_ops.console import assemble
 
-    for name in ("security_run.json", "ablation_run.json"):
-        if not (store.cache / name).exists():
-            return ComparisonResult(contradictions=(), compared=0), False
+    if missing_manifests(store.cache):
+        return ComparisonResult(contradictions=(), compared=0), False
     result = compare_figures(
         {"system_health": assemble.system_health(store)},
         manifest_values(store.health_manifests()),

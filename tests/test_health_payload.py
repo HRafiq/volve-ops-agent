@@ -15,18 +15,19 @@ import pytest
 from volve_ops.console import assemble, gates
 from volve_ops.console.payloads import ComparisonRow
 from volve_ops.console.sources import Sourced
-from volve_ops.console.store import RunStore
+from volve_ops.console.store import RunStore, missing_manifests
 
 CACHE = Path("data/cache")
 
 
 @pytest.fixture(scope="module")
 def health():  # type: ignore[no-untyped-def]
-    if not (CACHE / "security_run.json").exists() or not (CACHE / "ablation_run.json").exists():
-        pytest.skip(
-            "no section 22 manifests; run scripts/run_security_checks.py and "
-            "scripts/run_ablations.py"
-        )
+    # All eight, not the two this module happened to name. Round 4 copied this guard believing
+    # it was the correct one; it guarded two of eight and errored eleven tests when any of the
+    # other six was absent.
+    absent = missing_manifests(CACHE)
+    if absent:
+        pytest.skip(f"the health screen needs manifests not written: {', '.join(absent)}")
     return assemble.system_health(RunStore())
 
 

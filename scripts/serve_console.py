@@ -15,9 +15,15 @@ everything in that position together. That is the safe direction and it is a blu
 headers off, the peer is the peer and ordinary callers are limited individually, which is what the
 bound is for.
 
-Run it behind a real reverse proxy and you want the opposite: uvicorn configured with the proxy's
-address in `forwarded_allow_ips`, so the rewrite is trustworthy. That is a deployment decision and
-this script does not make it.
+**There is no flag to trust them.** An earlier version had one, and it did nothing it claimed:
+the flag controls whether `ProxyHeadersMiddleware` rewrites `scope["client"]`, and the application
+now ignores that address whenever a forwarding header is present, so turning the flag on left two
+genuinely distinct clients behind the proxy sharing a bucket anyway. A switch whose help text
+describes behaviour it does not produce is worse than its absence.
+
+Running behind a real reverse proxy wants a different design, not a flag: the limiter would have
+to trust a named hop and key on the address before it, and nothing here measures whether that is
+correct for a given proxy. It is recorded as deferred in `SECURITY.md` rather than half-built.
 """
 
 from __future__ import annotations
@@ -35,29 +41,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument(
-        "--trust-proxy-headers",
-        action="store_true",
-        help=(
-            "trust X-Forwarded-For from the configured hops. Only behind a reverse proxy you "
-            "control; on loopback it makes the request bound keyable by any caller."
-        ),
-    )
     args = parser.parse_args(argv)
 
     from api.main import app
 
-    if not args.trust_proxy_headers:
-        print("proxy headers: not trusted; the peer address is the peer address")
-    else:
-        print("proxy headers: TRUSTED. Only correct behind a reverse proxy you control.")
+    print("proxy headers: not trusted; the peer address is the peer address")
     print(f"serving      http://{args.host}:{args.port}/")
 
     uvicorn.run(
         app,
         host=args.host,
         port=args.port,
-        proxy_headers=args.trust_proxy_headers,
+        proxy_headers=False,
         log_level="warning",
     )
     return 0
