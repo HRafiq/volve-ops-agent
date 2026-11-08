@@ -976,8 +976,23 @@ class TestThePayloadSideWalkIsPinnedToo:
         from volve_ops.console.store import RunStore
         from volve_ops.security.provenance_failures import compare_figures, manifest_values
 
-        if not Path("data/cache/security_run.json").exists():
-            pytest.skip("no section 22 manifests")
+        # Every manifest `system_health` reads, not just the one that happens to be checked
+        # first. Guarding on `security_run.json` alone turned a skip into a hard failure for
+        # anyone who had run the security gate but not the ablations — which is the state
+        # `scripts/check_like_ci.sh` leaves its own checkout in, so the project's CI-simulating
+        # script went red. tests/test_health_payload.py already had the right guard.
+        required = (
+            "security_run.json",
+            "ablation_run.json",
+            "investigation_run.json",
+            "run_manifest.json",
+            "extraction_run.json",
+            "label_scoring_run.json",
+            "postmortem_run.json",
+            "console_run.json",
+        )
+        if not all(Path("data/cache", name).exists() for name in required):
+            pytest.skip("not every manifest the health screen reads has been written")
         store = RunStore()
         result = compare_figures(
             {"system_health": assemble.system_health(store)},

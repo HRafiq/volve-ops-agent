@@ -6,7 +6,7 @@ is called by any route.
 Run it with `pip install -e ".[console]"`, then:
 
 ```
-python -m uvicorn api.main:app --port 8000
+python scripts/serve_console.py --port 8000
 ```
 
 The console is served by the same process as the API, at `/`. One process rather than a dev server

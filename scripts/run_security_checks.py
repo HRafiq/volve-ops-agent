@@ -112,13 +112,15 @@ def main(argv: list[str] | None = None) -> int:
     class_3_ran = False
     health_half_ran = False
     health_compared = 0
+    episode_compared = 0
     if not have_artifacts:
         print("  cached run artifacts absent. Skipped, not passed.")
     else:
         try:
-            per_episode = contradictions_in_console(store)
+            episode_result = contradictions_in_console(store)
             health_result, health_half_ran = health_contradictions(store)
-            contradictions = (*per_episode, *health_result.contradictions)
+            contradictions = (*episode_result.contradictions, *health_result.contradictions)
+            episode_compared = episode_result.compared
             health_compared = health_result.compared
             class_3_ran = True
         except Exception as exc:
@@ -128,15 +130,24 @@ def main(argv: list[str] | None = None) -> int:
         # Reported separately. The per-episode half runs without the section 22 manifests and the
         # health half cannot, so one flag covering both said a check had run when half of it had
         # been skipped — which is what a first-ever run always looks like.
+        print(f"  per-episode payloads: {episode_compared} figures compared")
         print(f"  health screen walked: {health_half_ran} ({health_compared} figures compared)")
         print(f"  class 3, figures contradicting their records: {len(contradictions)}")
-        # The guard marks 2 and 13 have and this mark did not. Zero contradictions over zero
-        # figures is not a clean result, and an empty queue produced exactly that.
+        # The guard marks 2 and 13 have. Both halves are watched, because the first version of
+        # this guard watched only the health half, whose count is fixed by the screen's own shape
+        # and cannot go to zero, while the per-episode half goes to zero on an empty queue — which
+        # is the case the guard was written for.
+        if episode_compared == 0:
+            failures.append(
+                "mark 8: class 3 compared no figure in any per-episode payload; an empty queue "
+                "reports no contradictions because there was nothing to contradict"
+            )
+            print("  ! no per-episode figure compared")
         if health_half_ran and health_compared == 0:
             failures.append(
                 "mark 8: class 3 walked the health screen and compared no figures at all"
             )
-            print("  ! compared nothing")
+            print("  ! no health figure compared")
         if contradictions:
             failures.append(f"mark 8: {len(contradictions)} figure(s) contradict their records")
             for contradiction in contradictions[:5]:
@@ -299,6 +310,7 @@ def main(argv: list[str] | None = None) -> int:
             "class_3_ran": class_3_ran,
             "class_3_health_screen_walked": health_half_ran,
             "class_3_health_figures_compared": health_compared,
+            "class_3_episode_figures_compared": episode_compared,
             "class_3_contradictions": len(contradictions) if class_3_ran else None,
             "detail": [str(c) for c in contradictions[:20]],
             "asserted_in": "tests/test_provenance_failures.py",

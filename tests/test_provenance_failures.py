@@ -214,8 +214,10 @@ class TestClassThreeAtTheConsole:
 
         if not Path("data/cache/investigation_run.json").exists():
             pytest.skip("no cached run; this check needs the published artifacts")
-        found = contradictions_in_console(RunStore())
-        assert found == (), [str(c) for c in found]
+        result = contradictions_in_console(RunStore())
+        assert result.contradictions == (), [str(c) for c in result.contradictions]
+        # The denominator, because zero contradictions over zero figures is not a clean result.
+        assert result.compared > 100, result.compared
 
     def test_the_scoping_trap_is_real(self) -> None:
         """Fact ids restart per episode, so an unscoped map compares unrelated things.

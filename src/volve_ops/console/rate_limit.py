@@ -34,6 +34,7 @@ demo bound whose purpose is to stop a loop, not to shape traffic precisely.
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -51,26 +52,49 @@ UNKNOWN_CLIENT: Final[str] = "unknown"
 FORWARDED_CLIENT: Final[str] = "forwarded-untrusted"
 
 
-def client_key(peer: str | None, forwarded_for: str | None) -> str:
+#: Headers that can carry a client address a caller chose. The presence of any of them means this
+#: process cannot vouch for the peer it was handed.
+FORWARDING_HEADERS: Final[tuple[str, ...]] = (
+    "x-forwarded-for",
+    "x-real-ip",
+    "forwarded",
+    "x-client-ip",
+    "x-cluster-client-ip",
+    "true-client-ip",
+    "cf-connecting-ip",
+)
+
+
+def client_key(peer: str | None, forwarding_headers_present: bool) -> str:
     """The bucket key for one request, refusing to trust an address a caller may have chosen.
 
     `peer` is `request.client.host`, which a proxy-headers middleware may already have replaced
-    with a value out of `forwarded_for`. There is no way to recover the true peer once that has
-    happened, so the test is whether the address we were handed appears in the header: if it does,
-    this process cannot tell a real proxy from a caller inventing hops, and everything in that
-    position shares one bucket.
+    with a value out of a header. **The rule is presence, not matching**: if any forwarding header
+    is on the request, everything in that position shares one bucket.
 
-    The cost is real and is the documented trade: behind a genuine proxy every client is throttled
-    together. That is the safe direction, and `--no-proxy-headers` is the fix for a deployment
-    that is not behind one.
+    The first version tried to detect the rewrite instead, by asking whether the peer appeared in
+    the hop list of `X-Forwarded-For`. That closed the attack it was written for and not the next
+    one. uvicorn's `ProxyHeadersMiddleware` builds `dict(scope["headers"])`, which keeps the
+    **last** of two header lines with the same name; Starlette's `headers.get` returns the
+    **first**. So two `X-Forwarded-For` lines put the peer uvicorn installed outside the hop set
+    the application read, the match failed, and the attacker's rotating string became the key: 300
+    requests out of 300 through a limit of 60.
+
+    Matching is a parsing problem with a long tail — comma forms, ports, IPv6 brackets, duplicate
+    lines, RFC 7239's `Forwarded`, and whatever the next middleware does. Presence is one boolean
+    and has no tail. The cost is the documented one: behind a real proxy every client shares a
+    bucket, which throttles everyone rather than nobody, and `scripts/serve_console.py` runs
+    uvicorn with proxy headers off so the peer is the peer.
     """
-    if not peer:
-        return UNKNOWN_CLIENT
-    if forwarded_for:
-        hops = {hop.strip() for hop in forwarded_for.split(",") if hop.strip()}
-        if peer in hops:
-            return FORWARDED_CLIENT
-    return peer
+    if forwarding_headers_present:
+        return FORWARDED_CLIENT
+    return peer or UNKNOWN_CLIENT
+
+
+def forwarding_header_present(header_names: Iterable[str]) -> bool:
+    """Whether any header on the request can carry a caller-chosen address."""
+    lowered = {name.lower() for name in header_names}
+    return any(name in lowered for name in FORWARDING_HEADERS)
 
 
 @dataclass

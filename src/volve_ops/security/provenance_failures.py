@@ -315,7 +315,7 @@ def contradictions_in_health(
     )
 
 
-def contradictions_in_console(store: RunStore) -> tuple[Contradiction, ...]:
+def contradictions_in_console(store: RunStore) -> ComparisonResult:
     """Class 3 over the whole console, with each payload judged against its own episode's facts.
 
     The safe entry point. Fact ids are per-episode, so a single map across the cache compares
@@ -324,20 +324,26 @@ def contradictions_in_console(store: RunStore) -> tuple[Contradiction, ...]:
     from volve_ops.console import assemble
 
     found: list[Contradiction] = []
+    compared = 0
     queue = assemble.queue(store)
     for row in queue.rows:
         record = store.by_id(row.investigation_id)
         artifacts = store.artifacts_for(str(record["well"]), str(record["onset"]))
         fact_values = {str(f["id"]): float(f["value"]) for f in artifacts.facts}
         payload = assemble.detail(store, row.investigation_id)
-        found.extend(
-            figures_contradicting_their_records({row.investigation_id: payload}, fact_values)
-        )
+        result = compare_figures({row.investigation_id: payload}, fact_values)
+        found.extend(result.contradictions)
+        compared += result.compared
 
     # The health screen is NOT walked here. It is a separate question with a separate answer, in
-    # `contradictions_in_console_and_health`, because whether it can be walked depends on files
-    # this function must still run without.
-    return tuple(found)
+    # `health_contradictions`, because whether it can be walked depends on files this function
+    # must still run without.
+    #
+    # The denominator is this half's, and it is the half that can go to zero: an empty queue walks
+    # no payload at all. Mark 8's first vacuity guard watched the **health** half, whose count is
+    # structurally fixed by the screen's own shape, so a run over an empty queue still reported
+    # clean. 198 figures on real data, 0 on an empty one, and only one of those is a result.
+    return ComparisonResult(contradictions=tuple(found), compared=compared)
 
 
 def health_contradictions(store: RunStore) -> tuple[ComparisonResult, bool]:

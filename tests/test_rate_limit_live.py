@@ -113,3 +113,48 @@ class TestTheBoundHoldsOverRealHttp:
             f"{allowed} requests allowed through a limit of {MAX_REQUESTS_PER_MINUTE} by rotating "
             "a header the caller controls"
         )
+
+    def test_duplicate_header_lines_do_not_buy_more_requests(self, server: str) -> None:
+        """The attack the first repair did not close.
+
+        uvicorn's `ProxyHeadersMiddleware` builds `dict(scope["headers"])`, which keeps the last
+        of two lines with the same name; Starlette's `headers.get` returns the first. So two
+        `X-Forwarded-For` lines put the peer uvicorn installed outside the hop set the application
+        read, a repair that matched one against the other failed to fire, and 300 requests out of
+        300 went through a limit of 60.
+        """
+        from volve_ops.console.limits import MAX_REQUESTS_PER_MINUTE
+
+        allowed = 0
+        with httpx.Client(base_url=server, timeout=5.0) as client:
+            for index in range(MAX_REQUESTS_PER_MINUTE * 3):
+                request = httpx.Request(
+                    "GET",
+                    f"{server}/api/health",
+                    headers=[
+                        (b"x-forwarded-for", b"1.1.1.1"),
+                        (b"x-forwarded-for", f"10.0.{index // 250}.{index % 250}".encode()),
+                    ],
+                )
+                allowed += client.send(request).status_code == 200
+        assert allowed <= MAX_REQUESTS_PER_MINUTE, (
+            f"{allowed} allowed through a limit of {MAX_REQUESTS_PER_MINUTE} by sending two "
+            "X-Forwarded-For header lines"
+        )
+
+    @pytest.mark.parametrize(
+        "header", ["X-Real-IP", "Forwarded", "CF-Connecting-IP", "True-Client-IP"]
+    )
+    def test_other_forwarding_headers_do_not_buy_more_requests(
+        self, server: str, header: str
+    ) -> None:
+        """Presence, not matching, is the rule, so the whole family is covered by one test shape."""
+        from volve_ops.console.limits import MAX_REQUESTS_PER_MINUTE
+
+        with httpx.Client(base_url=server, timeout=5.0) as client:
+            allowed = sum(
+                client.get("/api/health", headers={header: f"10.9.{index % 250}.4"}).status_code
+                == 200
+                for index in range(MAX_REQUESTS_PER_MINUTE * 2)
+            )
+        assert allowed <= MAX_REQUESTS_PER_MINUTE

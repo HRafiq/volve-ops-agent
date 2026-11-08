@@ -112,7 +112,7 @@ async def bound_requests(request: Request, call_next: Any) -> Response:
     # for into a single shared bucket.
     client = rate_limit.client_key(
         request.client.host if request.client else None,
-        request.headers.get("x-forwarded-for"),
+        rate_limit.forwarding_header_present(request.headers.keys()),
     )
     limiter = rate_limit.limiter_for(request.url.path)
     allowed, remaining = limiter.check(client)

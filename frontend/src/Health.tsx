@@ -166,6 +166,13 @@ export function Health({ health }: { health: SystemHealth }): JSX.Element {
             {health.retrieval_ablation.map((row) => (
               <tr key={row.label}>
                 <td>{row.label}</td>
+                {/* A boolean is the per-episode outcome and its words are in the note; anything
+                    else is a figure and must render as one. Dropping the value column to avoid
+                    the pass/FAIL formatter also dropped the population figure, which is the one
+                    this phase corrected from one to two. */}
+                <td className="figure">
+                  {typeof row.value.value === "boolean" ? null : <Figure figure={row.value} />}
+                </td>
                 <td className="note" title={row.value.source}>
                   {row.note}
                 </td>

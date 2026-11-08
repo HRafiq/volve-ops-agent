@@ -78,11 +78,11 @@ class RunStore:
         return json.loads(path.read_text(encoding="utf-8"))
 
     def manifests(self) -> dict[str, Mapping[str, Any]]:
-        """The five run manifests, by the name the results table refers to them by.
+        """The six run manifests, by the name the results table refers to them by.
 
         The six of `MANIFESTS`, the same map the section 19.3 coverage gate uses, so a source
-        string that
-        resolves for the console resolves for the gate and the two cannot drift apart.
+        string that resolves for the console resolves for the gate and the two cannot drift
+        apart.
         """
         return {name: self._read(self.cache / file) for name, file in MANIFESTS.items()}
 

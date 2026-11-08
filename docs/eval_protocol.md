@@ -790,11 +790,12 @@ and 1, so a flipped flag is a contradiction; every derived figure on the screen 
 leaf it came from rather than the container, because a source naming a container is one mark 1
 accepts and class 3 cannot compare. One container source remains and is not an oversight: the
 expectation ablation is a `SourcedTable`, amendment 10's declared exemption, bounded by a row count
-that does resolve rather than by per-cell sources; and twelve tests build synthetic payloads and manifests, of
-which six make the value check fail and two are negative controls, so it runs on every push without
-a dataset. Six of those twelve pin the manifest side of the comparison and six the payload side:
-the payload side was unpinned until a third pass removed its list descent and watched all 909 tests
-still pass. That last point was its own hole: the health
+that does resolve rather than by per-cell sources; and twelve tests build payloads and manifests, of which five
+make the value check fail and two are negative controls. Seven pin the manifest side of the
+comparison and five the payload side, and eleven of the twelve are synthetic, so the check runs on
+every push without a dataset. The payload side was unpinned until a third pass removed its list
+descent and watched all 909 tests still pass. A fourth pass corrected the counts in this sentence,
+which had been written as six and six. That last point was its own hole: the health
 checks lived only in a module that skips without `data/cache/` and in a harness step that skips for
 the same reason, so this check ran in neither.
 
@@ -814,6 +815,19 @@ run: the evidence-derived score places 14 findings in 3 bands with a spread of 0
 prior places all 14 in `moderate`. The result is published with what it cannot show, which is that
 there is no ground truth for whether a band was right and that four of the five features are derived
 from inputs to the verdict.
+
+**Four more, found by a fourth pass over the third pass's work.** Mark 8's new vacuity guard
+watched the health half of class 3, whose denominator is fixed by the screen's own shape and cannot
+reach zero; the half that can is the per-episode one, which is the half whose vacuity was the
+reported defect. An empty queue still reported clean over nothing. Both halves publish a
+denominator now and both are guarded. The new test for the payload-side walk guarded on one of the
+eight manifests the health screen reads, so a cache holding only that one turned a skip into a hard
+failure — and that is the state `scripts/check_like_ci.sh` leaves its own checkout in, so the
+project's CI-simulating script went red; the correct guard was already in the file next door. The
+repair that stopped rendering an ablation outcome as pass or FAIL dropped the value column
+entirely, taking with it the retrieval population figure this amendment makes its centrepiece. And
+the README's file and test counts went stale again in the same commit that corrected two other
+figures three lines away.
 
 **Four things this amendment did not record until a third pass.** Section 22.5 requires the attack
 fixtures to be "committed"; they are generated in memory by builder functions, which a reader can
@@ -854,8 +868,19 @@ deployment this project documents the peer address was already the caller's own
 `X-Forwarded-For` value, and a rotating header took 100 requests out of 100 through a limit of 60.
 The module said the header was never consulted, which was true of the file and false of the
 process, and the test asserting it ran under a client that never loads the middleware that does the
-rewriting. An address this process cannot vouch for now collapses to one shared bucket, and the
-test runs against a real server.
+rewriting.
+
+**That repair did not close it either, and a fourth pass measured the hole.** It compared the peer
+against the hop list of `X-Forwarded-For`, which works for one header line. uvicorn's middleware
+builds `dict(scope["headers"])` and keeps the **last** of two lines with the same name; Starlette's
+`headers.get` returns the **first**. Two lines therefore put the peer outside the set being checked,
+the match did not fire, and the attacker's rotating string became the key again: 300 requests out of
+300. Matching an address against a header is a parsing problem with a long tail — comma forms,
+ports, IPv6 brackets, duplicate lines, RFC 7239's `Forwarded`, and whatever the next middleware
+does. The rule is now presence rather than matching: **any forwarding header at all, and the request
+is keyed into one shared bucket.** One boolean, no tail. Seven attack shapes are tested against a
+real uvicorn, and `scripts/serve_console.py` — named in the module's docstring for a round before it
+existed — runs the server with proxy headers off.
 
 **Mark 9 gates nothing.** Section 22.4's preamble says every mark fails the build when it fails. The
 ablation manifest is read by the console and, for key existence, by mark 11; nothing asserts that

@@ -58,9 +58,14 @@ indistinguishable from one that checks nothing.
 These are stated because a security document that lists only defences is a marketing document.
 
 - **The rate limiter is per process** and keyed by the peer address. Two workers each allow the
-  full rate. `X-Forwarded-For` is not trusted, so behind a proxy every client shares one bucket,
-  which throttles everyone rather than nobody. Its window is fixed, so up to twice the limit can
-  arrive across a window boundary.
+  full rate. Its window is fixed, so up to twice the limit can arrive across a window boundary.
+- **A request carrying any forwarding header is keyed into one shared bucket.** No forwarding
+  header is trusted, and the process cannot tell a real proxy from a caller inventing hops, so
+  everything in that position is throttled together. That is the safe direction and a blunt one.
+- **Run it with `scripts/serve_console.py`, not bare uvicorn.** uvicorn defaults
+  `proxy_headers=True` with `forwarded_allow_ips="127.0.0.1"`, which on loopback lets any caller
+  set the address this process sees. The application defends itself as above; the script removes
+  the ambiguity. Behind a real reverse proxy, configure uvicorn with that proxy's address instead.
 - **The audit hook witnesses, it does not sandbox.** It records file opens, network connections,
   subprocess launches and dynamic compilation during a run. Nothing in it prevents any of them.
 - **Three of the design brief's seven injection invariants are vacuous here** and are reported as

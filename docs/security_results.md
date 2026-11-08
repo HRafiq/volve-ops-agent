@@ -138,9 +138,24 @@ Bounds, fixed in section 22.8 before they were implemented: 4,000 characters for
 a bound is refused with the limit in the error rather than truncated, because the review log is
 append-only and a shortened correction is a falsified record.
 
-The rate limiter's own limits are stated in its module and are real: one process, keyed by peer
-address with `X-Forwarded-For` deliberately not trusted, and a fixed window that admits a burst at
-the boundary. It stops a loop; it is not traffic shaping.
+The rate limiter's own limits are stated in its module and are real: one process, a fixed window
+that admits a burst at the boundary, and a key that is the peer address **only when no forwarding
+header is on the request**. It stops a loop; it is not traffic shaping.
+
+That last clause was three attempts in the making and is the most instructive thing in this phase.
+uvicorn defaults to trusting proxy headers on loopback, so in the deployment this project
+documents the peer address had already been replaced by the caller's own `X-Forwarded-For` before
+any of this code ran: a rotating header took 100 requests out of 100 through a limit of 60, while
+the module's docstring said the header was never consulted and the test asserting it passed under
+a client that never loads the middleware doing the rewriting.
+
+The first repair compared the peer against the header's hop list. That closed the attack it was
+written for and not the next one: uvicorn keeps the **last** of two header lines with the same
+name and Starlette returns the **first**, so two lines put the peer outside the set being checked
+and 300 requests of 300 went through. Matching is a parsing problem with a long tail. The rule is
+now presence: any forwarding header at all, and the request is keyed into one shared bucket. That
+fails closed, which is what the module claimed from the start and did not do, and
+`scripts/serve_console.py` runs uvicorn with proxy headers off so the peer is the peer.
 
 ## Provenance failures
 

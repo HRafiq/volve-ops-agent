@@ -24,7 +24,7 @@ honestly. Several did, and this README says which.
 The hold-out has never been scored and never been looked at. Phase 4's leakage audit exists to prove
 that mechanically rather than assert it, and it gates the build.
 
-181 tracked files, 909 tests, ruff and mypy strict clean. No model is called by any layer yet: every
+183 tracked files, 921 tests, ruff and mypy strict clean. No model is called by any layer yet: every
 component runs deterministically, which is what makes it testable.
 
 ## What the data refused to support
@@ -265,7 +265,7 @@ The console needs its optional extra, and serves itself from the API process:
 
 ```bash
 pip install -e ".[console]" && npm --prefix frontend install && npm --prefix frontend run build
-python -m uvicorn api.main:app --port 8000
+python scripts/serve_console.py --port 8000
 ```
 
 The last one is the gate: it exits non-zero on a leakage finding or an unreported figure. Raw and

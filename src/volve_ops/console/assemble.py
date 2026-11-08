@@ -920,6 +920,23 @@ def _episodes_opened_by_selected(
     )
 
 
+def _outcome_label(row: Mapping[str, Any]) -> str:
+    """The harness's own words for what the ablation moved.
+
+    Raises `ArtifactMissing` rather than `KeyError` when the manifest predates the field, so the
+    API answers 404 with the store's own message about running the harness first. `api/main.py`
+    catches `ArtifactMissing` and nothing else, so a bare key access turned an old manifest into
+    a 500, which is a server fault rather than a missing artifact.
+    """
+    label = row.get("outcome_label")
+    if label is None:
+        raise ArtifactMissing(
+            "the ablation manifest predates the retrieval outcome labels; re-run "
+            "scripts/run_ablations.py before serving a screen that reads them"
+        )
+    return str(label)
+
+
 def _level_text(level: object) -> str:
     """A causal level for a reader. `None` is a level the finding never reached, not the word."""
     return "no causal level" if level in (None, "None") else str(level)
@@ -1000,7 +1017,11 @@ def system_health(store: RunStore) -> SystemHealth:
             ),
         )
         for metric, value, source in (
-            ("Invariants held", injection["invariants_held"], "security.injection.invariants_held"),
+            (
+                "Held results recorded",
+                injection["invariants_held"],
+                "security.injection.invariants_held",
+            ),
             (
                 "Figures contradicting their records",
                 provenance["class_3_contradictions"],
@@ -1138,7 +1159,7 @@ def system_health(store: RunStore) -> SystemHealth:
                     # harness, in the note, and the flag is what class 3 compares.
                     row["level_changed"],
                     f"ablation.retrieval.rows.{index}.level_changed",
-                    note=f"{row['outcome_label']}: {_level_text(row['highest_level_with'])} with "
+                    note=f"{_outcome_label(row)}: {_level_text(row['highest_level_with'])} with "
                     f"the document, {_level_text(row['highest_level_without'])} without it",
                 )
                 for index, row in enumerate(retrieval["rows"])
