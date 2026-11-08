@@ -1,14 +1,29 @@
 # Evaluation protocol
 
-Version: v11
-Date: 2026-10-07
+Version: v15
+Date: 2026-10-08
 Status: pre-registered. Pushed before the work it judges.
-Amendments since v0: eight, recorded in section 13 and every one labelled post-inspection. Five of
+Amendments since v0: eleven, recorded in section 13 and every one labelled post-inspection. Five of
 them correct pass marks that could not fail, which is this project's recurring defect and is named as
-such in amendments 6, 7 and 8.
+such in amendments 6, 7 and 8. Amendment 9 corrects a factual claim rather than a check.
 New in v7 to v11: sections 19 and 20 and the amendments correcting them. Amendment 7 records three more
 marks that could not fail, a pre-registered gate dropped with the count rewritten around it, five holes
 in the correction store, and the thresholds section 20 promised to state and did not.
+New in v15: amendment 11 records what the console published that no gate could see: 198 of 198
+drawer figures attributed to facts recording different numbers, a false calibration claim on every
+detail screen, a queue that asserted the review log was empty while never reading it, and three
+bounds that could not fail. It also records that section 8's calibration condition has never been
+evaluated for the model in use.
+New in v14: amendment 10 declares mark 1's exemption for a table of records, bounded by a row count
+the gate checks, and records the three figures section 21.1 forced into a manifest rather than letting
+the console derive them. One of those, the selected model's lower-tail rate, is 0.563 against a band
+of 0.05 to 0.20.
+New in v13: amendment 9 corrects two statements about the priority rule that were wrong when v12 was
+pushed, caught by writing one of them as a test and watching it fail.
+New in v12: section 21 fixes the operator console, before any of it is built. Its first rule is that
+the console renders and does not compute, because a display that computes is a second implementation of
+the domain, and sections 14.3 and 20.2 both record what happens when one of those is mistaken for a
+verification. ADR 0009 settles the priority rule the console design left open.
 New in v11: amendment 8, which is about amendment 7. A second independent review checked amendment 7's
 claims against the code and three of them did not hold. **There is no `prereg-v10` tag**: v10 was written
 and never pushed, because the review that produced v11 arrived first, so both amendments ship in the
@@ -721,6 +736,151 @@ this document was silent on it until amendment 6. The rule now: an amendment tha
 which has just failed must state what the check was examining when it failed, why the failure was the
 check's rather than the project's, and what still audits the thing the check was supposed to audit. If
 it cannot, the finding stands and the project is in breach, not the check.
+
+### Amendment 11, v14 to v15: what the console published that no gate could see
+
+Date: 2026-11-08. Made **after** the console was built and served, labelled as such, prompted
+entirely by independent review. It corrects two false published claims, widens one pass mark,
+narrows another, and records a pre-registered clause that was never honoured.
+
+**The limit of mark 1, stated plainly, because this is the lesson.** Mark 1 asks whether a figure's
+source resolves. It does not ask whether the figure **came from** that source, and it cannot see a
+figure written into a string. Both gaps were exploited, by me, in the same phase that wrote the mark.
+
+**1. Every evidence drawer attributed its figures to facts recording different numbers.** The drawer
+published two window medians from the investigation manifest and attached **fact ledger ids** as
+their sources. `fact_000002` records a reference rate of 3,052.735 Sm3/d; the drawer published
+4,351.41 Sm3/d under its id, a different quantity from the same manifest row. `fact_000001` is a
+volume in Sm3; its id sat on a rate in Sm3/d. Review measured **198 of 198** fact-sourced leaves
+mis-attributed, across 66 drawers in all 14 investigations. Every source resolved, so mark 1 passed
+on all of them.
+
+The fix is structural rather than another gate. A ledger fact is now its own object carrying the
+ledger's value, so the two cannot be different numbers, and every other figure is sourced to the
+manifest key it came from. Mark 1's wording gains a clause: a source must name **where the figure
+came from**, and a figure sourced to a fact must carry that fact's value.
+
+**2. A false calibration claim on all fourteen detail screens, in the README and in the results
+table.** The expectation panel said "section 8's coverage bar is missed by two to four times on both
+qualifying wells". Three errors in one sentence. Section 8 bands the **lower-tail exceedance rate**
+and reports two-sided coverage without a pass mark, so there is no coverage bar. "Two to four times"
+belongs to the two **candidate** models, 0.302 and 0.387 against a nominal 0.10, not to two wells.
+And no per-well figure exists for the selected model at all.
+
+That last point is a disclosure rather than a wording fix, and it goes in section 8's record:
+**`condition_2_lower_tail` has never been evaluated for `naive-median28`.** The conditions are
+applied to candidates; this model is the fallback the protocol selects when no candidate passes;
+nothing runs the condition on a fallback. The model in use has not been through the calibration
+condition, its pooled lower-tail rate is **0.5632** at a 7-day horizon against a permitted 0.05 to
+0.20, and both facts are now on the screen where the band is drawn.
+
+**3. The queue never read the review log.** `review_state` was hardcoded, every row said "Not
+reviewed", and a KPI denominator **asserted** "none has been reviewed; the review log is empty".
+Review confirmed a finding through the API and all three statements went on standing. So the
+priority rule's review term could never fire, which makes it dead rather than inert, and ADR 0009's
+"the review term fires on nothing until someone uses this console" was false in a way the ADR did
+not intend: it fired on nothing afterwards too. Mark 8 could not catch it, because the harness fed
+the gate a hardcoded `"none"` rather than the payload's own state, so the gate agreed with the
+payload by construction on exactly the broken term.
+
+**4. Amendment 10's third bound was violated by the exemption's only user, and nothing checked it.**
+"Only a record qualifies, never a result." `ChartSeries` carries `expected`, `lower`, `upper` and
+`below_band`: the model's output and the detector's comparison against it, four of ten columns,
+across 1,883 rows.
+
+The bound is **narrowed rather than enforced**, and section 13 requires the justification. A chart of
+actuals with no expectation is not the chart an operator needs, and splitting the band into 1,090
+sourced figures is what the exemption exists to avoid. So: a derived column may live in a table when
+it is **declared** in `derived_columns` and comes from the same artifact as the records beside it,
+and the gate refuses a result-shaped column that is not declared. What still audits the thing is
+that the declaration is published in the payload type where a reader meets it, and that the gate now
+fails on an undeclared one, which it did not before.
+
+**5. Amendment 10's row-count bound could not fail on two classes of input.** A non-numeric count and
+a missing rows field both returned the same sentinel, so they cancelled: a table carrying three
+unsourced floats in a dict with a null count passed outright. And the row count was compared against
+the **first** list-shaped field, so a subclass declaring any other list first had its count checked
+against the wrong one, smuggling seven rows under a declared count of two. The sentinels are
+separated and the rows field is declared. Both were the Phase 3 sentinel lesson recurring.
+
+**6. Section 21.2 described a mechanism that was never built.** It says the mockup's figures "are
+enumerated in the test suite" and that "the built console's payloads and source are searched for each
+one". They are extracted at check time by shape, and only the payloads are searched. The reason is
+sound, and `docs/console_results.md` has been honest about it since it was written: the mockup is a
+local-only file and listing its contents in a tracked file would publish private material to make a
+test convenient. But section 13 says this document is never silently edited, and a code comment
+citing "amendment 11" for a change no amendment recorded is the gap this amendment closes. Section
+21.2 now says what the mark does.
+
+**7. Section 21.8's gate clause was false.** "The results table covers every figure the API serves."
+`console_run.json` is not among the manifests the section 19.3 coverage gate walks, so none of its
+figures has a row, and `/facts` and `/trace` serve 524 bare numeric leaves outside mark 1's scope
+entirely. The clause is corrected to what holds: the table covers every figure in the **five run
+manifests**, and mark 1 covers every figure in the **assembled payloads**. The two artifact routes
+serve the artifacts verbatim and are declared as doing so.
+
+### Amendment 10, v13 to v14: mark 1's exemption for a table of records, declared rather than finessed
+
+Date: 2026-11-08. Made **after** the first payloads were assembled, labelled as such. It widens a
+pass mark, which section 13 requires a justification for, and states what still audits the thing.
+
+Section 21.6 mark 1 as pushed says **every** figure in every API payload resolves to a manifest key
+or a fact id. The investigation screen's chart is 109 days of ten channels: **1,090 numbers**, every
+one from the same artifact, written by the same harness in one pass. Wrapping each in a source
+object would repeat one answer a thousand times, and mark 1's purpose is that a reader can ask where
+a number came from, not that the answer be restated beside each one.
+
+So a payload may carry a **table of records** whose rows are vouched for collectively, and three
+things bound the exemption:
+
+1. **The table declares its own source**, which must resolve like any other, and an `artifact:`
+   source resolves by the file a harness wrote actually existing.
+2. **The table publishes its row count as an ordinary sourced figure**, and the gate checks that
+   count against the rows the table actually carries. A table cannot then vouch for rows it does not
+   have, which is the failure this exemption would otherwise open.
+3. **Only a record qualifies, never a result.** A daily production rate is what the source says
+   happened; a shortfall, a share, a count or a score is a figure this project computed, and none of
+   those may live in a table. The exemption covers exactly one payload type today, the chart series,
+   and adding a second is an amendment.
+
+Two other source kinds were added at the same time and are narrower. An `artifact:` source names a
+per-episode file. An **event id** resolves against the event store rather than against the artifact
+citing it, which matters: a finding citing an event the store does not hold is the defect section
+18.6's provenance gate exists to catch, so taking the resolvable set from the citing document would
+have made that unfindable here too.
+
+**What section 21.1 forced on the way**, recorded because it is the rule working rather than failing.
+Three figures the console needs existed nowhere a reader could get them, and in each case the harness
+that owns the figure was extended rather than the console allowed to derive it: the per-episode
+shortfall, duration and rates; six queue aggregates; and the selected model's **lower-tail rate**,
+which existed only inside a condition's detail string. That last one is worth stating as a result
+rather than a plumbing note. At the 7-day horizon it is **0.563** against a section 8 band of 0.05 to
+0.20, so 56 percent of evaluated days fall below a bound that permits at most 20. The console's
+expectation panel shows that number where the line is drawn, because an operator reading a band has
+to know it does not calibrate.
+
+### Amendment 9, v12 to v13: a factual claim in section 21.5 that was wrong when it was pushed
+
+Date: 2026-10-08. Made **after** the priority rule was computed over the development episodes, labelled
+as such. No threshold moves and no pass mark changes; what changes is a sentence about the rule.
+
+Section 21.5 as pushed said that **two** of the rule's four terms fire on nothing in a first run, and
+ADR 0009 as written concluded from that the rule "reduces to shortfall plus duration" on this dataset.
+One term does fire on nothing: no episode has a review state until an operator creates one. The other,
+an unresolved verdict in an attention band, fires on **5 of 14**, and removing it moves the single HIGH
+episode to MEDIUM and leaves the queue with no HIGH case at all.
+
+So the rule does not reduce to shortfall plus duration, and the term that distinguishes it is the only
+thing in the rule that earns a promotion on this data. Both corrected statements are now in 21.5 and in
+the ADR.
+
+**How it was caught, because that is the transferable part.** The claim was written into a test as an
+assertion, and the test failed. The first draft of ADR 0009 also carried two wrong term counts, 4 and 3
+where the manifests say 5 and 5, taken from a scratch script rather than from the published run. Phase
+5 ended with four rounds of review finding figures asserted rather than computed, and the first
+pre-registration written after it repeated the pattern inside a day. The rule that survives: **write the
+claim as an executable assertion in the same change that publishes it.** A sentence in a protocol has no
+test; the same sentence as a test does.
 
 ### Amendment 8, v10 to v11: what amendment 7 claimed and did not deliver
 
@@ -2152,3 +2312,151 @@ the copy. What the comparison therefore establishes is that the per-block arithm
 the aggregation and the event-store write are written twice and agree; a defect inside any of the six
 shared functions would be invisible to it. Section 14.3 covers the shared traversal separately, against
 the source rather than against another copy of this code.
+
+## 21. The operator console
+
+Pre-registered before any of it is built, and pushed before it renders a figure. The console is the first
+layer in this project whose output is read by someone who will not read the code, which changes what can
+go wrong: every previous phase's defects were checks that could not fail, and a display's defect is a
+figure that looks authoritative and came from nowhere.
+
+The design thesis has to be visible in the interface rather than asserted in a README: deterministic
+systems establish the facts, provenance establishes where each fact came from, the agent decides what
+evidence to seek, and abstention is mandatory when the evidence does not support a conclusion.
+
+### 21.1 What the console may and may not do
+
+**It renders. It does not compute.** Every figure it shows is read from a run manifest, through an API
+that serves what the manifest holds. Where the console needs a figure no manifest carries, the harness
+that owns that figure is extended to publish it and the results table gains a row for it; the API does
+not derive it, and the frontend never does arithmetic on a domain value. Formatting is not computing: a
+figure may be rounded for display, with the unrounded value in the payload.
+
+This is the one rule that makes the rest checkable. A console that computes is a second implementation of
+the domain, and section 14.3 and section 20.2 both record what happens when a second implementation is
+mistaken for a verification.
+
+**It is read-only except for review records.** There is no actuation path, no write to the event store, no
+write to the correction store, and no mutation of a finding. A review action appends a record and nothing
+else. "Request more evidence" creates a new investigation run; it never edits the old one.
+
+**No model is called to produce anything the operator reads as fact.** The priority rule, the evidence
+cells, the causal level and the verdict are all deterministic and already computed upstream.
+
+### 21.2 Figures that must not appear
+
+The design mockup is full of illustrative numbers: pass marks, an oil price, a rig day rate, fact ids,
+hashes, version names, episode dates, well results and NPT hours. **None of them may reach the built
+console.** This is a gate and not a guideline, because a placeholder that survives into a published
+screenshot is indistinguishable from a result.
+
+Checked mechanically: the mark extracts the mockup's figures **at check time** by shape and
+searches the built console's payloads for each one. A match fails the build.
+
+Not enumerated in the test suite, which is what this section said until amendment 11. The mockup is a
+local-only file and listing its contents in a tracked file would publish private material to make a
+test convenient. The mark reports examining **nothing** when the mockup is absent, so a skipped check
+is not mistaken for a passed one, and what stands in a clone without it is mark 1, which makes an
+invented figure unconstructible rather than merely detectable.
+
+### 21.3 Provenance, at the same standard as section 18.6
+
+Every number on an investigation screen resolves to a fact id or a manifest key, and every quoted span
+resolves to a document, a section and a character range. The evidence drawer shows the object behind the
+cell rather than a restatement of it: for a fact, the metric, both window values with their dates, the
+source table, the transformation and the input record count; for a document span, the file, the date, the
+section, the offsets and the hash; and for an absence, the corpus searched, the filters, the queries
+issued and the count examined.
+
+**An absence is an object.** "No supporting report found" is a retrieval record with its own id, not a
+blank cell, for the reason section 18.6 gives: a conclusion drawn from nothing looks identical to a
+conclusion drawn from something unless the nothing is recorded.
+
+### 21.4 Abstention is a first-class screen state
+
+A finding with `insufficient_evidence` renders as a structured account of what was available and what was
+missing, each line naming the specific channel or document. It is not an error, not an empty table, and
+not a greyed-out version of a real answer. The operator-facing label is "Insufficient evidence, no
+conclusion issued", and the words "abstained" and "success mode" do not appear outside System Health.
+
+### 21.5 The priority rule
+
+Fixed here, before the queue renders, and ADR 0009 records why it takes this form and what it cannot
+demonstrate.
+
+- cumulative shortfall at or above **30,000** Sm3 scores 3, at or above **10,000** Sm3 scores 2, else 1;
+- plus 1 if the episode lasts **40** days or more;
+- plus 1 if review is pending;
+- plus 1 if no single explanation is supported **and** the section 19.4 evidence band is `high` or
+  `moderate`;
+- total **5** or more is HIGH, **3** to 4 is MEDIUM, 2 or less is LOW.
+
+Printed under the table with each row's score, and printed with the count of episodes each term fires
+on, because the review term fires on nothing until an operator uses the console and a rubric must not
+imply otherwise. The thresholds do not move after this section is pushed.
+
+Two measurements accompany the rule wherever it is printed, both in ADR 0009. The choice between the
+clause above and the blunter form, a point for any unresolved verdict, changes the band of **0 of 14**
+episodes, so this dataset cannot tell the two apart. Removing the term altogether moves the single HIGH
+episode to MEDIUM and leaves the queue with no HIGH case, so the term is the one thing in the rule that
+earns a promotion here. Both statements are published because the first alone would read as the term
+being inert, which it is not.
+
+### 21.6 Pass marks that gate
+
+Each is a function with a test that makes it fail, and each reports what it examined. The pattern across
+five phases is that a gate written as an expression in the script that produces the thing it checks cannot
+fail, and the correction is structural rather than a matter of care.
+
+1. **Every figure in every API payload resolves to a manifest key, a fact id, an event id, an
+   artifact file or a pre-registered rule, and the source names where the figure came from.** 100
+   percent. The second clause is amendment 11's, and it is the half mark 1 was missing: a source
+   that resolves is not the same as a source the figure came from, and 198 of 198 fact-sourced
+   leaves were attributed to facts recording different quantities while every one of them resolved.
+   A figure sourced to a ledger fact must carry that fact's value. A payload field that resolves to none of
+   those fails the build, which is the console's version of section 19.3's two directions: every
+   served figure has a source, and every source the console claims is real. Amendment 10 adds the
+   last three kinds and the one exemption: a **table of records** may be vouched for by one source
+   plus a row count the gate checks against the rows actually present, which covers the chart series
+   and nothing else.
+2. **No mockup placeholder appears**, section 21.2, checked against the enumerated list.
+3. **No hold-out well appears in any payload or any rendered view**, section 16. 100 percent, checked on
+   the payloads the API actually serves rather than on the filter that builds them.
+4. **Abstention renders as its own state**, section 21.4, checked by rendering a finding with
+   `insufficient_evidence` and asserting the available and missing lists are both present and non-empty.
+5. **Every money figure carries its assumption**, section 20.3's rule applied to a display: the
+   assumption is in the same payload field group as the number, and a figure without one is refused
+   before it is served.
+6. **The review log is append-only.** A confirmed finding cannot be edited, a correction creates a
+   revision, and "request more evidence" creates a new run. Checked by attempting each mutation.
+7. **The API is read-only outside the review log.** Checked by enumerating every route and asserting that
+   no non-review route accepts a method other than GET.
+8. **The priority rule computed in the backend equals the rule as printed**, section 21.5, checked
+   by recomputing every row from the printed rule and comparing, **using each row's own inputs**.
+   The last clause is amendment 11's: the harness fed the gate a hardcoded review state, so the gate
+   agreed with the payload by construction on the one term that was broken.
+
+### 21.7 Deferred, with what would settle each
+
+**Whether the priority rule orders the queue well.** Fourteen episodes, one HIGH, and ADR 0009 shows the
+disputed term changes no band. What would settle it: a dataset with review history, and episodes whose
+missing evidence is obtainable.
+
+**Whether an operator can answer the eight questions the console is designed around** without leaving the
+page. That is a usability result and needs operators. What would settle it: a session with people who do
+this work, which this project has no access to.
+
+**Prose quality of the generated summary.** No model is called, so there is no generated prose to judge,
+and section 19.8's rubric stays unexercised.
+
+### 21.8 The Phase 6 gate
+
+All eight marks of 21.6 pass. The three curated cases render, including the abstention case. The
+hold-out is untouched, which section 19.2 checks.
+
+**What covers what**, corrected by amendment 11 because the previous sentence claimed more than
+holds. The results table covers every figure in the **five run manifests**, which section 19.3 gates
+in both directions. Mark 1 covers every figure in the **assembled payloads**, which is what the
+console's screens render. Two routes, `/facts` and `/trace`, serve a per-episode artifact verbatim so
+that a reader can walk a fact's lineage and an investigation's recorded steps; they are a copy of a
+file on disk rather than an assembled payload, and they are declared here as outside both.

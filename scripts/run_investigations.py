@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import argparse
 import collections
+import datetime as dt
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from volve_ops.domain.activity import activity_dates_by_well
 from volve_ops.domain.day_class import DayClass
-from volve_ops.domain.episodes import sweep_well
+from volve_ops.domain.episodes import SeriesPoint, sweep_series, sweep_well
 from volve_ops.domain.expectation import NaiveMedian28
 from volve_ops.domain.production_service import load_volve_production
 from volve_ops.domain.regimes import stable_reference_windows
@@ -49,6 +50,11 @@ from volve_ops.investigation.trace import Stage, Trace
 from volve_ops.investigation.validator import CitableDocument, check
 from volve_ops.provenance.facts import FactLedger
 from volve_ops.retrieval.index import BM25Index, chunks_from_events
+
+#: Days either side of an episode the chart shows, so an operator can see the well before and after
+#: rather than only during. A margin and not the whole history: the point of the screen is the
+#: episode, and the governing reference window is named in the expectation panel beside it.
+CHART_MARGIN: Final = dt.timedelta(days=45)
 
 
 def stop_matches_trace(trace: Trace, finding: Finding) -> bool:
@@ -111,8 +117,12 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     episodes = []
+    series: dict[str, list[SeriesPoint]] = {}
     for well in sorted(usable):
         episodes.extend(sweep_well(well, usable[well], windows[well], NaiveMedian28()))
+        # The same model and windows the sweep just used, so the chart shows the band the verdict
+        # was judged against rather than one fitted again for display.
+        series[well] = sweep_series(well, usable[well], windows[well], NaiveMedian28())
 
     events = list(EventStore(args.store).read(args.version))
     index = BM25Index(chunks_from_events(events))
@@ -176,6 +186,22 @@ def main(argv: list[str] | None = None) -> int:
         (args.traces / f"{slug}.finding.json").write_text(
             finding.model_dump_json(indent=2) + "\n", encoding="utf-8"
         )
+        # The ledger and the chart series, written per episode because the console reads them and
+        # protocol section 21.1 does not let it rebuild either. A finding cites fact ids, and until
+        # now the ledger that defines them was discarded when the run ended, so the ids resolved to
+        # nothing. The series is the detector's own, from `sweep_series`.
+        (args.traces / f"{slug}.facts.json").write_text(
+            json.dumps(ledger.as_records(), indent=2) + "\n", encoding="utf-8"
+        )
+        window = [
+            p
+            for p in series.get(episode.well, [])
+            if episode.onset - CHART_MARGIN <= p.date <= episode.offset + CHART_MARGIN
+        ]
+        (args.traces / f"{slug}.series.json").write_text(
+            json.dumps([p.model_dump(mode="json") for p in window], indent=2) + "\n",
+            encoding="utf-8",
+        )
 
         supported = [
             h.hypothesis_id for h in finding.hypotheses if h.status is HypothesisStatus.SUPPORTED
@@ -202,6 +228,35 @@ def main(argv: list[str] | None = None) -> int:
                 "well": episode.well,
                 "onset": episode.onset.isoformat(),
                 "offset": episode.offset.isoformat(),
+                # The episode's own figures, published here because protocol section 21.1 confines
+                # the console to rendering: the queue needs a shortfall and a duration per episode,
+                # and the alternative is an API that recomputes them, which is the second
+                # implementation sections 14.3 and 20.2 both had to retract a claim about.
+                "episode_days": (episode.offset - episode.onset).days + 1,
+                "cumulative_rate_shortfall_sm3": round(episode.cumulative_rate_shortfall_sm3, 2),
+                "deferred_volume_sm3": round(episode.deferred_volume_sm3, 2),
+                "reference_rate_sm3_per_day": round(episode.reference_rate_sm3_per_day, 2),
+                # Both medians from the bundle the controller was given, so the queue's "actual
+                # against expected" column is the comparison the investigation was judged on. The
+                # console may not derive an actual rate from a shortfall and a day count: that is
+                # arithmetic on a domain value, which section 21.1 puts out of its reach.
+                "episode_median_rate_sm3_per_day": (
+                    None
+                    if bundle.episode_rates.median_rate_sm3_per_day is None
+                    else round(bundle.episode_rates.median_rate_sm3_per_day, 2)
+                ),
+                "baseline_median_rate_sm3_per_day": (
+                    None
+                    if bundle.baseline_rates.median_rate_sm3_per_day is None
+                    else round(bundle.baseline_rates.median_rate_sm3_per_day, 2)
+                ),
+                "baseline_start": bundle.baseline_start.isoformat(),
+                "baseline_end": bundle.baseline_end.isoformat(),
+                "shortfall_threshold_sm3": round(episode.shortfall_threshold_sm3, 2),
+                "gap_fraction": round(episode.gap_fraction, 4),
+                "poorly_evidenced": episode.poorly_evidenced,
+                "open_ended": episode.open_ended,
+                "valid_producing_days": episode.valid_producing_days,
                 "verdict": finding.verdict.value,
                 "stop_reason": finding.stop_reason.value,
                 "curtailed": finding.curtailed,
@@ -275,9 +330,27 @@ def main(argv: list[str] | None = None) -> int:
     for name, passed in marks.items():
         print(f"  {'PASS' if passed else 'FAIL'}  {name}")
 
+    # Aggregates the console's Production KPI strip shows. Published here rather than summed in the
+    # API, for protocol section 21.1's reason: a figure an operator reads has to come from a run
+    # manifest, and a sum computed in a serving layer has no gate on it.
+    total_shortfall = sum(float(r["cumulative_rate_shortfall_sm3"]) for r in rows)
+    total_deferred = sum(float(r["deferred_volume_sm3"]) for r in rows)
+    no_conclusion = sum(1 for r in rows if r["verdict"] == Verdict.INSUFFICIENT_EVIDENCE.value)
+    unresolved = sum(1 for r in rows if r["verdict"] != Verdict.SUPPORTED_EXPLANATION.value)
+
     payload: dict[str, Any] = {
+        # v4, the version that fixed section 18.7's pass marks, which have not changed. This stamp
+        # names the marks a run implements, not the protocol document in force: it was briefly set
+        # to v12 when this harness started publishing figures for the console, which confused the
+        # two and put "protocol v12" in a console header while the document was at v14.
         "protocol_version": "v4",
         "episodes": len(rows),
+        "wells_with_an_episode": len({r["well"] for r in rows}),
+        "cumulative_rate_shortfall_sm3": round(total_shortfall, 2),
+        "deferred_volume_sm3": round(total_deferred, 2),
+        "episodes_with_no_conclusion": no_conclusion,
+        "episodes_without_a_single_explanation": unresolved,
+        "poorly_evidenced_episodes": sum(1 for r in rows if r["poorly_evidenced"]),
         "development_wells": sorted(usable),
         # As above: the dates this run actually built bundles over. The offset comparison in
         # diagnostics reads every well in this population, so a hold-out well present here reaches

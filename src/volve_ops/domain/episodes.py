@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict
 from volve_ops.domain.day_class import ClassifiedDay, DayClass, deferred_volume, rate_shortfall
 from volve_ops.domain.expectation import ExpectationModel, FittedExpectation
 from volve_ops.domain.regimes import StableWindow
+from volve_ops.domain.sensors import Channel, reading
 
 MIN_TRIGGER_RUN = 7
 MIN_WINDOW_VALID_DAYS = 10
@@ -170,6 +171,123 @@ def reference_rate_of(window_days: Sequence[ClassifiedDay]) -> float | None:
         if d.day_class is DayClass.VALID_PRODUCING and d.q_24h is not None
     ]
     return median(rates) if rates else None
+
+
+class SeriesPoint(BaseModel):
+    """One day of the chart the console draws, as the detector saw it.
+
+    Exposed from here rather than assembled where it is displayed. Protocol section 21.1 confines
+    the console to rendering, and the expected rate and its band are not a reading: they are the
+    output of the model section 7 selected, fitted on the window section 7 chose, evaluated at the
+    step count the detector used. A serving layer that recomputed any of those three would be a
+    second detector, and the one thing this project has learned to distrust is a second
+    implementation that nobody compares against the first.
+
+    `expected`, `lower` and `upper` are None on a day that is not a valid producing day, because the
+    model predicts per valid producing day and interpolating across a shut-in would draw a line the
+    detector never evaluated.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    date: dt.date
+    day_class: DayClass
+    actual_rate_sm3_per_day: float | None
+    expected: float | None
+    lower: float | None
+    upper: float | None
+    below_band: bool
+    on_stream_hours: float | None
+    choke_size: float | None
+    downhole_pressure_bar: float | None
+    wellhead_pressure_bar: float | None
+    water_cut: float | None
+    governing_window_start: dt.date
+    governing_window_end: dt.date
+
+
+def sweep_series(
+    well: str,
+    days: Sequence[ClassifiedDay],
+    windows: Sequence[StableWindow],
+    model: ExpectationModel,
+) -> list[SeriesPoint]:
+    """The per-day series behind every episode this sweep would open.
+
+    Deliberately a near-duplicate of `sweep_well`'s loop structure, and the duplication is the
+    point of the test that pins them together: the step count, the governing window and the
+    below-band decision must be the ones the detector used, or the chart shows a band the verdict
+    was not judged against.
+
+    The property the test asserts is the one that actually holds, measured rather than assumed:
+    every episode's onset day is below band here, and so is each of the first `MIN_TRIGGER_RUN`
+    valid producing days from onset. **Not** every day in the window, because section 9 extends an
+    episode through short recoveries, so a window legitimately contains days back inside the band.
+    Asserting the stronger property would have failed on 5 of the 14 development episodes, and
+    writing it down before checking is how this project has published figures it had to retract.
+    """
+    ordered = sorted(days, key=lambda d: d.day.production_date)
+    in_order = sorted(windows, key=lambda w: w.start)
+    points: list[SeriesPoint] = []
+
+    for position, window in enumerate(in_order):
+        next_end = in_order[position + 1].end if position + 1 < len(in_order) else None
+        in_window = [d for d in ordered if window.start <= d.day.production_date <= window.end]
+        fitted = model.fit(in_window)
+        reference = reference_rate_of(in_window)
+        if fitted is None or reference is None:
+            continue
+        governed = [
+            d
+            for d in ordered
+            if d.day.production_date > window.end
+            and (next_end is None or d.day.production_date <= next_end)
+        ]
+        step = 0
+        for entry in governed:
+            prediction = None
+            if entry.day_class is DayClass.VALID_PRODUCING:
+                step += 1
+                prediction = fitted.predict(step, choke=entry.day.choke_size)
+            rate = entry.q_24h
+            water = entry.day.water_volume_sm3
+            oil = entry.day.oil_volume_sm3
+            # Water cut only on a valid producing day, the same restriction as `expected` above and
+            # for the same reason. A first version computed it on every governed day and published
+            # four negative water cuts, down to -2.61, on days the classifier had already
+            # quarantined with `negative_volume`. The volumes are real entries in the workbook, and
+            # a day the day classifier refuses is a day nothing may be derived from: deriving a
+            # ratio from it republishes as a figure what section 6 declined to treat as a reading.
+            # A zero total is also excluded, because that is no flow rather than zero water cut.
+            water_cut = (
+                water / (water + oil)
+                if entry.day_class is DayClass.VALID_PRODUCING
+                and water is not None
+                and oil is not None
+                and water + oil > 0.0
+                else None
+            )
+            points.append(
+                SeriesPoint(
+                    date=entry.day.production_date,
+                    day_class=entry.day_class,
+                    actual_rate_sm3_per_day=rate,
+                    expected=None if prediction is None else prediction.q_expected,
+                    lower=None if prediction is None else prediction.lower,
+                    upper=None if prediction is None else prediction.upper,
+                    below_band=(
+                        prediction is not None and rate is not None and rate < prediction.lower
+                    ),
+                    on_stream_hours=entry.day.on_stream_hours,
+                    choke_size=entry.day.choke_size,
+                    downhole_pressure_bar=reading(entry.day, Channel.DOWNHOLE_PRESSURE),
+                    wellhead_pressure_bar=reading(entry.day, Channel.WELLHEAD_PRESSURE),
+                    water_cut=water_cut,
+                    governing_window_start=window.start,
+                    governing_window_end=window.end,
+                )
+            )
+    return points
 
 
 def sweep_well(

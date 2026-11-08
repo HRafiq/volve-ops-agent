@@ -17,14 +17,14 @@ honestly. Several did, and this README says which.
 | 3 | Agent A: bounded investigation controller with a provenance gate | **complete** |
 | 4 | Evaluation harness: version freeze, leakage audit, results table | **complete** |
 | 5 | Agent B: NPT post-mortem, lessons register, correction store | **complete** |
-| 6 | Operator console | **next** |
-| 7 | Failure, health and security experiments | not started |
+| 6 | Operator console | **complete** |
+| 7 | Failure, health and security experiments | **next** |
 | 8 | Frozen hold-out scored once, public write-up | not started |
 
 The hold-out has never been scored and never been looked at. Phase 4's leakage audit exists to prove
 that mechanically rather than assert it, and it gates the build.
 
-126 tracked files, 615 tests, ruff and mypy strict clean. No model is called by any layer yet: every
+159 tracked files, 703 tests, ruff and mypy strict clean. No model is called by any layer yet: every
 component runs deterministically, which is what makes it testable.
 
 ## What the data refused to support
@@ -47,8 +47,13 @@ availability.
 baseline by 10 percent relative WAPE at three horizons. The best clears it at 7 and 14 days, by 18.7
 and 11.6 percent, and loses by 1.9 percent at 28. The protocol's fallback therefore applies and
 `naive-median28` becomes the expectation model, deliberately not the better-scoring persistence
-baseline, which cannot detect sustained underperformance by construction. Calibration fails by 2 to 4
-times on both qualifying wells. [Details](docs/expectation_results.md)
+baseline, which cannot detect sustained underperformance by construction.
+
+Calibration fails, and the figure that matters is the one the detector uses. Section 8 gates the
+**lower-tail exceedance rate** at 0.05 to 0.20: the two candidate models pool at 0.302 and 0.387, and
+`naive-median28`, the fallback actually in use, at **0.5632** over a 7-day horizon. Section 8's
+calibration condition has never been evaluated for it, because the conditions are applied to
+candidates and this model is the fallback. [Details](docs/expectation_results.md)
 
 **Cause labels.** 135 labels over drilling-report events, and they are **machine-assisted**: produced
 by a language model applying a guide written beforehand, not by a domain expert. I have no
@@ -80,6 +85,25 @@ The one documented root cause cites a report dated the day before onset: "Closed
 for handover." Three episodes stop on missing evidence rather than guessing, because `15/9-F-12` has
 usable downhole pressure on 31.2 percent of its producer rows where counting non-empty cells reports
 99.8. [Details](docs/investigation_results.md)
+
+**Operator console.** A read-only review tool over the same payloads, served by the API that
+produces them. All eight of section 21.6's gates pass and none examines nothing: 631 payload figures
+resolve to a manifest key, a fact id, an event id, an artifact file or a pre-registered rule; 15 routes enumerated,
+and the only four that accept anything but GET are the review actions.
+
+| Figure | Value |
+|---|---|
+| Payload figures resolving to a source | 631 of 631 |
+| Routes that write | 4 of 15, all of them review actions |
+| Abstentions rendering as their own state | 4 of 4 |
+| Currency figures published | 0, because no oil price was supplied |
+
+Its first rule is the one that makes the rest checkable: **the console renders and does not
+compute.** Where it needed a figure no manifest held, the harness that owns the figure was extended
+rather than the console allowed to derive it. That forced out a result nobody could previously read:
+the selected expectation model's lower-tail rate is **0.563** at a 7-day horizon against a protocol
+band of 0.05 to 0.20, so 56 percent of evaluated days fall below a bound that permits at most 20. The
+expectation panel shows it where the band is drawn. [Details](docs/console_results.md)
 
 **Post-mortem and lessons register.** Non-productive time is 8,563 hours of 39,495 recorded, 21.7
 percent. The register is built from the source's own fields rather than from the machine-assisted
@@ -145,8 +169,8 @@ project. Scoring whether a choke reduction explains a shortfall on a specific No
 reader I do not have. Protocol sections 17, 18 and 19 each say so, and section 17.4 fixes the
 adjudication that would settle it: 40 events, blind, 80 percent agreement.
 
-Thirteen metrics the plan asked for are deferred, each with its obstacle named in
-[`docs/results_table.md`](docs/results_table.md) beside the 137 rows that carry a figure. Every
+Fourteen metrics the plan asked for are deferred, each with its obstacle named in
+[`docs/results_table.md`](docs/results_table.md) beside the 172 rows that carry a figure. Every
 obstacle is one of three things: the dataset lacks what the metric needs, the sample is too small for
 the number to mean anything, or there is no domain reader. The third is named in four of the thirteen
 and a fifth depends on one of those.
@@ -178,6 +202,14 @@ python scripts/run_label_scoring.py labels/development_pass1.jsonl
 python scripts/run_investigations.py "data/cache/Volve production data.xlsx" data/cache/ddr_xml
 python scripts/run_postmortem.py data/cache/ddr_xml
 python scripts/run_evaluation.py "data/cache/Volve production data.xlsx" data/cache/ddr_xml
+python scripts/run_console_checks.py
+```
+
+The console needs its optional extra, and serves itself from the API process:
+
+```bash
+pip install -e ".[console]" && npm --prefix frontend install && npm --prefix frontend run build
+python -m uvicorn api.main:app --port 8000
 ```
 
 The last one is the gate: it exits non-zero on a leakage finding or an unreported figure. Raw and
@@ -191,12 +223,13 @@ checked by parsing every workflow file. Anything that would call a model is manu
 
 | Document | What it is |
 |---|---|
-| [`docs/eval_protocol.md`](docs/eval_protocol.md) | The pre-registration. Its commit history is the evidence, tagged `prereg-v0` through `prereg-v11`, with no `v10` and section 13 saying why |
+| [`docs/eval_protocol.md`](docs/eval_protocol.md) | The pre-registration. Its commit history is the evidence, tagged `prereg-v0` through `prereg-v15`, with no `v10` and section 13 saying why |
 | [`docs/data_profile.md`](docs/data_profile.md) | What the data turned out to be, and the coverage gaps that limit what can be claimed |
 | [`docs/results_table.md`](docs/results_table.md) | Every figure in the project, with its denominator and whether it is gated, reported or deferred |
-| [`docs/architecture_decisions/`](docs/architecture_decisions/) | Eight decisions, including all three feasibility outcomes |
+| [`docs/architecture_decisions/`](docs/architecture_decisions/) | Nine decisions, including all three feasibility outcomes |
 | [`labels/development_pass1.jsonl`](labels/development_pass1.jsonl) | The label set itself, each row with its provenance, span and the rule that settled it |
 | [`docs/postmortem_results.md`](docs/postmortem_results.md) | Where the non-productive time went, and how little of it any label characterises |
+| [`docs/console_results.md`](docs/console_results.md) | What the operator console shows, what it refuses to show, and the six defects building it found |
 
 ## Scope and boundaries
 

@@ -1,0 +1,114 @@
+# ADR 0009: the investigation queue's priority rule, what it is worth, and what it cannot show
+
+Renamed, and the file renamed with it. The original title asserted the sentence amendment 9
+retracted, so the retraction left the claim standing in the one place a reader meets first.
+
+Date: 2026-10-08
+Status: accepted
+
+## Context
+
+The operator console's investigation queue needs an ordering, and the console design fixed three
+things about it before any of it was built: the rule is deterministic, it is printed under the table
+so a reader can recompute it, and a model never decides it. A queue ordered by a language model's
+sense of importance is the failure this project exists to avoid.
+
+The design left one question open and required it settled before implementation: whether a case in
+which no single explanation is supported should score higher, on the argument that it needs more
+human attention, or whether evidence strength should enter the rule some other way.
+
+The starting rule, a placeholder in the design mockup, was:
+
+- cumulative shortfall at or above 30,000 Sm3 scores 3, at or above 10,000 Sm3 scores 2, else 1;
+- plus 1 if the episode lasts 40 days or more;
+- plus 1 if review is pending;
+- plus 1 if no single explanation is supported;
+- 5 or more is HIGH, 3 to 4 is MEDIUM, 2 or less is LOW.
+
+## What the data says
+
+Two candidate forms of the disputed clause were scored against all fourteen development episodes.
+The blunt form adds 1 whenever the verdict is not `supported_explanation`. The banded form adds 1
+only when the verdict is unresolved **and** the section 19.4 evidence band is `high` or `moderate`,
+the case where the evidence was there and the system still could not choose between explanations.
+
+**Neither form changes the priority band of a single episode. 0 of 14 differ.** The bucket counts are
+identical under both: 1 HIGH, 5 MEDIUM, 8 LOW. The one HIGH episode is `15/9-F-14` from 2009-05-29,
+which scores 5 as shortfall 3 plus duration plus the unresolved term, and it scores 5 under both
+forms.
+
+The reason is visible once the terms are counted rather than argued about:
+
+| term | episodes it fires on |
+|---|---:|
+| cumulative shortfall | 14 of 14, and it is the only term with three levels |
+| episode lasts 40 days or more | 5 of 14 |
+| review is pending | **0 of 14** |
+| no single explanation supported, blunt form | 7 of 14 |
+| the same, banded form | 5 of 14 |
+
+Every count above is recomputed from `data/cache/investigation_run.json` and the evidence bands in
+`data/cache/evaluation_run.json`. A first draft of this table said 4 and 3 for the second and last
+rows, taken from an earlier scratch script rather than from the published manifests, and the figures
+were wrong in the document whose subject is a rule nobody can check unless its figures are right.
+
+The review term is zero because no review state exists until an operator creates one, so on a first
+run it can never fire. The unresolved term fires on half the queue under the blunt form, and in every
+one of those cases the additional attention has nothing to act on: three are blocked by downhole
+pressure that is absent for the whole episode, and the remaining four have no in-window document to
+find, which ADR 0008 established is the normal case rather than the exception.
+
+A first draft of this ADR concluded from that table that the rule "reduces to shortfall plus
+duration" on this dataset. **That was wrong, and a test written to assert it is what caught it.**
+Dropping the unresolved term moves `15/9-F-14` from 2009-05-29 from HIGH to MEDIUM, and it is the
+only HIGH episode in the queue. Without the term the queue has no HIGH case at all:
+
+| rule | bands produced |
+|---|---|
+| all four terms | 1 HIGH, 5 MEDIUM, 8 LOW |
+| shortfall and duration only | 0 HIGH, 6 MEDIUM, 8 LOW |
+
+So the accurate statement is narrower and more useful than the one it replaces. The **choice between
+the two forms of the clause** cannot be validated here, because neither changes a band. The **clause
+itself** is not inert: it is the only thing that raises any episode to HIGH, and the episode it
+raises is the one a human would most want to see first, 95,904 Sm3 of shortfall over 66 days with
+good evidence and no single explanation.
+
+That correction is protocol amendment 9's. It did not reach this document until a third review: the
+edit was in a multi-substitution script that aborted before it wrote, and amendment 9's own claim
+that "both corrected statements are now in 21.5 and in the ADR" was therefore false. Amendment 11
+records it. The lesson is one this project already wrote down after Phase 5 and then repeated:
+**when a batch of edits can partially fail, verify the end state rather than the exit code.**
+
+## Decision
+
+1. **The banded form is adopted**, because the case worth a human's time first is one where the
+   evidence was strong and the system still could not choose. "No evidence, so no conclusion" is a
+   data-coverage problem and belongs in a filter, not at the top of a review queue.
+2. **The rule is published with its term counts**, exactly as tabulated above, every time it is
+   printed. A four-term rubric whose fourth line fires on nothing until someone uses the console
+   reads as more considered than it is, and the console must not borrow that credibility. A third
+   review found the original wording here, "of which two terms never fire", still standing after
+   amendment 9 retracted it: the retraction had reached this document's narrative and not its
+   Decision section.
+3. **The console states that the rule is not validated.** Fourteen episodes, one of them HIGH, cannot
+   show that an ordering is a good ordering. The rule is a stated convention, not a measured result,
+   and the queue header says so.
+4. **The thresholds do not move after this date.** 30,000 Sm3, 10,000 Sm3, 40 days and the 5 and 3
+   cut-offs are fixed in protocol section 21 and pushed before the console renders anything. Tuning
+   them against this dataset would be fitting a priority rule to fourteen cases.
+
+## Consequences
+
+The queue's default sort is priority, then cumulative shortfall. Thirteen of the fourteen episodes would
+sit in the same band under shortfall and duration alone, so a reader comparing that ordering with the
+full rule finds one row moved. That is the honest state of it: the rule's extra terms earn one promotion
+on this dataset, and the promotion is defensible on its face.
+
+The disputed clause cannot be validated on Volve. It would take a dataset with review history and with
+episodes whose missing evidence is obtainable. Both are named in protocol section 21.7 as deferred,
+with what would settle them.
+
+What this ADR does not do is remove the clause. An inert term that is correct in principle is worth
+keeping over one that is wrong in principle, because the next dataset may exercise it, and the
+alternative is a rule that silently has nothing to say about human attention at all.

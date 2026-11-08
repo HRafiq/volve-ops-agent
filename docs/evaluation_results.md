@@ -8,7 +8,7 @@ Protocol section 19 fixed the gates before the harness existed and was pushed as
 Amendment 6 then corrected three of those gates after independent review showed they could not fail,
 and every figure below is the corrected one.
 
-The consolidated table is [`results_table.md`](results_table.md): 150 rows, each carrying its
+The consolidated table is [`results_table.md`](results_table.md): 186 rows, each carrying its
 denominator, its status, what would settle it if deferred, and the caveat that belongs with it.
 
 ## Three of the six pass marks could not fail, and review found all three
@@ -52,8 +52,8 @@ all is also a finding now rather than a pass, because a check with nothing to au
 | 19.1 every field present in the persisted manifest | **pass** | 9 fields of the previous run's manifest |
 | 19.1 manifest hash reproduces on the same commit | **pass** | this run against the last run at the same commit |
 | 19.2 leakage audit clean | **pass** | 9,540 recorded fitted dates, 135 labels, 7 labelled wells, 5 wells in the investigation population |
-| 19.3 every manifest figure has a table row | **pass** | 0 uncovered across five run manifests |
-| 19.3 every table row names a figure that exists | **pass** | 0 unresolved of 150 rows |
+| 19.3 every manifest figure has a table row | **pass** | 0 uncovered across six run manifests |
+| 19.3 every table row names a figure that exists | **pass** | 0 unresolved of 186 rows |
 | 19.5 no mechanical false root-cause claim | **pass** | 1 documented claim |
 | 19.7 no repeated identical tool call | **pass** | 14 traces, 23 retrieval queries |
 
@@ -173,7 +173,7 @@ version was written and is a textbook Actions injection.
 | Risk and coverage curve | needs correctness; three bands give three points | correctness, and more episodes |
 | Calibrated confidence | 14 episodes | more episodes and an outcome definition |
 | Prose-judge scores | no model provider key | a key; the rubric is already fixed in section 19.8 |
-| Interval coverage | the current construction fails by 2 to 4 times | an interval construction that calibrates |
+| Two-sided interval coverage | section 8 reports it without a pass mark and gates the lower-tail rate instead | an interval construction that calibrates |
 
 Nine deferred rows at the end of this phase, and listing them is the point rather than an apology. Every
 obstacle is one of three things: the dataset does not contain what the metric needs, the sample is too

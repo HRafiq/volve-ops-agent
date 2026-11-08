@@ -29,6 +29,7 @@ from volve_ops import INGEST_VERSION
 from volve_ops.domain.activity import activity_dates_by_well
 from volve_ops.domain.backtest import (
     HORIZONS,
+    LOWER_TAIL_BOUNDS,
     condition_1_relative_wape,
     condition_2_lower_tail,
     condition_3_bias,
@@ -190,6 +191,24 @@ def main(argv: list[str] | None = None) -> int:
             for name, result in results.items()
         },
         "evaluated_days": {name: len(r.evaluated) for name, r in results.items()},
+        # The selected model's lower-tail rate per horizon, and the band it is judged against.
+        # Published because the console's expectation panel shows an operator how the expected line
+        # was built, including that its interval does not calibrate, and section 21.1 does not let a
+        # serving layer derive a figure: until now this number existed only inside condition 2's
+        # detail string, where nothing could read it and no table row covered it.
+        #
+        # The rate is the fraction of evaluated days that fell below the lower bound. Nominal is
+        # 0.10 for an 80 percent two-sided interval, and section 8 accepts 0.05 to 0.20.
+        "lower_tail_rate": {
+            str(horizon): (
+                sum(1 for e in results[selected].at_horizon(horizon) if e.below_lower)
+                / len(results[selected].at_horizon(horizon))
+                if results[selected].at_horizon(horizon)
+                else None
+            )
+            for horizon in HORIZONS
+        },
+        "lower_tail_bounds": {"low": LOWER_TAIL_BOUNDS[0], "high": LOWER_TAIL_BOUNDS[1]},
         "episodes": len(episodes),
         # Every date this run actually fitted and swept on, per well. Recorded so that protocol
         # section 19.2's third leakage check can test the dates a script used rather than
