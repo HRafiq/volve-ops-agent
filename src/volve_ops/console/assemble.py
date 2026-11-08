@@ -20,21 +20,28 @@ from volve_ops.console import labels, priority
 from volve_ops.console.payloads import (
     Absence,
     ChartSeries,
+    ComparisonRow,
     DocumentEvidence,
     EvidenceCoverage,
+    ExpectationAblation,
+    ExpectationAblationRow,
     ExpectationPanel,
     FactEvidence,
     Header,
+    HealthRow,
     Hypothesis,
     InvestigationDetail,
     Kpi,
     LedgerFact,
     MatrixCell,
     Money,
+    NotApplicable,
     PriorityRule,
     Queue,
     QueueRow,
     SeriesRow,
+    SystemHealth,
+    VacuousInvariant,
 )
 from volve_ops.console.review import ReviewLog
 from volve_ops.console.sources import ARTIFACT_PREFIX, RULE_PREFIX, Sourced
@@ -875,4 +882,247 @@ def detail(store: RunStore, wanted: str) -> InvestigationDetail:
             "facts artifact": f"{artifacts.investigation_id}.facts.json",
             "trace artifact": f"{artifacts.investigation_id}.trace.json",
         },
+    )
+
+
+# --------------------------------------------------------------------------------------------
+# the System Health workspace, protocol section 22.4 marks 11 and 12
+# --------------------------------------------------------------------------------------------
+
+
+def _health_row(
+    label: str, value: Any, source: str, *, unit: str = "", note: str = ""
+) -> HealthRow:
+    return HealthRow(
+        label=label,
+        value=Sourced(value=value, source=source, unit=unit, denominator=note or label),
+        note=note,
+    )
+
+
+def system_health(store: RunStore) -> SystemHealth:
+    """Tab 4, assembled from the two section 22 manifests and nothing else.
+
+    Every number here is read from `security_run.json` or `ablation_run.json`. Section 21.1 and
+    mark 11: the health tab renders and does not compute, **including its deltas**. A delta is
+    published by the harness that owns both arms or it does not appear, which is why the
+    comparison table below carries reasons rather than subtractions.
+    """
+    security = store.security()
+    ablation = store.ablations()
+    injection = security["injection"]
+    sinks = security["markup_sinks"]
+    corpus = security["attack_corpus"]
+    provenance = security["provenance_failures"]
+    limits = security["limits"]
+    expectation = ablation["expectation"]
+    retrieval = ablation["retrieval"]
+    latency = ablation["cost_and_latency"]
+
+    injection_rows = tuple(
+        _health_row(label, injection[key], f"security.injection.{key}", note=note)
+        for label, key, note in (
+            ("Invariants held", "invariants_held", "one per payload per live invariant"),
+            ("Invariants violated", "invariants_violated", ""),
+            (
+                "Fixtures not reached",
+                "fixtures_not_reached",
+                "a payload that never arrived has not tested anything",
+            ),
+            (
+                "Live invariants untested",
+                "live_invariants_untested",
+                "a suite that ran nothing does not pass",
+            ),
+            ("Payloads in the corpus", "payloads", "six classes"),
+        )
+    )
+
+    comparison = tuple(
+        ComparisonRow(
+            metric=metric,
+            current=Sourced(value=value, source=source, unit="", denominator=metric),
+            unavailable_because=(
+                "Only one scored version of this exists. Section 22.4 mark 12: a delta against "
+                "an absent baseline is a figure from nowhere, and an empty column reads as no "
+                "change, so the reason is printed instead of a number."
+            ),
+        )
+        for metric, value, source in (
+            ("Invariants held", injection["invariants_held"], "security.injection.invariants_held"),
+            (
+                "Figures contradicting their records",
+                provenance["class_3_contradictions"],
+                "security.provenance_failures.class_3_contradictions",
+            ),
+            (
+                "Episodes opened by the selected model",
+                next(
+                    (
+                        r["episodes_opened"]
+                        for r in expectation["rows"]
+                        if r["model"] == "naive-median28"
+                    ),
+                    0,
+                ),
+                "ablation.expectation.rows",
+            ),
+            (
+                "End-to-end p95, seconds",
+                latency["end_to_end_p95_seconds"],
+                "ablation.cost_and_latency.end_to_end_p95_seconds",
+            ),
+        )
+    )
+
+    return SystemHealth(
+        generated=str(security["generated"]),
+        commit_sha=str(security["commit_sha"]),
+        protocol_version=str(security["protocol_version"]),
+        injection=injection_rows,
+        vacuous_invariants=tuple(
+            VacuousInvariant(key=v["key"], wording=v["wording"], reason=v["reason"])
+            for v in injection["vacuous"]
+        ),
+        parser_corpus=(
+            _health_row(
+                "XML attack fixtures",
+                corpus["xml_fixtures"],
+                "security.attack_corpus.xml_fixtures",
+            ),
+            _health_row(
+                "Archive attack fixtures",
+                corpus["archive_fixtures"],
+                "security.attack_corpus.archive_fixtures",
+            ),
+            _health_row(
+                "Documents that must parse",
+                corpus["must_parse_fixtures"],
+                "security.attack_corpus.must_parse_fixtures",
+                note="a corpus of only refusals cannot tell a careful parser from a broken one",
+            ),
+            _health_row("Unescaped-markup sinks", sinks["found"], "security.markup_sinks.found"),
+            _health_row(
+                "Frontend files scanned",
+                sinks["files_scanned"],
+                "security.markup_sinks.files_scanned",
+                note="a scan of nothing passes, so the count is part of the result",
+            ),
+        ),
+        provenance=(
+            _health_row(
+                "Failure classes put to the gate",
+                provenance["classes"],
+                "security.provenance_failures.classes",
+            ),
+            _health_row(
+                "Figures contradicting their records",
+                provenance["class_3_contradictions"],
+                "security.provenance_failures.class_3_contradictions",
+                note="a source that resolves is weaker than one that supports the figure",
+            ),
+        ),
+        limits=(
+            _health_row(
+                "Review note, characters",
+                limits["max_note_chars"],
+                "security.limits.max_note_chars",
+                unit="characters",
+            ),
+            _health_row(
+                "Actor name, characters",
+                limits["max_actor_chars"],
+                "security.limits.max_actor_chars",
+                unit="characters",
+            ),
+            _health_row(
+                "API requests per minute",
+                limits["max_requests_per_minute"],
+                "security.limits.max_requests_per_minute",
+                note="per client, one process, fixed window",
+            ),
+            _health_row(
+                "Asset requests per minute",
+                limits["max_asset_requests_per_minute"],
+                "security.limits.max_asset_requests_per_minute",
+            ),
+        ),
+        not_applicable=tuple(
+            NotApplicable(key=key, reason=reason)
+            for key, reason in {**limits["not_applicable"], **latency["not_applicable"]}.items()
+        ),
+        expectation_ablation=ExpectationAblation(
+            source="ablation.expectation.rows",
+            row_count=Sourced(
+                value=len(expectation["rows"]),
+                source="ablation.expectation.rows",
+                unit="",
+                denominator="expectation models compared",
+            ),
+            rows=tuple(
+                ExpectationAblationRow(
+                    model=str(r["model"]),
+                    episodes_opened=int(r["episodes_opened"]),
+                    wape=r.get("wape_h7")
+                    if "wape_h7" in r
+                    else next((v for k, v in r.items() if k.startswith("wape_")), None),
+                )
+                for r in expectation["rows"]
+            ),
+        ),
+        retrieval_ablation=(
+            _health_row(
+                "Episodes with any in-window document",
+                retrieval["episodes_with_documents"],
+                "ablation.retrieval.episodes_with_documents",
+                note=f"of {retrieval['episodes_total']} development episodes",
+            ),
+            *(
+                _health_row(
+                    f"{row['well']} {row['onset']}: causal level",
+                    1 if row["level_changed"] else 0,
+                    "ablation.retrieval.rows",
+                    note=f"{row['highest_level_with']} with the document, "
+                    f"{row['highest_level_without']} without it",
+                )
+                for row in retrieval["rows"]
+            ),
+        ),
+        retrieval_note=str(retrieval["note"]),
+        calibration_note=str(ablation["calibration"]["reason"]),
+        latency=(
+            _health_row(
+                "Controller p95, seconds",
+                latency["controller_p95_seconds"],
+                "ablation.cost_and_latency.controller_p95_seconds",
+                unit="seconds",
+                note="the stages alone, over a bundle already built",
+            ),
+            _health_row(
+                "End-to-end p95, seconds",
+                latency["end_to_end_p95_seconds"],
+                "ablation.cost_and_latency.end_to_end_p95_seconds",
+                unit="seconds",
+                note="bundle construction and the controller",
+            ),
+            _health_row(
+                "Investigations timed",
+                latency["investigations"],
+                "ablation.cost_and_latency.investigations",
+            ),
+        ),
+        comparison=comparison,
+        comparison_note=(
+            "One scored version exists, so no delta can be computed. Mark 12 requires the reason "
+            "in place of the number: a 0.00 against an absent baseline is a figure from nowhere, "
+            "and an empty column reads as no change."
+        ),
+        experiments=(
+            "scripts/run_security_checks.py",
+            "scripts/run_ablations.py",
+            "scripts/serve_injected_console.py + scripts/check_rendered_inert.js",
+            "tests/test_security.py",
+            "tests/test_provenance_failures.py",
+            "tests/test_api_security.py",
+        ),
     )

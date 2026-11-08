@@ -243,3 +243,81 @@ details.audit .body { border: 1px solid var(--steel-200); border-top: none; padd
 
 .loading, .empty { padding: 30px 0; color: var(--steel-600); font-size: 13px; }
 .planned-page { max-width: 620px; font-size: 13.5px; line-height: 1.6; color: var(--steel-800); }
+
+/* The System Health workspace. Dense by design: it is a page of measurements, and a reader
+   comparing numbers wants them close together rather than spaced like a dashboard. */
+.health {
+  display: grid;
+  gap: 16px;
+}
+
+.health-rows {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.health-rows th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--steel-600);
+  border-bottom: 1px solid var(--rule);
+  padding: 6px 10px 6px 0;
+}
+
+.health-rows td {
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+
+.health-rows td.figure {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.health-rows td.note,
+.health .note {
+  color: var(--steel-600);
+  font-size: 12px;
+}
+
+/* A reason where a number would be. Mark 12: an empty delta column reads as no change, so the
+   reason is printed in the column rather than left for a reader to fill in. */
+.health .absent {
+  color: var(--steel-600);
+  font-style: italic;
+}
+
+/* Invariants with nothing to hold against, and protections with nothing to protect. Set apart
+   from the counts so a reader cannot read them as results. */
+.health .vacuous {
+  margin-top: 14px;
+  padding: 12px;
+  border-left: 3px solid var(--rule);
+  background: var(--panel-alt, rgba(0, 0, 0, 0.02));
+}
+
+.health .vacuous h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.health .vacuous p,
+.health .vacuous dd {
+  font-size: 12px;
+  color: var(--steel-600);
+  margin: 0 0 8px;
+}
+
+.health .vacuous dt {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.health .experiments {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+}

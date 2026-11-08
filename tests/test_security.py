@@ -603,3 +603,41 @@ def _relative_escape_fixture(directory: Path) -> Path:
     from volve_ops.security.attacks import ARCHIVE_ATTACKS
 
     return next(a for a in ARCHIVE_ATTACKS if a.name == "relative-escape").build(directory)
+
+
+class TestTheOverclaimGate:
+    """Section 22.4 mark 13. Section 11.1: the read-only posture is not a safety case."""
+
+    def test_the_project_claims_no_safety_case(self) -> None:
+        from volve_ops.security.claims import scan as claim_scan
+
+        found = claim_scan()
+        assert found == (), [(c.file, c.line, c.pattern) for c in found]
+
+    def test_the_gate_read_a_meaningful_number_of_files(self) -> None:
+        from volve_ops.security.claims import files_scanned
+
+        assert files_scanned() > 50
+
+    def test_it_fires_on_a_real_overclaim(self, tmp_path: Path) -> None:
+        from volve_ops.security.claims import scan as claim_scan
+
+        (tmp_path / "over.md").write_text(
+            "The system satisfies an operator safety case.\n"
+            "It is certified for operational use.\n"
+            "The agent controls the choke directly.\n",
+            encoding="utf-8",
+        )
+        patterns = {c.pattern for c in claim_scan([tmp_path])}
+        assert "safety_case_satisfied" in patterns
+        assert "approved_for_operations" in patterns
+        assert "in_the_control_loop" in patterns
+
+    def test_stating_what_the_system_is_not_is_allowed(self, tmp_path: Path) -> None:
+        # The opposite of the problem. A gate that fired on a disclaimer would be deleted.
+        (tmp_path / "fine.md").write_text(
+            "This does not satisfy a formal safety case, which is far broader.\n", encoding="utf-8"
+        )
+        from volve_ops.security.claims import scan as claim_scan
+
+        assert claim_scan([tmp_path]) == ()

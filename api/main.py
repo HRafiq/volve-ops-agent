@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from volve_ops.console import assemble, labels, limits, rate_limit
-from volve_ops.console.payloads import Header, InvestigationDetail, Queue
+from volve_ops.console.payloads import Header, InvestigationDetail, Queue, SystemHealth
 from volve_ops.console.review import Action, ReviewLog, ReviewRecord, ReviewRefused, as_rows
 from volve_ops.console.store import ArtifactMissing, RunStore
 
@@ -140,6 +140,20 @@ def header(store: StoreDep) -> Header:
     """Decision 12's header: operational and data state first, build metadata behind a popover."""
     try:
         return assemble.header(store)
+    except ArtifactMissing as exc:
+        raise _not_found(exc) from exc
+
+
+@app.get("/api/system/health")
+def system_health(store: StoreDep) -> SystemHealth:
+    """Tab 4. Section 22 and section 21.1: it renders what the harnesses measured.
+
+    Every figure comes from `security_run.json` or `ablation_run.json`. Nothing on this screen is
+    computed here, deltas included: mark 12 requires a comparison that cannot be computed to say
+    so rather than publish a zero against a baseline that does not exist.
+    """
+    try:
+        return assemble.system_health(store)
     except ArtifactMissing as exc:
         raise _not_found(exc) from exc
 

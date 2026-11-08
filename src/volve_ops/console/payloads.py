@@ -371,3 +371,125 @@ class Queue(BaseModel):
     rows: tuple[QueueRow, ...]
     rule: PriorityRule
     pinned: tuple[str, ...]
+
+
+# --------------------------------------------------------------------------------------------
+# the System Health workspace, protocol section 22.4 marks 11 and 12
+# --------------------------------------------------------------------------------------------
+
+
+class ExpectationAblationRow(BaseModel):
+    """One expectation model: how accurate it is, and how much work it creates."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    model: str
+    episodes_opened: int
+    wape: float | None
+
+
+class ExpectationAblation(SourcedTable):
+    """Section 22.7's first ablation, as a table of records under one source.
+
+    `episodes_opened` and `wape` are both figures the ablation harness computed, so both are
+    declared derived. Amendment 10's third bound: a result that rode into a table beside the
+    records is what nothing was checking, and the only safe reading of a column this project
+    calculated is that it is a result.
+    """
+
+    rows: tuple[ExpectationAblationRow, ...]
+    derived_columns: ClassVar[frozenset[str]] = frozenset({"episodes_opened", "wape"})
+
+
+class HealthRow(BaseModel):
+    """One measured number on the health screen, with where it came from."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label: str
+    value: Sourced
+    note: str = ""
+
+
+class VacuousInvariant(BaseModel):
+    """An invariant with nothing to hold against here, and why.
+
+    Rendered as its own list rather than mixed into the counts. Section 22.4 mark 1: an invariant
+    that cannot be exercised is never added to a count of invariants preserved, and a screen that
+    showed them together would undo in the display what the report structure prevents.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    wording: str
+    reason: str
+
+
+class NotApplicable(BaseModel):
+    """A protection the design brief asks for that has nothing to protect here."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    reason: str
+
+
+class ComparisonRow(BaseModel):
+    """One metric across two versions, and the delta only where a delta exists.
+
+    **The delta is optional and `unavailable_because` is required when it is absent.** Section
+    22.4 mark 12: where only one version exists there is nothing to subtract, and a 0.00 in a
+    delta column against an absent baseline is a figure from nowhere, which section 21.2 forbids.
+    It is also the most likely way this screen lies, because an empty column reads as no change.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    metric: str
+    current: Sourced
+    previous: Sourced | None = None
+    delta: Sourced | None = None
+    unavailable_because: str = ""
+
+    @model_validator(mode="after")
+    def _an_absent_delta_says_why(self) -> ComparisonRow:
+        if self.delta is None and not self.unavailable_because.strip():
+            raise ValueError(
+                f"{self.metric!r} has no delta and no reason; mark 12 requires a comparison that "
+                "cannot be computed to say so rather than leave a column a reader fills in"
+            )
+        if self.delta is not None and self.previous is None:
+            raise ValueError(
+                f"{self.metric!r} publishes a delta with no previous value to subtract from"
+            )
+        return self
+
+
+class SystemHealth(BaseModel):
+    """The System Health workspace. Every figure read from a manifest, none derived here."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    generated: str
+    commit_sha: str
+    protocol_version: str
+
+    injection: tuple[HealthRow, ...]
+    vacuous_invariants: tuple[VacuousInvariant, ...]
+    parser_corpus: tuple[HealthRow, ...]
+    provenance: tuple[HealthRow, ...]
+    limits: tuple[HealthRow, ...]
+    not_applicable: tuple[NotApplicable, ...]
+
+    expectation_ablation: ExpectationAblation
+    retrieval_ablation: tuple[HealthRow, ...]
+    retrieval_note: str
+    calibration_note: str
+    latency: tuple[HealthRow, ...]
+
+    comparison: tuple[ComparisonRow, ...]
+    comparison_note: str
+
+    experiments: tuple[str, ...]
+    """Ids and entry points that reproduce what this screen reports."""

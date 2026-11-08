@@ -95,6 +95,30 @@ class RunStore:
         result: Mapping[str, Any] = self._read(self.cache / "evaluation_run.json")
         return result
 
+    def security(self) -> Mapping[str, Any]:
+        """The section 22 run, which the System Health workspace renders.
+
+        Read separately rather than added to `MANIFESTS`, for the reason `evaluation` gives: that
+        map is the section 19.3 coverage gate's input set, and putting a gate's own output into it
+        would have the gate demand results-table rows for the figures it produced.
+        """
+        result: Mapping[str, Any] = self._read(self.cache / "security_run.json")
+        return result
+
+    def ablations(self) -> Mapping[str, Any]:
+        """The section 22.7 ablations. Same reasoning as `security`."""
+        result: Mapping[str, Any] = self._read(self.cache / "ablation_run.json")
+        return result
+
+    def health_manifests(self) -> dict[str, Mapping[str, Any]]:
+        """Every manifest a health figure may be sourced to.
+
+        The five of `MANIFESTS` plus the two section 22 runs, so a source on the health screen
+        resolves under mark 1 exactly as a source on any other screen does. `MANIFESTS` itself is
+        untouched: adding to it changes what section 19.3 audits.
+        """
+        return {**self.manifests(), "security": self.security(), "ablation": self.ablations()}
+
     def episodes(self) -> list[Mapping[str, Any]]:
         """The investigation manifest's finding rows, which are the queue's source."""
         manifest = self._read(self.cache / MANIFESTS["investigation"])

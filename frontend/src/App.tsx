@@ -6,10 +6,11 @@
 
 import { useEffect, useState } from "react";
 
-import { fetchHeader } from "./api";
+import { fetchHeader, fetchHealth } from "./api";
 import { Detail } from "./Detail";
+import { Health } from "./Health";
 import { Queue } from "./Queue";
-import type { Header as HeaderPayload } from "./types";
+import type { Header as HeaderPayload, SystemHealth } from "./types";
 
 type Workspace = "production" | "drilling" | "system";
 
@@ -53,7 +54,7 @@ export function App(): JSX.Element {
           )
         ) : null}
         {workspace === "drilling" ? <Planned name="Drilling & NPT" /> : null}
-        {workspace === "system" ? <Planned name="System Health" /> : null}
+        {workspace === "system" ? <HealthWorkspace /> : null}
       </main>
     </>
   );
@@ -93,6 +94,39 @@ function Header({ header }: { header: HeaderPayload }): JSX.Element {
       </details>
     </>
   );
+}
+
+// The System Health workspace fetches on mount like every other screen. No cache: section 21.1,
+// and a cached health figure is one that still carries the source that vouched for it when it was
+// fresh.
+function HealthWorkspace(): JSX.Element {
+  const [health, setHealth] = useState<SystemHealth | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchHealth()
+      .then(setHealth)
+      .catch((reason: Error) => setFailed(reason.message));
+  }, []);
+
+  if (failed) {
+    // Said plainly rather than rendered as an empty screen. The harnesses that write this
+    // workspace's manifests are not run by the console, so the likely cause is that they have not
+    // been run, and an empty health tab would look like a clean bill of health.
+    return (
+      <div className="planned-page">
+        <h1>System Health</h1>
+        <p className="error">
+          Not available: {failed}. This screen reads <code>security_run.json</code> and{" "}
+          <code>ablation_run.json</code>; run <code>scripts/run_security_checks.py</code> and{" "}
+          <code>scripts/run_ablations.py</code> to produce them. Nothing is shown without them,
+          because an empty health screen reads as a passing one.
+        </p>
+      </div>
+    );
+  }
+  if (!health) return <p>Loading…</p>;
+  return <Health health={health} />;
 }
 
 // A planned workspace gets a page saying what it will hold, rather than a dead tab. Decision 1:

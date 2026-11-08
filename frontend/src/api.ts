@@ -4,7 +4,7 @@
 // and does not compute, and a cache is where a figure quietly becomes stale while still carrying
 // the source that vouched for it when it was fresh. Every screen asks for what it shows.
 
-import type { Header, InvestigationDetail, Queue, ReviewHistory } from "./types";
+import type { Header, InvestigationDetail, Queue, ReviewHistory, SystemHealth } from "./types";
 
 async function get<T>(path: string): Promise<T> {
   const response = await fetch(path, { headers: { accept: "application/json" } });
@@ -21,6 +21,7 @@ export const fetchDetail = (id: string) =>
   get<InvestigationDetail>(`/api/investigations/${encodeURIComponent(id)}`);
 export const fetchReview = (id: string) =>
   get<ReviewHistory>(`/api/investigations/${encodeURIComponent(id)}/review`);
+export const fetchHealth = () => get<SystemHealth>("/api/system/health");
 export const fetchFacts = (id: string) =>
   get<Record<string, unknown>[]>(`/api/investigations/${encodeURIComponent(id)}/facts`);
 

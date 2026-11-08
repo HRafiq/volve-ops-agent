@@ -220,3 +220,62 @@ export interface ReviewHistory {
   actions: Record<string, string>;
   disclaimer: string;
 }
+
+// --- the System Health workspace, protocol section 22 ---------------------------------------
+
+export interface HealthRow {
+  label: string;
+  value: Sourced;
+  note: string;
+}
+
+export interface VacuousInvariant {
+  key: string;
+  wording: string;
+  reason: string;
+}
+
+export interface NotApplicable {
+  key: string;
+  reason: string;
+}
+
+export interface ComparisonRow {
+  metric: string;
+  current: Sourced;
+  previous: Sourced | null;
+  delta: Sourced | null;
+  unavailable_because: string;
+}
+
+export interface ExpectationAblationRow {
+  model: string;
+  episodes_opened: number;
+  wape: number | null;
+}
+
+export interface ExpectationAblation {
+  source: string;
+  row_count: Sourced;
+  rows: ExpectationAblationRow[];
+}
+
+export interface SystemHealth {
+  generated: string;
+  commit_sha: string;
+  protocol_version: string;
+  injection: HealthRow[];
+  vacuous_invariants: VacuousInvariant[];
+  parser_corpus: HealthRow[];
+  provenance: HealthRow[];
+  limits: HealthRow[];
+  not_applicable: NotApplicable[];
+  expectation_ablation: ExpectationAblation;
+  retrieval_ablation: HealthRow[];
+  retrieval_note: string;
+  calibration_note: string;
+  latency: HealthRow[];
+  comparison: ComparisonRow[];
+  comparison_note: string;
+  experiments: string[];
+}
