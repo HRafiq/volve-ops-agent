@@ -142,8 +142,10 @@ def score_episode(
 def term_counts(scored: Sequence[Scored]) -> dict[str, int]:
     """How many episodes each term fired on, published alongside the scores.
 
-    Section 21.5 requires this and ADR 0009 says why: two of the four terms fire on nothing in a
-    first run, so a reader shown only the rubric would credit it with judgement it has not made.
+    Section 21.5 requires this and ADR 0009 says why: the review term fires on nothing until
+    someone uses the console, so a reader shown only the rubric would credit it with judgement it
+    has not made. One term, not two, which is amendment 9's correction and which this docstring
+    contradicted three paragraphs of its own module away.
     """
     counts = {term.value: 0 for term in Term}
     counts[Term.SHORTFALL.value] = len(scored)

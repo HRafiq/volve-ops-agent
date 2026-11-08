@@ -9,6 +9,7 @@ against the implementation's own output.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import ClassVar
 
@@ -19,7 +20,15 @@ from volve_ops.console import assemble, gates, priority
 from volve_ops.console import gates as console_gates
 from volve_ops.console.payloads import ChartSeries, EvidenceCoverage, Money
 from volve_ops.console.review import Action, ReviewLog, ReviewRecord, ReviewRefused
-from volve_ops.console.sources import Sourced, SourcedTable, sources_in, tables_in
+from volve_ops.console.sources import (
+    ARTIFACT_PREFIX,
+    PERMITTED_RULES,
+    Sourced,
+    SourcedTable,
+    resolve_source,
+    sources_in,
+    tables_in,
+)
 from volve_ops.console.store import RunStore
 from volve_ops.domain.activity import activity_dates_by_well
 from volve_ops.domain.day_class import DayClass
@@ -155,9 +164,9 @@ class TestThePriorityRule:
     def test_term_counts_name_every_term_including_the_ones_that_fire_on_nothing(self) -> None:
         """Section 21.5 requires this, and ADR 0009 says why.
 
-        Two of the four terms fire on nothing in a first run, so a reader shown only the rubric
-        would credit the rule with judgement it has not made. A term absent from the counts would be
-        worse than one reported as zero.
+        The review term fires on nothing until someone uses the console, so a reader shown only
+        the rubric would credit the rule with judgement it has not made. A term absent from the
+        counts would be worse than one reported as zero.
         """
         scored = [priority.score_episode(**episode())]  # type: ignore[arg-type]
         counts = priority.term_counts(scored)
@@ -761,3 +770,138 @@ class TestWhatTheThirdReviewFound:
         assert "all_pass" in covered
         for name in console_gates.GATE_NAMES:
             assert f"pass_marks.{name}" in covered, name
+
+
+class TestWhatTheFourthReviewFound:
+    """Four of these six were defects inside the previous round's fixes.
+
+    The first is the one to remember: amendment 11 restructured `FactEvidence`, the frontend's
+    declaration was never updated, and clicking any fact-backed evidence cell turned the console
+    into a blank page. Every gate, `tsc`, `pytest` and the CI simulation passed over it, because
+    nothing compared the two halves of the contract. `tests/test_payload_contract.py` is that
+    comparison; these are the rest.
+    """
+
+    def test_a_fabricated_rule_source_is_refused(self) -> None:
+        """`rule:` accepted any non-empty string, which is how 69 invented records passed mark 1."""
+        assert resolve_source("rule:21.5", {})
+        assert not resolve_source("rule:this figure was invented", {})
+        assert not resolve_source("rule:18.6 retrieval record", {})
+        assert not resolve_source("rule:", {})
+
+    def test_every_rule_source_the_console_uses_is_permitted(self) -> None:
+        """A closed list is only closed if what the console cites is in it."""
+        assert {"rule:21.5", "rule:21.6 review log"} == PERMITTED_RULES
+
+    @pytest.mark.parametrize(
+        ("investigation", "hypothesis", "outcome"),
+        [
+            ("15_9-F-14_2012-01-31", "H-pressure", "none_found"),
+            ("15_9-F-14_2012-01-31", "H-uptime", "not_searched"),
+            ("15_9-F-14_2012-01-31", "H-water", "not_searched"),
+            ("15_9-F-14_2012-01-31", "H-field", "not_searched"),
+        ],
+    )
+    def test_an_absence_says_whether_anyone_looked(
+        self, cached_runs: RunStore, investigation: str, hypothesis: str, outcome: str
+    ) -> None:
+        """Section 21.3's whole purpose, and the first implementation lost it.
+
+        Every absence said "retrieval ran and returned nothing", named a query never issued, and
+        reported zero documents examined. On this episode retrieval made two passes and returned
+        two citable documents, and three of these four hypotheses were never searched at all.
+        """
+        detail = assemble.detail(cached_runs, investigation)
+        cell = next(h.cells["Report"] for h in detail.hypotheses if h.hypothesis_id == hypothesis)
+        assert cell.absence is not None
+        assert cell.absence.outcome == outcome
+        if outcome == "not_searched":
+            assert cell.absence.queries == ()
+            assert "No retrieval pass was made" in cell.rule
+        else:
+            assert cell.absence.queries, "a search that ran names the query it issued"
+
+    def test_every_absence_figure_comes_from_the_trace(self, cached_runs: RunStore) -> None:
+        """Not from a constant. The count was hardcoded to zero on every one of 69 records."""
+        for row in assemble.queue(cached_runs).rows:
+            detail = assemble.detail(cached_runs, row.investigation_id)
+            for hypothesis in detail.hypotheses:
+                absence = hypothesis.cells["Report"].absence
+                if absence is None:
+                    continue
+                assert absence.documents_examined.source.startswith(ARTIFACT_PREFIX)
+                assert absence.documents_examined.source.endswith(".trace.json")
+
+    def test_the_awaiting_review_note_counts_rather_than_asserts(
+        self, cached_runs: RunStore, tmp_path: Path
+    ) -> None:
+        """The denominator was fixed and the sentence beside it still said the log was empty.
+
+        `awaiting` excludes only settled findings, so a correction leaves it unchanged and the note
+        went on claiming nothing had been reviewed after fourteen were recorded.
+        """
+        log = ReviewLog(tmp_path / "review.jsonl")
+        before = assemble.queue(cached_runs, log)
+        tile = next(k for k in before.kpis if k.label == "Awaiting review")
+        assert tile.note is not None
+        assert "No review of any kind" in tile.note
+
+        for row in before.rows:
+            log.append(
+                row.investigation_id,
+                Action.ADD_CORRECTION,
+                actor="a reviewer",
+                investigator_version="investigator-v0",
+                protocol_version="v15",
+                note="the choke figure looks mis-recorded",
+            )
+        after = assemble.queue(cached_runs, log)
+        tile = next(k for k in after.kpis if k.label == "Awaiting review")
+        assert tile.note is not None
+        assert "No review of any kind" not in tile.note
+        assert "have a review recorded" in tile.note
+
+    def test_the_console_reports_the_protocol_version_the_document_states(self) -> None:
+        """It was a constant, and the commit that moved the document left it a version behind.
+
+        Twice in one phase: the header showed v12 against a v14 document, and the comment explaining
+        that bug was three lines above the constant when it went stale again.
+        """
+        stated = next(
+            line.split(":", 1)[1].strip()
+            for line in Path("docs/eval_protocol.md").read_text(encoding="utf-8").splitlines()[:10]
+            if line.startswith("Version:")
+        )
+        assert stated == assemble.CONSOLE_PROTOCOL_VERSION
+
+    def test_no_file_still_carries_the_sentence_amendment_9_retracted(self) -> None:
+        """Three carriers survived a grep that was reported as verification.
+
+        The grep matched one phrasing. The claim was also written as "two terms never fire" and
+        "two of the four terms fire on nothing", in the ADR's Decision section, in `priority.py`
+        and in this file.
+        """
+        pattern = re.compile(
+            r"two (of the four )?terms (never fire|fire on nothing)|reduces to shortfall",
+            re.IGNORECASE,
+        )
+        # Lines that quote the retracted claim in order to retract it are the point, not a breach.
+        quoting = re.compile(
+            r"amendment 9|a first draft|as written|original wording|one term, not two", re.I
+        )
+        # This file is not scanned. It has to contain the claim in order to search for it, and a
+        # test that policed its own description of what it polices would either fail always or need
+        # exemptions so specific that they would stop catching anything. What is scanned is every
+        # file that makes the claim to a reader.
+        offenders: list[str] = []
+        for path in (
+            Path("src/volve_ops/console/priority.py"),
+            Path("src/volve_ops/console/assemble.py"),
+            Path("docs/architecture_decisions/0009-investigation-queue-priority-rule.md"),
+            Path("docs/console_results.md"),
+            Path("README.md"),
+        ):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if pattern.search(line) and not quoting.search(line):
+                    offenders.append(f"{path}:{number}: {line.strip()[:80]}")
+        assert not offenders, offenders

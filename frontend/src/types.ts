@@ -100,17 +100,30 @@ export interface ChartSeries {
   governing_window: string;
 }
 
-export interface FactEvidence {
+// One fact from the provenance ledger, carrying the value the ledger records.
+//
+// Its own value, which is the point. The drawer used to attach ledger ids to figures taken from
+// elsewhere: `fact_000002` records a reference rate of 3,052.735 Sm3/d and the drawer published
+// 4,351.41 under its id. 198 of 198 fact-sourced figures were mis-attributed, and every source
+// resolved, so the gate passed on all of them.
+export interface LedgerFact {
   fact_id: string;
   metric: string;
+  value: Sourced;
+  kind: string;
+}
+
+export interface FactEvidence {
+  reference: string;
+  metric: string;
+  value: Sourced;
   baseline_value: Sourced;
   episode_value: Sourced;
   baseline_window: string;
   episode_window: string;
   source_table: string;
   transformation: string;
-  input_records: Sourced;
-  derived_facts: string[];
+  ledger_facts: LedgerFact[];
 }
 
 export interface DocumentEvidence {

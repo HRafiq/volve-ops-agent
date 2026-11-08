@@ -604,6 +604,18 @@ def investigate(
             Stage.RETRIEVE_EVIDENCE,
             f"pass {pass_number}: query {query!r}, {len(hits)} hits, "
             f"{len(in_window)} inside the window, {len(refs)} citable",
+            # Structured, because the console publishes a retrieval record per hypothesis and had
+            # no way to know which hypothesis a pass was for. It invented one: every absence named
+            # a query that was never issued and reported zero documents examined, including on an
+            # episode where retrieval returned two citable documents. The target is known right
+            # here and was simply not written down.
+            detail={
+                "hypothesis_id": target,
+                "query": query,
+                "hits": str(len(hits)),
+                "in_window": str(len(in_window)),
+                "citable": str(len(refs)),
+            },
             judgement_key=f"retrieval_query:{pass_number}",
             judgement=query,
             cost_usd=role.cost_per_call_usd,

@@ -31,15 +31,28 @@ from volve_ops.evaluation.table import locate
 #: with their own lineage, so a figure sourced to one is traceable without a manifest key.
 _FACT_ID: Final = re.compile(r"^(fact|derived|doc_ev|npt)_[A-Za-z0-9]+$")
 
-#: The sentinel for a figure the console computes from nothing but other sourced figures and the
-#: pre-registered rule that combines them. Used by the priority score and nowhere else.
-#:
-#: This is the one hole in mark 1 and it is declared rather than hidden. The priority score is not
-#: in any manifest, because section 21.5 fixes the rule and the score is the rule applied to figures
-#: that *are* in a manifest. Sourcing it to "rule:21.5" says exactly that, and `resolve_source`
-#: accepts it only when the rule's own inputs were themselves sourced, which `assemble` enforces by
-#: constructing the score from `Sourced` inputs.
+#: The prefix for a figure the console derives from a pre-registered rule applied to figures that
+#: are themselves in a manifest. The priority score is the only kind: section 21.5 fixes the rule,
+#: and the score is that rule over published inputs.
 RULE_PREFIX: Final[str] = "rule:"
+
+#: The rule references a payload may cite, listed exhaustively.
+#:
+#: `resolve_source` used to accept any non-empty string after the prefix, so `rule:this figure was
+#: invented` resolved and mark 1 passed over it. That was not theoretical: 69 fabricated retrieval
+#: records cited `rule:18.6 retrieval record` for a hardcoded count of zero, and the gate could not
+#: see any of them. The comment here also claimed the prefix was "used by the priority score and
+#: nowhere else" while 88 of 631 sources carried it across three strings.
+#:
+#: A closed list rather than a pattern, because the point of this prefix is that each use is a
+#: deliberate exception to "every figure comes from a manifest". An exception nobody enumerated is
+#: not an exception, it is a gap.
+PERMITTED_RULES: Final[frozenset[str]] = frozenset(
+    {
+        "rule:21.5",
+        "rule:21.6 review log",
+    }
+)
 
 #: The prefix for a figure read from a per-episode artifact rather than a run manifest. The artifact
 #: is a file a harness wrote, so the source resolves by the file existing, and `resolve_source` is
@@ -157,10 +170,10 @@ def resolve_source(
     - a fact, derived-fact or event id present in `fact_ids`, which the caller takes from the
       ledger and the event store rather than from the artifact that cites it;
     - an `artifact:` path to a file a harness wrote, resolved by the file existing;
-    - a `rule:` reference to a pre-registered rule.
+    - a `rule:` reference, which must be one of `PERMITTED_RULES` and not merely well formed.
     """
     if source.startswith(RULE_PREFIX):
-        return len(source) > len(RULE_PREFIX)
+        return source in PERMITTED_RULES
     if source.startswith(ARTIFACT_PREFIX):
         name = source[len(ARTIFACT_PREFIX) :]
         if artifacts is None or not name or "/" in name or ".." in name:

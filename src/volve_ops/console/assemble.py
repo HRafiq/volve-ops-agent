@@ -13,6 +13,7 @@ range is written. None of those is a figure.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any, Final
 
 from volve_ops.console import labels, priority
@@ -39,8 +40,26 @@ from volve_ops.console.review import ReviewLog
 from volve_ops.console.sources import ARTIFACT_PREFIX, RULE_PREFIX, Sourced
 from volve_ops.console.store import EpisodeArtifacts, RunStore, investigation_id
 
+
+def _protocol_version(document: Path = Path("docs/eval_protocol.md")) -> str:
+    """The protocol document's own version line, read rather than retyped.
+
+    It was a constant, and the commit that moved the document to v15 left it at v14, so the console
+    header told every reader the protocol was a version behind. A hardcoded copy of a number that
+    lives in a file is a second source of truth, and this project has now been bitten by that twice
+    in one phase: the header showed v12 against a v14 document, and the comment explaining that bug
+    sat three lines above the constant when it went stale again.
+    """
+    if not document.exists():
+        return "unknown"
+    for line in document.read_text(encoding="utf-8").splitlines()[:10]:
+        if line.startswith("Version:"):
+            return line.split(":", 1)[1].strip()
+    return "unknown"
+
+
 #: The protocol document version this console was built against. Section 21 and its amendments.
-CONSOLE_PROTOCOL_VERSION: Final[str] = "v14"
+CONSOLE_PROTOCOL_VERSION: Final[str] = _protocol_version()
 
 #: The columns of the hypothesis and evidence matrix, in the order the console design shows them.
 #: A presentation choice, not a figure: these group the channels section 18.2 already defines.
@@ -262,6 +281,7 @@ def _production_kpis(
 ) -> tuple[Kpi, ...]:
     """Decision 3's Production strip. Period-correct language, and no money without a price."""
     awaiting = sum(1 for state in states.values() if state not in {"confirmed", "dismissed"})
+    recorded = sum(1 for state in states.values() if state != "none")
     return (
         Kpi(
             label="Open investigations",
@@ -281,10 +301,16 @@ def _production_kpis(
                 source=f"{RULE_PREFIX}21.6 review log",
                 denominator="investigations with no confirmation or dismissal recorded",
             ),
+            # The note counts what the log holds rather than asserting it holds nothing. The
+            # denominator was fixed when the queue started reading the log and this sentence was
+            # not, so it went on saying "nothing has been reviewed yet" after fourteen corrections
+            # had been recorded: `awaiting` excludes only settled findings, and a correction does
+            # not settle one.
             note=(
-                "Nothing has been reviewed yet."
-                if awaiting == len(states)
-                else f"{len(states) - awaiting} of {len(states)} have been settled."
+                "No review of any kind has been recorded."
+                if not recorded
+                else f"{recorded} of {len(states)} have a review recorded; "
+                f"{len(states) - awaiting} are settled."
             ),
         ),
         Kpi(
@@ -481,8 +507,25 @@ def _coverage(finding: Mapping[str, Any]) -> EvidenceCoverage:
     return EvidenceCoverage(available=tuple(available), missing=tuple(missing))
 
 
+def _retrieval_passes(trace: Mapping[str, Any]) -> dict[str, dict[str, str]]:
+    """The retrieval pass made for each hypothesis, from the trace's own record.
+
+    Keyed by hypothesis, keeping the last pass where a hypothesis was searched more than once,
+    because that is the one whose result stands. A hypothesis absent from this mapping was never
+    searched, and the report cell says so rather than claiming a search that found nothing.
+    """
+    passes: dict[str, dict[str, str]] = {}
+    for step in trace.get("steps", []):
+        detail = step.get("detail") or {}
+        if detail.get("hypothesis_id"):
+            passes[str(detail["hypothesis_id"])] = {k: str(v) for k, v in detail.items()}
+    return passes
+
+
 def _hypotheses(
-    finding: Mapping[str, Any], ledger: Sequence[Mapping[str, Any]]
+    finding: Mapping[str, Any],
+    ledger: Sequence[Mapping[str, Any]],
+    passes: Mapping[str, Mapping[str, str]],
 ) -> tuple[Hypothesis, ...]:
     """The matrix. One cell per hypothesis and evidence family, each carrying its own object.
 
@@ -507,7 +550,7 @@ def _hypotheses(
         cells: dict[str, MatrixCell] = {}
         for family in EVIDENCE_FAMILIES:
             if family == "Report":
-                cells[family] = _report_cell(finding, hypothesis_id, index, documents)
+                cells[family] = _report_cell(finding, hypothesis_id, index, documents, passes)
             elif family == home:
                 cells[family] = _evidence_cell(
                     finding, hypothesis_id, status, features, feature_name, rule, ledger
@@ -569,8 +612,16 @@ def _report_cell(
     hypothesis_id: str,
     index: int,
     documents: Sequence[Mapping[str, Any]],
+    passes: Mapping[str, Mapping[str, str]],
 ) -> MatrixCell:
-    """The report column: a cited span, or a recorded absence with the search behind it."""
+    """The report column: a cited span, a recorded absence, or a recorded non-search.
+
+    **Every figure here comes from the trace.** The first version hardcoded the query string and a
+    count of zero, so each absence named a search that never happened: on `15/9-F-14` from
+    2012-01-31 it published "retrieval ran and returned nothing" for three hypotheses no pass was
+    ever made for, and reported zero documents examined on an episode where retrieval returned two
+    citable ones. Section 21.3's whole purpose is that a reader can tell those apart.
+    """
     if documents:
         return MatrixCell(
             verdict="supports",
@@ -581,27 +632,56 @@ def _report_cell(
             ),
             document=_document_evidence(documents[0]),
         )
+    slug = finding["artifact_slug"]
+    source = f"{ARTIFACT_PREFIX}{slug}.trace.json"
+    window = (
+        f"well = {finding['well']}",
+        f"window = {finding['episode_onset']} to {finding['episode_offset']}, "
+        "plus 45 days either side",
+    )
+    made = passes.get(hypothesis_id)
+    if made is None:
+        return MatrixCell(
+            verdict="absent",
+            label="Not searched",
+            rule=(
+                "No retrieval pass was made for this hypothesis. The controller's budget is spent "
+                "on the hypotheses its diagnostics put in play, so an untested one is a bound on "
+                "the investigation rather than a finding about the documents."
+            ),
+            absence=Absence(
+                absence_id=f"{slug}:{hypothesis_id}:not-searched",
+                corpus="drilling-report narrative, BM25 over extracted events",
+                filters=window,
+                queries=(),
+                documents_examined=Sourced(
+                    value=0,
+                    source=source,
+                    denominator="no pass was made for this hypothesis, so nothing was examined",
+                ),
+                outcome="not_searched",
+            ),
+        )
     return MatrixCell(
         verdict="absent",
         label="None found",
         rule=(
             "Retrieval ran over the drilling narrative for this well and window and returned "
-            "nothing naming a reason. ADR 0008 records why that is the normal case: not one of "
-            "3,673 drilling-report events falls inside any episode window."
+            "nothing citable for this hypothesis. ADR 0008 records why that is the normal case: "
+            "not one of 3,673 drilling-report events falls inside any episode window."
         ),
         absence=Absence(
-            absence_id=f"absence_{hypothesis_id}_{index}",
+            absence_id=f"{slug}:{hypothesis_id}:pass",
             corpus="drilling-report narrative, BM25 over extracted events",
-            filters=(
-                f"well = {finding['well']}",
-                f"window = {finding['episode_onset']} to {finding['episode_offset']}, "
-                "plus 45 days either side",
-            ),
-            queries=(f"terms derived from {hypothesis_id}",),
+            filters=window,
+            queries=(made["query"],),
             documents_examined=Sourced(
-                value=0,
-                source=f"{RULE_PREFIX}18.6 retrieval record",
-                denominator="documents returned for this hypothesis",
+                value=int(made["hits"]),
+                source=source,
+                denominator=(
+                    f"hits returned, of which {made['in_window']} fell inside the evidence window "
+                    f"and {made['citable']} were citable"
+                ),
             ),
             outcome="none_found",
         ),
@@ -790,7 +870,7 @@ def detail(store: RunStore, wanted: str) -> InvestigationDetail:
         recommended_next_check=str(finding.get("recommended_next_check", "")),
         chart=_chart(artifacts, finding),
         expectation=expectation_panel(store),
-        hypotheses=_hypotheses(finding, artifacts.facts),
+        hypotheses=_hypotheses(finding, artifacts.facts, _retrieval_passes(artifacts.trace)),
         evidence_families=EVIDENCE_FAMILIES,
         coverage=_coverage(finding),
         review_disclaimer=labels.REVIEW_DISCLAIMER,

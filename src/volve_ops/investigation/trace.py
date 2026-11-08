@@ -70,6 +70,19 @@ class Step(BaseModel):
     index: int
     stage: Stage
     summary: str
+
+    detail: dict[str, str] = Field(default_factory=dict)
+    """Structured facts about the step, for a reader that is not a person.
+
+    Added so the console can describe a retrieval pass without parsing the summary prose or, as it
+    did first, inventing one. Its absence record published a query that was never issued and a count
+    of zero documents examined on an episode where retrieval returned two citable ones, which is the
+    distinction section 21.3 exists to preserve, lost in the one place it was being published.
+
+    A defaulted field rather than a format change: `judgement_key` is what replay matches on and is
+    untouched, and a trace written before this existed still loads.
+    """
+
     judgement_key: str | None = None
     judgement: Any = None
     tokens: int = 0
@@ -178,6 +191,7 @@ class TraceRecorder(BaseModel):
         stage: Stage,
         summary: str,
         *,
+        detail: dict[str, str] | None = None,
         judgement_key: str | None = None,
         judgement: Any = None,
         tokens: int = 0,
@@ -187,6 +201,7 @@ class TraceRecorder(BaseModel):
             index=len(self.steps),
             stage=stage,
             summary=summary,
+            detail=detail or {},
             judgement_key=judgement_key,
             judgement=judgement,
             tokens=tokens,

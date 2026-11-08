@@ -86,8 +86,11 @@ records it. The lesson is one this project already wrote down after Phase 5 and 
    evidence was strong and the system still could not choose. "No evidence, so no conclusion" is a
    data-coverage problem and belongs in a filter, not at the top of a review queue.
 2. **The rule is published with its term counts**, exactly as tabulated above, every time it is
-   printed. A four-term rubric of which two terms never fire reads as more considered than it is, and
-   the console must not borrow that credibility.
+   printed. A four-term rubric whose fourth line fires on nothing until someone uses the console
+   reads as more considered than it is, and the console must not borrow that credibility. A third
+   review found the original wording here, "of which two terms never fire", still standing after
+   amendment 9 retracted it: the retraction had reached this document's narrative and not its
+   Decision section.
 3. **The console states that the rule is not validated.** Fourteen episodes, one of them HIGH, cannot
    show that an ordering is a good ordering. The rule is a stated convention, not a measured result,
    and the queue header says so.

@@ -68,7 +68,14 @@ class Absence(BaseModel):
     filters: tuple[str, ...]
     queries: tuple[str, ...]
     documents_examined: Sourced
-    outcome: Literal["none_found", "reason_not_documented"]
+    outcome: Literal["none_found", "reason_not_documented", "not_searched"]
+    """What happened, and `not_searched` is the state the first version could not express.
+
+    Section 21.3 exists so a reader can tell "looked and found nothing" from "did not look". The
+    first implementation published `none_found` for both, with a query that was never issued and a
+    hardcoded count of zero, on episodes where retrieval had returned citable documents. It lost the
+    one distinction the section is about, in the only place the section is implemented.
+    """
 
 
 class LedgerFact(BaseModel):

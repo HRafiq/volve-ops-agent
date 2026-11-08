@@ -47,21 +47,23 @@ export function Drawer({
 
       {cell.fact ? (
         <>
-          <h3 style={{ marginTop: 16 }}>Fact</h3>
+          <h3 style={{ marginTop: 16 }}>The figure that decided this cell</h3>
           <dl>
-            <dt>Fact id</dt>
-            <dd>{cell.fact.fact_id}</dd>
-            <dt>Metric</dt>
-            <dd>{cell.fact.metric}</dd>
+            <dt>Reference</dt>
+            <dd>{cell.fact.reference}</dd>
+            <dt>{cell.fact.metric}</dt>
+            <dd>
+              <Figure figure={cell.fact.value} />
+            </dd>
             <dt>Reference window</dt>
             <dd>{cell.fact.baseline_window}</dd>
-            <dt>Value there</dt>
+            <dt>Median rate there</dt>
             <dd>
               <Figure figure={cell.fact.baseline_value} />
             </dd>
             <dt>Episode window</dt>
             <dd>{cell.fact.episode_window}</dd>
-            <dt>Value there</dt>
+            <dt>Median rate there</dt>
             <dd>
               <Figure figure={cell.fact.episode_value} />
             </dd>
@@ -69,8 +71,26 @@ export function Drawer({
             <dd>{cell.fact.source_table}</dd>
             <dt>Transformation</dt>
             <dd>{cell.fact.transformation}</dd>
-            <dt>Lineage</dt>
-            <dd>{cell.fact.derived_facts.join(", ") || "walk the facts artifact"}</dd>
+          </dl>
+
+          <h3 style={{ marginTop: 16 }}>Provenance ledger</h3>
+          <p style={{ fontSize: 12, color: "var(--steel-600)", lineHeight: 1.5 }}>
+            The episode-level facts this investigation recorded, each with the value the ledger
+            holds. They are shown separately from the figure above because they are different
+            quantities: attaching one of these ids to a figure taken from elsewhere is what made
+            198 of 198 drawer figures wrong before protocol amendment 11.
+          </p>
+          <dl>
+            {cell.fact.ledger_facts.map((fact) => (
+              <div key={fact.fact_id} style={{ display: "contents" }}>
+                <dt>
+                  {fact.fact_id} <span style={{ opacity: 0.7 }}>({fact.kind})</span>
+                </dt>
+                <dd>
+                  {fact.metric}: <Figure figure={fact.value} />
+                </dd>
+              </div>
+            ))}
           </dl>
         </>
       ) : null}
